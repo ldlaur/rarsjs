@@ -112,16 +112,25 @@ bool alnum(char c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
-void skip_whitespace(char* txt, size_t* ti, size_t s) {
-    while (whitespace(txt[*ti]) && *ti < s) (*ti)++;
+typedef struct {
+    char *input;
+    size_t pos;
+    size_t size;
+} Parser;
+
+void skip_whitespace(Parser* p) {
+    while (p->pos < p->size && whitespace(p->input[p->pos]))
+        p->pos++;
 }
 
-void parse_alnum(char** str, size_t* len, char* txt, size_t* ti, size_t s) {
-    size_t st_opc = *ti;
-    while (alnum(txt[*ti]) && *ti < s) (*ti)++;
-    size_t en_opc = *ti;
-    *str = txt + st_opc;
-    *len = en_opc - st_opc;
+bool parse_alnum(Parser *p, char** str, size_t* len) {
+    size_t start = p->pos;
+    while (p->pos < p->size && alnum(p->input[p->pos])) p->pos++;
+    size_t end = p->pos;
+    if (start == end) return false;
+    *str = p->input + start;
+    *len = end - start;
+    return true;
 }
 
 bool str_eq(char* txt, size_t len, const char* c) {
@@ -129,21 +138,15 @@ bool str_eq(char* txt, size_t len, const char* c) {
     return memcmp(txt, c, len) == 0;
 }
 
-void parse_reg(char** str, size_t* len, char* txt, size_t* ti, size_t s) {
-    size_t st = *ti;
-    while (alnum(txt[*ti]) && *ti < s) (*ti)++;
-    size_t end = *ti;
-    *str = txt + st;
-    *len = end - st;
-}
-
-void parse_simm(char** str, size_t* len, char* txt, size_t* ti, size_t s) {
-    size_t st = *ti;
-    if (txt[*ti] == '-' && *ti < s) (*ti)++;
-    while (digit(txt[*ti]) && *ti < s) (*ti)++;
-    size_t end = *ti;
-    *str = txt + st;
-    *len = end - st;
+bool parse_simm(Parser *p, char** str, size_t* len) {
+    size_t start = p->pos;
+    if (p->pos < p->size && p->input[p->pos] == '-' ) p->pos++;
+    while (p->pos < p->size && alnum(p->input[p->pos])) p->pos++;
+    size_t end = p->pos;
+    if (start == end) return false;
+    *str = p->input + start;
+    *len = end - start;
+    return true;
 }
 
 int regname_to_num(char* str, size_t len) {
@@ -186,25 +189,30 @@ struct label_data labels[256];
 int labels_bump = 0;
 
 
-void handle_alu_reg(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_t s) {
-    size_t ti = *ti_;
+bool expect(Parser *p, char c) {
+    if (p->pos >= p->size) return false;
+    if (p->input[p->pos] != c) return false;
+    p->pos++;
+    return 1;
+}
 
+bool handle_alu_reg(Parser* p, char* opcode, size_t opcode_len) {
     char *rd, *rs1, *rs2;
     size_t rd_len, rs1_len, rs2_len;
     
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rd, &rd_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rd, &rd_len)) return false;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;
 
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rs1, &rs1_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rs1, &rs1_len)) return false;;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;
 
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rs2, &rs2_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rs2, &rs2_len)) return false;
+    skip_whitespace(p);
     
     int d, s1, s2;
     d = regname_to_num(rd, rd_len);
@@ -235,30 +243,26 @@ void handle_alu_reg(char* opcode, size_t opcode_len, char* txt, size_t* ti_, siz
     else if (str_eq(opcode, opcode_len, "remu")) inst = REMU (d, s1, s2);
     
     asm_emit(inst);
-    
-    *ti_ = ti;
+    return true;
 }
 
-void handle_alu_imm(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_t s) {
-    size_t ti = *ti_;
-    skip_whitespace(txt, &ti, s);
-
+bool handle_alu_imm(Parser* p, char* opcode, size_t opcode_len) {
     char *rd, *rs1, *imm;
     size_t rd_len, rs1_len, imm_len;
     
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rd, &rd_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rd, &rd_len)) return false;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;
 
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rs1, &rs1_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rs1, &rs1_len)) return false;;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;;
 
-    skip_whitespace(txt, &ti, s);
-    parse_simm(&imm, &imm_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
+    skip_whitespace(p);
+    if (!parse_simm(p, &imm, &imm_len)) return false;
+    skip_whitespace(p);
 
     int d, s1, simm;
     d = regname_to_num(rd, rd_len);
@@ -279,33 +283,30 @@ void handle_alu_imm(char* opcode, size_t opcode_len, char* txt, size_t* ti_, siz
     else if (str_eq(opcode, opcode_len, "srai"))  inst = SRAI (d, s1, simm);
     
     asm_emit(inst);
-    
-    *ti_ = ti;
+
+    return true;
 }
 
-void handle_ldst(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_t s) {
-    size_t ti = *ti_;
-    skip_whitespace(txt, &ti, s);
-
+bool handle_ldst(Parser* p, char* opcode, size_t opcode_len) {
     char *rreg, *rmem, *imm;
     size_t rreg_len, rmem_len, imm_len;
     
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rreg, &rreg_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rreg, &rreg_len)) return false;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;
 
-    skip_whitespace(txt, &ti, s);
-    parse_simm(&imm, &imm_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
+    skip_whitespace(p);
+    if (!parse_simm(p, &imm, &imm_len)) return false;
+    skip_whitespace(p);
 
-    assert(txt[ti] == '('); ti++;
+    if (!expect(p, '(')) return false;
     
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rmem, &rmem_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rmem, &rmem_len)) return false;
+    skip_whitespace(p);
 
-    assert(txt[ti] == ')'); ti++;
+    if (!expect(p, ')')) return false;
 
     int reg, mem, simm;
     reg = regname_to_num(rreg, rreg_len);
@@ -326,36 +327,34 @@ void handle_ldst(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_t
 
     asm_emit(inst);
 
-    *ti_ = ti;
+    return true;
 }
 
 
-void handle_branch(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_t s) {
-    size_t ti = *ti_;
-    skip_whitespace(txt, &ti, s);
-
-    char *rd, *rs1, *target;
-    size_t rd_len, rs1_len, target_len;
+bool handle_branch(Parser* p, char* opcode, size_t opcode_len) {
+    char *rs1, *rs2, *target;
+    size_t rs1_len, rs2_len, target_len;
     
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rd, &rd_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rs1, &rs1_len)) return false;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;
 
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rs1, &rs1_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
 
-    skip_whitespace(txt, &ti, s);
-    parse_alnum(&target, &target_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rs2, &rs2_len)) return false;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;
 
-    int d, s1, simm;
-    d = regname_to_num(rd, rd_len);
-    assert(d != -1);
+    skip_whitespace(p);
+    if (!parse_alnum(p, &target, &target_len)) return false;
+    skip_whitespace(p);
+
+    int s1, s2, simm;
     s1 = regname_to_num(rs1, rs1_len);
     assert(s1 != -1);
+    s2 = regname_to_num(rs2, rs2_len);
+    assert(s2 != -1);
 
     bool found;
     for (int i = 0; i < labels_bump; i++) {
@@ -368,50 +367,46 @@ void handle_branch(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size
     assert(found);
 
     u32 inst = 0;
-    if      (str_eq(opcode, opcode_len, "beq")) inst = BEQ (d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "bne")) inst = BNE (d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "blt")) inst = BLT (d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "bge")) inst = BGE (d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "bltu"))inst = BLTU(d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "bgeu"))inst = BGEU(d, s1, simm);
+    if      (str_eq(opcode, opcode_len, "beq")) inst = BEQ (s1, s2, simm);
+    else if (str_eq(opcode, opcode_len, "bne")) inst = BNE (s1, s2, simm);
+    else if (str_eq(opcode, opcode_len, "blt")) inst = BLT (s1, s2, simm);
+    else if (str_eq(opcode, opcode_len, "bge")) inst = BGE (s1, s2, simm);
+    else if (str_eq(opcode, opcode_len, "bltu"))inst = BLTU(s1, s2, simm);
+    else if (str_eq(opcode, opcode_len, "bgeu"))inst = BGEU(s1, s2, simm);
 
     asm_emit(inst);
-
-    *ti_ = ti;
+    return true;
 }
 
 
-void handle_jumps(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_t s) {
-    size_t ti = *ti_;
-    skip_whitespace(txt, &ti, s);
-
+bool handle_jumps(Parser* p, char* opcode, size_t opcode_len) {
     char *rd, *rs1, *imm;
     size_t rd_len, rs1_len, imm_len;
 
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rd, &rd_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rd, &rd_len)) return false;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;
 
-    skip_whitespace(txt, &ti, s);
+    skip_whitespace(p);
     
     int d, s1, simm;
     u32 inst = 0;
 
     if (str_eq(opcode, opcode_len, "jal")) {
-        parse_simm(&imm, &imm_len, txt, &ti, s);
+        if (!parse_alnum(p, &imm, &imm_len)) return false;
         simm = atoi_len(imm, imm_len);
         d = regname_to_num(rd, rd_len);
         assert(d != -1);
         inst = JAL(d, simm);
     } 
     else if (str_eq(opcode, opcode_len, "jalr")) {
-        parse_reg(&rs1, &rs1_len, txt, &ti, s);
-        skip_whitespace(txt, &ti, s);
-        assert(txt[ti] == ','); ti++;
-        skip_whitespace(txt, &ti, s);
+        if (!parse_alnum(p, &rs1, &rs1_len)) return false;
+        skip_whitespace(p);
+        if (!expect(p, ',')) return false;
+        skip_whitespace(p);
 
-        parse_simm(&imm, &imm_len, txt, &ti, s);
+        if (!parse_alnum(p, &imm, &imm_len)) return false;
         simm = atoi_len(imm, imm_len);
         d = regname_to_num(rd, rd_len);
         s1 = regname_to_num(rs1, rs1_len);
@@ -420,29 +415,25 @@ void handle_jumps(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_
     } 
 
     asm_emit(inst);
-
-    *ti_ = ti;
+    return true;
 }
 
 
-void handle_upper(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_t s) {
-    size_t ti = *ti_;
-    skip_whitespace(txt, &ti, s);
-
+bool handle_upper(Parser* p, char* opcode, size_t opcode_len) {
     char *rd, *rs1, *imm;
     size_t rd_len, rs1_len, imm_len;
 
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rd, &rd_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rd, &rd_len)) return false;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;
 
-    skip_whitespace(txt, &ti, s);
+    skip_whitespace(p);
     
     int d, s1, simm;
     u32 inst = 0;
 
-    parse_simm(&imm, &imm_len, txt, &ti, s);
+    if (!parse_simm(p, &imm, &imm_len)) return false;
     simm = atoi_len(imm, imm_len);
     d = regname_to_num(rd, rd_len);
     assert(d != -1);
@@ -452,28 +443,25 @@ void handle_upper(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_
 
     asm_emit(inst);
 
-    *ti_ = ti;
+    return true;
 }
 
 
-void handle_li(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_t s) {
-    size_t ti = *ti_;
-    skip_whitespace(txt, &ti, s);
-
+bool handle_li(Parser* p, char* opcode, size_t opcode_len) {
     char *rd, *imm;
     size_t rd_len, imm_len;
 
-    skip_whitespace(txt, &ti, s);
-    parse_reg(&rd, &rd_len, txt, &ti, s);
-    skip_whitespace(txt, &ti, s);
-    assert(txt[ti] == ','); ti++;
+    skip_whitespace(p);
+    if (!parse_alnum(p, &rd, &rd_len)) return false;
+    skip_whitespace(p);
+    if (!expect(p, ',')) return false;
 
-    skip_whitespace(txt, &ti, s);
+    skip_whitespace(p);
 
     int d, simm;
     u32 inst = 0;
 
-    parse_simm(&imm, &imm_len, txt, &ti, s);
+    if (!parse_simm(p, &imm, &imm_len)) return false;
     simm = atoi_len(imm, imm_len);
     d = regname_to_num(rd, rd_len);
     assert(d != -1);
@@ -487,8 +475,7 @@ void handle_li(char* opcode, size_t opcode_len, char* txt, size_t* ti_, size_t s
         asm_emit(LUI(d, hi));
         asm_emit(ADDI(d, d, lo)); 
     }
-
-    *ti_ = ti;
+    return true;
 }
 
 
@@ -515,20 +502,22 @@ export void assemble(char* txt, size_t s) {
     char* opcodes_branch[] = {
         "beq", "bne", "blt", "bge", "bltu", "bgeu"
     };
-
+    Parser parser;
+    parser.input = txt;
+    parser.size = s;
+    parser.pos = 0;
+    Parser* p = &parser;
 
     while (1) {
-        if (ti == s) return;
-        skip_whitespace(txt, &ti, s);
-        if (ti == s) return;
-
+        skip_whitespace(p);
+        if (p->pos == p->size) return;
         char *alnum, *opcode;
         size_t alnum_len, opcode_len;
-        parse_alnum(&alnum, &alnum_len, txt, &ti, s);
-        skip_whitespace(txt, &ti, s);
+        if (!parse_alnum(p, &alnum, &alnum_len)) return;
+        skip_whitespace(p);
+        if (p->pos == p->size) return;
 
-        if (txt[ti] == ':') {
-            ti++;
+        if (expect(p, ':')) {
             labels[labels_bump++] = (struct label_data){ .txt = alnum, .len = alnum_len, .addr = asm_emit_idx };
             continue;
         } else {
@@ -539,43 +528,43 @@ export void assemble(char* txt, size_t s) {
         bool found = false;
         for (int i = 0; !found && i < sizeof(opcodes_alu_imm)/sizeof(char*); i++) {
             if (str_eq(opcode, opcode_len, opcodes_alu_imm[i])) {
-                handle_alu_imm(opcode, opcode_len, txt, &ti, s);
+                if (!handle_alu_imm(p, opcode, opcode_len)) return;
                 found = true;
             }
         }
         for (int i = 0; !found && i < sizeof(opcodes_alu_reg)/sizeof(char*); i++) {
             if (str_eq(opcode, opcode_len, opcodes_alu_reg[i])) {
-                handle_alu_reg(opcode, opcode_len, txt, &ti, s);
+                if (!handle_alu_reg(p, opcode, opcode_len)) return;
                 found = true;
             }
         }
         
         for (int i = 0; !found && i < sizeof(opcodes_ldst)/sizeof(char*); i++) {
             if (str_eq(opcode, opcode_len, opcodes_ldst[i])) {
-                handle_ldst(opcode, opcode_len, txt, &ti, s);
+                if (!handle_ldst(p, opcode, opcode_len)) return;
                 found = true;
             }
         }
 
         for (int i = 0; !found && i < sizeof(opcodes_branch)/sizeof(char*); i++) {
             if (str_eq(opcode, opcode_len, opcodes_branch[i])) {
-                handle_branch(opcode, opcode_len, txt, &ti, s);
+                if (!handle_branch(p, opcode, opcode_len)) return;
                 found = true;
             }
         }
 
         if (str_eq(opcode, opcode_len, "jal") || str_eq(opcode, opcode_len, "jalr")) {
-            handle_jumps(opcode, opcode_len, txt, &ti, s);
+            if (!handle_jumps(p, opcode, opcode_len)) return;
             found = true;
         }
 
         if (str_eq(opcode, opcode_len, "lui") || str_eq(opcode, opcode_len, "auipc")) {
-            handle_upper(opcode, opcode_len, txt, &ti, s);
+            if (!handle_upper(p, opcode, opcode_len)) return;
             found = true;
         }
 
         if (str_eq(opcode, opcode_len, "li")) {
-            handle_li(opcode, opcode_len, txt, &ti, s);
+            if (!handle_li(p, opcode, opcode_len)) return;
             found = true;
         }
 
