@@ -1,0 +1,5 @@
+node_modules
+dist
+a.out
+main.wasm
+pnpm-lock.yaml
