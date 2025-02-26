@@ -150,8 +150,7 @@ bool parse_simm(Parser *p, char** str, size_t* len) {
 }
 
 int regname_to_num(char* str, size_t len) {
-    if (len != 2 && len != 3) return -1;
-    if (str[0] == 'x') {
+    if ((len == 2 || len == 3) && str[0] == 'x') {
         if (len == 2) return str[1] - '0';
         else {
             int num = (str[1]-'0')*10 + (str[2]-'0');
@@ -159,7 +158,11 @@ int regname_to_num(char* str, size_t len) {
             return num;
         }
     }
-    // TODO: aliases
+    char* names[] = {"zero", "ra", "sp", "gp", "tp", "tp", "t0", "t1", "t2", "fp", "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
+	};
+    for (int i = 0; i < 32; i++) {
+        if (str_eq(str, len, names[i])) return i;
+	}
     return -1;
 }
 
@@ -187,6 +190,18 @@ struct label_data {
 
 struct label_data labels[256];
 int labels_bump = 0;
+
+
+typedef bool DeferredInsnCb(Parser* p, char* opcode, size_t opcode_len);
+struct DeferredInsn {
+    size_t emit_idx;
+	DeferredInsnCb* cb;
+	Parser p;
+	char* opcode;
+	size_t opcode_len;
+};
+struct DeferredInsn deferred_insns[256];
+int deferred_insns_cnt = 0;
 
 
 bool expect(Parser *p, char c) {
@@ -332,6 +347,8 @@ bool handle_ldst(Parser* p, char* opcode, size_t opcode_len) {
 
 
 bool handle_branch(Parser* p, char* opcode, size_t opcode_len) {
+    Parser orig = *p;
+
     char *rs1, *rs2, *target;
     size_t rs1_len, rs2_len, target_len;
     
@@ -339,7 +356,6 @@ bool handle_branch(Parser* p, char* opcode, size_t opcode_len) {
     if (!parse_alnum(p, &rs1, &rs1_len)) return false;
     skip_whitespace(p);
     if (!expect(p, ',')) return false;
-
 
     skip_whitespace(p);
     if (!parse_alnum(p, &rs2, &rs2_len)) return false;
@@ -356,7 +372,7 @@ bool handle_branch(Parser* p, char* opcode, size_t opcode_len) {
     s2 = regname_to_num(rs2, rs2_len);
     assert(s2 != -1);
 
-    bool found;
+    bool found = false;
     for (int i = 0; i < labels_bump; i++) {
         if (labels[i].len == target_len && memcmp(labels[i].txt, target, target_len) == 0) {
             found = true;
@@ -364,7 +380,17 @@ bool handle_branch(Parser* p, char* opcode, size_t opcode_len) {
             break;
         }
     }
-    assert(found);
+	if (!found) {
+		struct DeferredInsn insn;
+		insn.emit_idx = asm_emit_idx;
+		insn.p = orig;
+		insn.cb = handle_branch;
+		insn.opcode = opcode;
+		insn.opcode_len = opcode_len;
+		deferred_insns[deferred_insns_cnt++] = insn;
+		asm_emit_idx += 4;
+		return true;
+	}
 
     u32 inst = 0;
     if      (str_eq(opcode, opcode_len, "beq")) inst = BEQ (s1, s2, simm);
@@ -510,12 +536,12 @@ export void assemble(char* txt, size_t s) {
 
     while (1) {
         skip_whitespace(p);
-        if (p->pos == p->size) return;
+        if (p->pos == p->size) break;
         char *alnum, *opcode;
         size_t alnum_len, opcode_len;
-        if (!parse_alnum(p, &alnum, &alnum_len)) return;
+        if (!parse_alnum(p, &alnum, &alnum_len)) break;
         skip_whitespace(p);
-        if (p->pos == p->size) return;
+        if (p->pos == p->size) break;
 
         if (expect(p, ':')) {
             labels[labels_bump++] = (struct label_data){ .txt = alnum, .len = alnum_len, .addr = asm_emit_idx };
@@ -528,43 +554,43 @@ export void assemble(char* txt, size_t s) {
         bool found = false;
         for (int i = 0; !found && i < sizeof(opcodes_alu_imm)/sizeof(char*); i++) {
             if (str_eq(opcode, opcode_len, opcodes_alu_imm[i])) {
-                if (!handle_alu_imm(p, opcode, opcode_len)) return;
+                if (!handle_alu_imm(p, opcode, opcode_len)) break;
                 found = true;
             }
         }
         for (int i = 0; !found && i < sizeof(opcodes_alu_reg)/sizeof(char*); i++) {
             if (str_eq(opcode, opcode_len, opcodes_alu_reg[i])) {
-                if (!handle_alu_reg(p, opcode, opcode_len)) return;
+                if (!handle_alu_reg(p, opcode, opcode_len)) break;
                 found = true;
             }
         }
         
         for (int i = 0; !found && i < sizeof(opcodes_ldst)/sizeof(char*); i++) {
             if (str_eq(opcode, opcode_len, opcodes_ldst[i])) {
-                if (!handle_ldst(p, opcode, opcode_len)) return;
+                if (!handle_ldst(p, opcode, opcode_len)) break;
                 found = true;
             }
         }
 
         for (int i = 0; !found && i < sizeof(opcodes_branch)/sizeof(char*); i++) {
             if (str_eq(opcode, opcode_len, opcodes_branch[i])) {
-                if (!handle_branch(p, opcode, opcode_len)) return;
+                if (!handle_branch(p, opcode, opcode_len)) break;
                 found = true;
             }
         }
 
         if (str_eq(opcode, opcode_len, "jal") || str_eq(opcode, opcode_len, "jalr")) {
-            if (!handle_jumps(p, opcode, opcode_len)) return;
+            if (!handle_jumps(p, opcode, opcode_len)) break;
             found = true;
         }
 
         if (str_eq(opcode, opcode_len, "lui") || str_eq(opcode, opcode_len, "auipc")) {
-            if (!handle_upper(p, opcode, opcode_len)) return;
+            if (!handle_upper(p, opcode, opcode_len)) break;
             found = true;
         }
 
         if (str_eq(opcode, opcode_len, "li")) {
-            if (!handle_li(p, opcode, opcode_len)) return;
+            if (!handle_li(p, opcode, opcode_len)) break;
             found = true;
         }
 
@@ -575,6 +601,15 @@ export void assemble(char* txt, size_t s) {
 
         assert(found);
     }
+	printf("deferring\n");
+    int oldemit = asm_emit_idx;
+	for (int i = 0; i < deferred_insns_cnt; i++) {
+		struct DeferredInsn* insn = &deferred_insns[i];
+		asm_emit_idx = insn->emit_idx;
+		insn->cb(&insn->p, insn->opcode, insn->opcode_len);
+		assert(asm_emit_idx == insn->emit_idx + 4);
+	}
+	asm_emit_idx = oldemit;
 }
 
 uint32_t regs[32];
@@ -780,11 +815,15 @@ end:
 #include <stdlib.h>
 int main() {
 	FILE* f = fopen("a.S", "r");
+	FILE* out = fopen("a.bin", "wb");
+
 	fseek(f, 0, SEEK_END);
 	size_t s = ftell(f);
 	rewind(f);
 	char* txt = malloc(s);
 	fread(txt, s, 1, f);
     assemble(txt, s);
+	printf("assembled %d\n", asm_emit_idx);
+	fwrite(ram, asm_emit_idx, 1, out);
 }
 #endif
