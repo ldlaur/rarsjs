@@ -3,6 +3,7 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  Show,
   type Component,
 } from "solid-js";
 import { basicSetup, EditorView } from "codemirror";
@@ -61,11 +62,11 @@ function updateCss() {
       background-color: ${cssTheme.gutterBackground};
     }
     .theme-separator {
-      background-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.2
-      )};
+      background-color: ${
+        cssTheme.gutterBackground != cssTheme.background
+          ? cssTheme.gutterBackground
+          : interpolate(cssTheme.background, cssTheme.foreground, 0.1)
+      };
     }
     .theme-fg {
       color: ${cssTheme.foreground};
@@ -232,6 +233,8 @@ const App: Component = () => {
     });
   });
 
+  let [clicked, setClicked] = createSignal("console");
+
   const doRun = () => {
     doRiscV(view.state.doc.toString(), setText);
   };
@@ -244,18 +247,42 @@ const App: Component = () => {
         on:touchstart={resizeDown}
         ref={handle}
         style={{ "flex-shrink": 0 }}
-        class="w-4 h-1 w-full theme-separator cursor-row-resize bg-gray-100"
-      />
+        class="w-4 w-full theme-separator cursor-row-resize"
+      >
+        <button
+          class="px-1 theme-fg"
+          classList={{ "theme-bg": clicked() == "console" }}
+          onClick={() => setClicked("console")}
+        >
+          console
+        </button>
+        <button
+          class="px-1 theme-fg"
+          classList={{ "theme-bg": clicked() == "data" }}
+          onClick={() => setClicked("data")}
+        >
+          data
+        </button>
+      </div>
       {/* flex-shrink: 0 here is very important! */}
       <div
         class="w-full h-full"
         style={{ "flex-shrink": 0, height: `${size()}px` }}
       >
-        <div
-          innerText={text()}
-          class="w-full h-full overflow-auto theme-fg theme-bg"
-          style={{ "font-family": "monospace" }}
-        ></div>
+        <Show when={clicked() == "console"}>
+          <div
+            innerText={text()}
+            class="w-full h-full overflow-auto theme-fg theme-bg"
+            style={{ "font-family": "monospace" }}
+          ></div>
+        </Show>
+        <Show when={clicked() == "data"}>
+          <div
+            innerText="Data here"
+            class="w-full h-full overflow-auto theme-fg theme-bg"
+            style={{ "font-family": "monospace" }}
+          ></div>
+        </Show>
       </div>
     </div>
   );
