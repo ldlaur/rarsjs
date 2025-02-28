@@ -180,6 +180,96 @@ async function loadWasm(str, setText) {
 function doRiscV(str: string, setText) {
   loadWasm(str, setText);
 }
+import { For } from "solid-js";
+
+/*const RegisterTable = () => {
+  // Generate 31 dummy registers
+  const registers = Array.from({ length: 31 }, (_, i) => ({
+    id: i + 1,
+    name: i === 0 ? "x1/ra" : `x${i + 1}`,
+    value: "0xdeadbeef",
+  }));
+
+  return (
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-2">
+        <For each={registers}>
+          {(reg) => (
+            <div class="flex flex-col">
+              <div class="text-sm truncate">
+                {reg.name}
+              </div>
+              <div class="font-mono text-xs text-gray-800 truncate">
+                {reg.value}
+              </div>
+            </div>
+          )}
+        </For>
+      </div>
+  );
+};*/
+
+function useElementsInRow(container, setElementsInRow) {
+  const updateElementsInRow = () => {
+      let perRow = 0;
+	  let startY = 0;
+      for (let item of container.children) {
+		let currY = item.getBoundingClientRect().top;
+		if (perRow == 0) startY = currY;
+		if (currY != startY) break;
+		perRow++;
+      }
+	  setElementsInRow(perRow);
+  };
+
+  createEffect(() => {
+    updateElementsInRow();
+    const handleResize = () => {
+      updateElementsInRow();
+    };
+    window.addEventListener("resize", handleResize);
+    onCleanup(() => {
+      window.removeEventListener("resize", handleResize);
+    });
+  });
+
+}
+
+const RegisterTable = () => {
+  // Generate 31 dummy registers
+  const regnames = ["ra", "sp", "gp", "tp", "tp", "t0", "t1", "t2", "fp", "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"];
+  const registers = Array.from({ length: 31 }, (_, i) => ({
+    name: `x${i + 1}/${regnames[i]}`,
+    value: `0x${'deadbeef'}`
+  }));
+  let container;
+  const [elementsInRow, setElementsInRow] = createSignal(0);
+  onMount(() => useElementsInRow(container, setElementsInRow));
+  return (
+    <div class="flex flex-wrap w-full" ref={container}>
+      {registers.map((reg) => (
+        <div class="relative flex-grow flex-shrink basis-[0%] min-w-[var(--item-min-size)] pb-2 ">
+          <div class="">
+            <div class="text-center">
+              <div class="text-sm font-mono font-medium">
+                {reg.name}
+              </div>
+              <div class="text-xs font-mono">
+                {reg.value}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+	  
+      
+    <div class="flex-grow flex-shrink basis-[0%] " 
+           style={{ "flex-grow": elementsInRow()-31%elementsInRow() }} />
+    </div>
+  );
+};
+
+
+
 
 const App: Component = () => {
   let editor;
@@ -233,11 +323,12 @@ const App: Component = () => {
     });
   });
 
-  let [clicked, setClicked] = createSignal("console");
+  let [clicked, setClicked] = createSignal("regs");
 
   const doRun = () => {
     doRiscV(view.state.doc.toString(), setText);
   };
+  let [regsArr, setRegsArr] = createSignal(Array(31));
   return (
     <div class="h-dvh m-h-dvh flex flex-col justify-between overflow-hidden">
       <Navbar onRun={doRun} changeTheme={doChangeTheme}></Navbar>
@@ -253,20 +344,22 @@ const App: Component = () => {
           class="px-1 theme-fg"
           classList={{ "theme-bg": clicked() == "console" }}
           onClick={() => setClicked("console")}
+          on:touchstart={() => setClicked("console")}
         >
           console
         </button>
         <button
           class="px-1 theme-fg"
-          classList={{ "theme-bg": clicked() == "data" }}
-          onClick={() => setClicked("data")}
+          classList={{ "theme-bg": clicked() == "regs" }}
+          onClick={() => setClicked("regs")}
+          on:touchstart={() => setClicked("regs")}
         >
-          data
+          regs
         </button>
       </div>
       {/* flex-shrink: 0 here is very important! */}
       <div
-        class="w-full h-full"
+        class="w-full h-full theme-bg theme-fg"
         style={{ "flex-shrink": 0, height: `${size()}px` }}
       >
         <Show when={clicked() == "console"}>
@@ -276,13 +369,11 @@ const App: Component = () => {
             style={{ "font-family": "monospace" }}
           ></div>
         </Show>
-        <Show when={clicked() == "data"}>
-          <div
-            innerText="Data here"
-            class="w-full h-full overflow-auto theme-fg theme-bg"
-            style={{ "font-family": "monospace" }}
-          ></div>
-        </Show>
+        <Show when={clicked() == "regs"}>
+		    <div class="overflow-auto">  
+		    <RegisterTable />
+			</div>
+		</Show>
       </div>
     </div>
   );
