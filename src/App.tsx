@@ -29,9 +29,9 @@ function interpolate(color1, color2, percent) {
   const b2 = parseInt(color2.substring(5, 7), 16);
 
   // Interpolate the RGB values
-  const r = Math.round(r1 + (r2 - r1) * percent);
-  const g = Math.round(g1 + (g2 - g1) * percent);
-  const b = Math.round(b1 + (b2 - b1) * percent);
+  const r = Math.max(0, Math.min(255, Math.round(r1 + (r2 - r1) * percent)));
+  const g = Math.max(0, Math.min(255, Math.round(g1 + (g2 - g1) * percent)));
+  const b = Math.max(0, Math.min(255, Math.round(b1 + (b2 - b1) * percent)));
 
   // Convert the interpolated RGB values back to a hex color
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
@@ -70,6 +70,14 @@ function updateCss() {
     }
     .theme-fg {
       color: ${cssTheme.foreground};
+    }
+
+    .theme-border {
+      border-color: ${interpolate(
+        cssTheme.foreground,
+        cssTheme.background,
+        0.8
+      )};
     }
   `;
 }
@@ -181,95 +189,62 @@ function doRiscV(str: string, setText) {
   loadWasm(str, setText);
 }
 import { For } from "solid-js";
-
-/*const RegisterTable = () => {
-  // Generate 31 dummy registers
-  const registers = Array.from({ length: 31 }, (_, i) => ({
-    id: i + 1,
-    name: i === 0 ? "x1/ra" : `x${i + 1}`,
-    value: "0xdeadbeef",
-  }));
-
-  return (
-      <div class="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-2">
-        <For each={registers}>
-          {(reg) => (
-            <div class="flex flex-col">
-              <div class="text-sm truncate">
-                {reg.name}
-              </div>
-              <div class="font-mono text-xs text-gray-800 truncate">
-                {reg.value}
-              </div>
-            </div>
-          )}
-        </For>
-      </div>
-  );
-};*/
-
-function useElementsInRow(container, setElementsInRow) {
-  const updateElementsInRow = () => {
-      let perRow = 0;
-	  let startY = 0;
-      for (let item of container.children) {
-		let currY = item.getBoundingClientRect().top;
-		if (perRow == 0) startY = currY;
-		if (currY != startY) break;
-		perRow++;
-      }
-	  setElementsInRow(perRow);
-  };
-
-  createEffect(() => {
-    updateElementsInRow();
-    const handleResize = () => {
-      updateElementsInRow();
-    };
-    window.addEventListener("resize", handleResize);
-    onCleanup(() => {
-      window.removeEventListener("resize", handleResize);
-    });
-  });
-
-}
-
 const RegisterTable = () => {
   // Generate 31 dummy registers
-  const regnames = ["ra", "sp", "gp", "tp", "tp", "t0", "t1", "t2", "fp", "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"];
-  const registers = Array.from({ length: 31 }, (_, i) => ({
-    name: `x${i + 1}/${regnames[i]}`,
-    value: `0x${'deadbeef'}`
-  }));
-  let container;
-  const [elementsInRow, setElementsInRow] = createSignal(0);
-  onMount(() => useElementsInRow(container, setElementsInRow));
+  const registers = Array.from({ length: 31 }, (_, i) => "0xdeadbeef");
+  const regnames = [
+    "ra",
+    "sp",
+    "gp",
+    "tp",
+    "t0",
+    "t1",
+    "t2",
+    "fp",
+    "s1",
+    "a0",
+    "a1",
+    "a2",
+    "a3",
+    "a4",
+    "a5",
+    "a6",
+    "a7",
+    "s2",
+    "s3",
+    "s4",
+    "s5",
+    "s6",
+    "s7",
+    "s8",
+    "s9",
+    "s10",
+    "s11",
+    "t3",
+    "t4",
+    "t5",
+    "t6",
+  ];
+
   return (
-    <div class="flex flex-wrap w-full" ref={container}>
-      {registers.map((reg) => (
-        <div class="relative flex-grow flex-shrink basis-[0%] min-w-[var(--item-min-size)] pb-2 ">
-          <div class="">
-            <div class="text-center">
-              <div class="text-sm font-mono font-medium">
-                {reg.name}
-              </div>
-              <div class="text-xs font-mono">
-                {reg.value}
-              </div>
+    <div class="text-sm font-mono grid-cols-[repeat(auto-fit,minmax(18ch,1fr))] grid overflow-hidden">
+      <For each={registers}>
+        {(reg, idx) => (
+          <div class="justify-between flex flex-row box-content theme-border border-l border-b py-0.5">
+            <div class=" pl-1.5 font-bold pr-1" style="font-size: 0.8rem;">
+              {regnames[idx()]}/x{idx() + 1}
+            </div>
+            <div class="pr-1.5" style="font-size: 0.8rem;">
+              {reg}
             </div>
           </div>
-        </div>
-      ))}
-	  
-      
-    <div class="flex-grow flex-shrink basis-[0%] " 
-           style={{ "flex-grow": elementsInRow()-31%elementsInRow() }} />
+        )}
+      </For>
+      {/* Dummy for the left border of the last element */}
+      <div class="theme-border border-l"></div>
     </div>
   );
 };
-
-
-
 
 const App: Component = () => {
   let editor;
@@ -370,10 +345,10 @@ const App: Component = () => {
           ></div>
         </Show>
         <Show when={clicked() == "regs"}>
-		    <div class="overflow-auto">  
-		    <RegisterTable />
-			</div>
-		</Show>
+          <div class="overflow-auto">
+            <RegisterTable />
+          </div>
+        </Show>
       </div>
     </div>
   );
