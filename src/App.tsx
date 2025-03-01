@@ -71,7 +71,9 @@ function updateCss() {
     .theme-fg {
       color: ${cssTheme.foreground};
     }
-
+    .theme-scrollbar {
+      scrollbar-color: ${cssTheme.foreground} ${cssTheme.background};
+    }
     .theme-border {
       border-color: ${interpolate(
         cssTheme.foreground,
@@ -225,23 +227,41 @@ const RegisterTable = () => {
     "t5",
     "t6",
   ];
-
+  // all units being ch makes so that the precise sum is 1ch (left pad) + 7ch (x27/a10) + 10ch (0xdeadbeef) + 1ch (right pad)
+  // round to 20ch so it has some padding between regname and hex
+  // now i have the precise size in a font-independent format, as long as it's monospace
   return (
-    <div class="text-sm font-mono grid-cols-[repeat(auto-fit,minmax(18ch,1fr))] grid overflow-hidden">
+    <div class="text-sm font-mono grid-cols-[repeat(auto-fit,minmax(20ch,1fr))] grid w-full overflow-auto theme-scrollbar">
       <For each={registers}>
         {(reg, idx) => (
-          <div class="justify-between flex flex-row box-content theme-border border-l border-b py-0.5">
-            <div class=" pl-1.5 font-bold pr-1" style="font-size: 0.8rem;">
+          <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
+            <div class="pl-[1ch] font-bold">
               {regnames[idx()]}/x{idx() + 1}
             </div>
-            <div class="pr-1.5" style="font-size: 0.8rem;">
-              {reg}
-            </div>
+            <div class="pr-[1ch]">{reg}</div>
           </div>
         )}
       </For>
       {/* Dummy for the left border of the last element */}
       <div class="theme-border border-l"></div>
+    </div>
+  );
+};
+
+const MemoryView = () => {
+  const memory = Array.from({ length: 1024 }, (_, i) => "de de de de");
+  // all units being ch makes so that the precise sum is 1ch (left pad) + 7ch (x27/a10) + 10ch (0xdeadbeef) + 1ch (right pad)
+  // round to 20ch so it has some padding between regname and hex
+  // now i have the precise size in a font-independent format, as long as it's monospace
+  return (
+    <div class="text-sm font-mono grid-cols-[repeat(auto-fit,minmax(13ch,1fr))] grid overflow-hidden">
+      <For each={memory}>
+        {(val, idx) => (
+          <div class="justify-between flex flex-row box-content theme-border py-[0.5ch]">
+            <div class="pr-[1ch]">{val}</div>
+          </div>
+        )}
+      </For>
     </div>
   );
 };
@@ -298,7 +318,7 @@ const App: Component = () => {
     });
   });
 
-  let [clicked, setClicked] = createSignal("regs");
+  let [clicked, setClicked] = createSignal("mem");
 
   const doRun = () => {
     doRiscV(view.state.doc.toString(), setText);
@@ -313,7 +333,7 @@ const App: Component = () => {
         on:touchstart={resizeDown}
         ref={handle}
         style={{ "flex-shrink": 0 }}
-        class="w-4 w-full theme-separator cursor-row-resize"
+        class="w-full theme-separator cursor-row-resize text-sm"
       >
         <button
           class="px-1 theme-fg"
@@ -331,6 +351,14 @@ const App: Component = () => {
         >
           regs
         </button>
+        <button
+          class="px-1 theme-fg"
+          classList={{ "theme-bg": clicked() == "mem" }}
+          onClick={() => setClicked("mem")}
+          on:touchstart={() => setClicked("mem")}
+        >
+          mem
+        </button>
       </div>
       {/* flex-shrink: 0 here is very important! */}
       <div
@@ -339,15 +367,16 @@ const App: Component = () => {
       >
         <Show when={clicked() == "console"}>
           <div
-            innerText={text()}
-            class="w-full h-full overflow-auto theme-fg theme-bg"
+            innerText={"hello\n".repeat(1000)}
+            class="w-full h-full overflow-auto theme-scrollbar theme-fg theme-bg"
             style={{ "font-family": "monospace" }}
           ></div>
         </Show>
         <Show when={clicked() == "regs"}>
-          <div class="overflow-auto">
             <RegisterTable />
-          </div>
+        </Show>
+        <Show when={clicked() == "mem"}>
+            <MemoryView />
         </Show>
       </div>
     </div>
