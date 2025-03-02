@@ -8,13 +8,64 @@ import {
   type Component,
 } from "solid-js";
 import { basicSetup, EditorView } from "codemirror";
-import { Compartment, EditorState } from "@codemirror/state";
+import {
+  Compartment,
+  EditorState,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
 import {
   defaultSettingsGruvboxDark,
   defaultSettingsGruvboxLight,
   gruvboxDark,
   gruvboxLight,
 } from "@uiw/codemirror-theme-gruvbox-dark";
+import { ViewPlugin, DecorationSet, ViewUpdate, lineNumberMarkers } from "@codemirror/view";
+
+import { Extension } from "@codemirror/state";
+import { Facet } from "@codemirror/state";
+
+import { Decoration } from "@codemirror/view";
+import { RangeSetBuilder } from "@codemirror/state";
+// Define an effect to update the highlighted line number.
+const setHighlightedLine = StateEffect.define<number | null>();
+
+// Create a state field that produces a decoration for the highlighted line.
+const highlightedLineField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(highlights, tr) {
+    // Look for our external effect that sets a new highlighted line.
+    let newLine: number | null = null;
+    for (let effect of tr.effects) {
+      if (effect.is(setHighlightedLine)) {
+        newLine = effect.value;
+      }
+    }
+    if (newLine !== null) {
+      // Assume line numbers are 1-indexed. Validate the number if necessary.
+      if (newLine < 1 || newLine > tr.state.doc.lines) return Decoration.none;
+      // Get the line's document position.
+      let line = tr.state.doc.line(newLine);
+      // Create a decoration that highlights the entire line.
+      console.log("here")
+      return Decoration.set([
+        Decoration.line({class: "cm-debugging"}).range(line.from, line.from)
+      ]);
+    }
+    // If no new effect, remap the existing decoration to account for document changes.
+    return highlights.map(tr.changes);
+  },
+  provide: f => EditorView.decorations.from(f)
+});
+
+// Export an extension that includes our field.
+const debuggerLineHighlightExtension = [
+  highlightedLineField
+];
+
+
 let view: EditorView;
 let cmTheme = new Compartment();
 let cssTheme = defaultSettingsGruvboxLight;
@@ -44,6 +95,9 @@ function updateCss() {
   themeStyle.innerHTML = `
     .theme-bg {
       background-color: ${cssTheme.background};
+    }
+    .cm-debugging {
+      background-color: #f0a020;
     }
     .theme-bg-hover:hover {
       background-color: ${interpolate(
@@ -92,6 +146,7 @@ function updateCss() {
         0.5
       )} ${cssTheme.background};
     }
+      
     .theme-border {
       border-color: ${interpolate(
         cssTheme.foreground,
@@ -155,59 +210,96 @@ const Navbar: Component<NavbarProps> = (props: NavbarProps) => {
   );
 };
 
-async function loadWasm(str, setText) {
-  let blob = await (
-    await fetch("http://localhost:3000/main.wasm")
-  ).arrayBuffer();
-  let textbuffer = "";
-  let memory = new WebAssembly.Memory({ initial: 16 });
-  let stop = false;
-  let wasm = await WebAssembly.instantiate(blob, {
-    env: {
-      memory: memory,
-      putchar: (n) => {
-        textbuffer += String.fromCharCode(n);
-        setText(textbuffer);
-      },
-      emu_exit: () => {
-        stop = true;
-      },
-      panic: () => {
-        stop = true;
-        alert("wasm panic");
-      },
-      gettime64: () => BigInt(new Date().getTime() * 10 * 1000),
-    },
-  });
+let wasmInstance = null;
+let memory = new WebAssembly.Memory({ initial: 16 });
+let loadedPromise = null;
+let stop = false;
+let textbuffer;
+let globalSetText;
+let originalMemory;
+let count;
+
+function loadWasmModule() {
+  if (loadedPromise) return loadedPromise;
+  loadedPromise = fetch("http://localhost:3000/main.wasm")
+    .then((res) => res.arrayBuffer())
+    .then((buffer) =>
+      WebAssembly.instantiate(buffer, {
+        env: {
+          memory: memory,
+          putchar: (n) => {
+            textbuffer += String.fromCharCode(n);
+            globalSetText(textbuffer);
+          },
+          emu_exit: () => {
+            console.log("exit");
+            stop = true;
+          },
+          panic: () => {
+            alert("wasm panic");
+          },
+          gettime64: () => BigInt(new Date().getTime() * 10 * 1000),
+        },
+      })
+    )
+    .then((result) => {
+      wasmInstance = result.instance;
+      originalMemory = new Uint8Array(memory.buffer.slice(0));
+      console.log("Wasm module loaded");
+    })
+    .catch((err) => {
+      console.error("Failed to load wasm module", err);
+    });
+  return loadedPromise;
+}
+
+async function buildWasm(str) {
+  await loadWasmModule();
+  stop = false;
+  textbuffer = "";
+  count = 0;
 
   const memBuffer = new Uint8Array(memory.buffer);
-  let offset = memBuffer.byteLength;
+  memBuffer.set(originalMemory);
+
   const encoder = new TextEncoder();
   const strBytes = encoder.encode(str);
   const requiredBytes = strBytes.length;
   const pageSize = 64 * 1024;
+
+  let offset = originalMemory.length;
   if (offset + requiredBytes > memory.buffer.byteLength) {
     const pagesNeeded = Math.ceil(requiredBytes / pageSize);
     memory.grow(pagesNeeded);
   }
+
   const updatedMemoryView = new Uint8Array(
     memory.buffer,
     offset,
     requiredBytes
   );
   updatedMemoryView.set(strBytes);
-  console.log(wasm.instance.exports);
-  wasm.instance.exports.assemble(offset, requiredBytes);
-  let count = 0;
-  while (!stop && count < 10000) {
-    wasm.instance.exports.emulate(offset, requiredBytes);
-    count++;
-  }
+
+  wasmInstance.exports.assemble(offset, requiredBytes);
+  view.dispatch({
+    effects: setHighlightedLine.of(1)
+  });
+
+}
+
+async function runWasm(str) {
+  wasmInstance.exports.emulate();
+  count++;
+  view.dispatch({
+    effects: setHighlightedLine.of(count+1)
+  });
 }
 
 function doRiscV(str: string, setText) {
-  loadWasm(str, setText);
+  if (count == undefined) buildWasm(str);
+  else runWasm(str);
 }
+
 import { For } from "solid-js";
 import { VirtualList } from "@solid-primitives/virtual";
 import { createVirtualizer } from "@tanstack/solid-virtual";
@@ -408,7 +500,7 @@ function MemoryView() {
     if (cw > 0 && cWidth > 0) {
       const count = Math.floor(cWidth / cw);
       setChunksPerLine(count);
-      setLineCount(count == 0 ? (131072 / 4) : ((131072 / 4) / count));
+      setLineCount(count == 0 ? 131072 / 4 : 131072 / 4 / count);
     }
   });
 
@@ -455,12 +547,10 @@ function MemoryView() {
                   let str = "";
                   let chunks = chunksPerLine() - 1;
                   if (chunksPerLine() < 2) chunks = 1;
-                  
+
                   for (let i = 0; i < chunks; i++) {
                     for (let j = 0; j < 4; j++) {
-                      str += data[
-                        (virtualItem.index * chunks + i) * 4 + j
-                      ]
+                      str += data[(virtualItem.index * chunks + i) * 4 + j]
                         .toString(16)
                         .padStart(2, "0");
                     }
@@ -575,15 +665,21 @@ const App: Component = () => {
   let handle;
 
   const [text, setText] = createSignal("");
-
+  globalSetText = setText;
   onMount(() => {
     const theme = EditorView.theme({
       "&.cm-editor": { height: "100%" },
       ".cm-scroller": { overflow: "auto" },
+      // cm-debugging defined elsewhere
     });
     const state = EditorState.create({
       doc: "",
-      extensions: [basicSetup, theme, cmTheme.of(gruvboxLight)],
+      extensions: [
+        basicSetup,
+        theme,
+        cmTheme.of(gruvboxLight),
+        debuggerLineHighlightExtension,
+      ],
     });
     view = new EditorView({ state, parent: editor });
   });
@@ -607,7 +703,7 @@ const App: Component = () => {
             "vertical",
             PaneResize("horizontal", <RegisterTable />, <MemoryView />),
             <div
-              innerText={"hello\n".repeat(10)}
+              innerText={text()}
               class="w-full h-full overflow-auto theme-scrollbar theme-fg theme-bg"
               style={{ "font-family": "monospace" }}
             ></div>

@@ -116,16 +116,24 @@ typedef struct {
     char *input;
     size_t pos;
     size_t size;
+    int lineidx;
 } Parser;
+
+void parser_advance(Parser* p) {
+    if (p->input[p->pos] == '\n') p->lineidx++;
+    p->pos++;
+}
+
+
 
 void skip_whitespace(Parser* p) {
     while (p->pos < p->size && whitespace(p->input[p->pos]))
-        p->pos++;
+        parser_advance(p);
 }
 
 bool parse_alnum(Parser *p, char** str, size_t* len) {
     size_t start = p->pos;
-    while (p->pos < p->size && alnum(p->input[p->pos])) p->pos++;
+    while (p->pos < p->size && alnum(p->input[p->pos])) parser_advance(p);
     size_t end = p->pos;
     if (start == end) return false;
     *str = p->input + start;
@@ -140,8 +148,8 @@ bool str_eq(char* txt, size_t len, const char* c) {
 
 bool parse_simm(Parser *p, char** str, size_t* len) {
     size_t start = p->pos;
-    if (p->pos < p->size && p->input[p->pos] == '-' ) p->pos++;
-    while (p->pos < p->size && alnum(p->input[p->pos])) p->pos++;
+    if (p->pos < p->size && p->input[p->pos] == '-' ) parser_advance(p);
+    while (p->pos < p->size && alnum(p->input[p->pos])) parser_advance(p);
     size_t end = p->pos;
     if (start == end) return false;
     *str = p->input + start;
@@ -174,21 +182,25 @@ int atoi_len(const char* str, int len) {
     return tmp;
 }
 
-void asm_emit(u32 inst) {
-    ram[asm_emit_idx++] = inst;
-    ram[asm_emit_idx++] = inst >> 8;
-    ram[asm_emit_idx++] = inst >> 16;
-    ram[asm_emit_idx++] = inst >> 24;
-}
 
 struct label_data {
     char* txt;
     size_t len;
     u32 addr;
 };
-
 struct label_data labels[256];
+int ram_by_linenum[65536] = {-1};
 int labels_bump = 0;
+
+
+void asm_emit(u32 inst, int linenum) {
+    ram_by_linenum[asm_emit_idx / 4] = linenum;
+    ram[asm_emit_idx++] = inst;
+    ram[asm_emit_idx++] = inst >> 8;
+    ram[asm_emit_idx++] = inst >> 16;
+    ram[asm_emit_idx++] = inst >> 24;
+}
+
 
 
 typedef bool DeferredInsnCb(Parser* p, char* opcode, size_t opcode_len);
@@ -206,7 +218,7 @@ int deferred_insns_cnt = 0;
 bool expect(Parser *p, char c) {
     if (p->pos >= p->size) return false;
     if (p->input[p->pos] != c) return false;
-    p->pos++;
+    parser_advance(p);
     return 1;
 }
 
@@ -256,7 +268,7 @@ bool handle_alu_reg(Parser* p, char* opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "rem"))  inst = REM  (d, s1, s2);
     else if (str_eq(opcode, opcode_len, "remu")) inst = REMU (d, s1, s2);
     
-    asm_emit(inst);
+    asm_emit(inst, p->lineidx);
     return true;
 }
 
@@ -296,7 +308,7 @@ bool handle_alu_imm(Parser* p, char* opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "srli"))  inst = SRLI (d, s1, simm);
     else if (str_eq(opcode, opcode_len, "srai"))  inst = SRAI (d, s1, simm);
     
-    asm_emit(inst);
+    asm_emit(inst, p->lineidx);
 
     return true;
 }
@@ -339,7 +351,7 @@ bool handle_ldst(Parser* p, char* opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "sh"))  inst = SH (reg, mem, simm);
     else if (str_eq(opcode, opcode_len, "sw"))  inst = SW (reg, mem, simm);
 
-    asm_emit(inst);
+    asm_emit(inst, p->lineidx);
 
     return true;
 }
@@ -399,7 +411,7 @@ bool handle_branch(Parser* p, char* opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "bltu"))inst = BLTU(s1, s2, simm);
     else if (str_eq(opcode, opcode_len, "bgeu"))inst = BGEU(s1, s2, simm);
 
-    asm_emit(inst);
+    asm_emit(inst, p->lineidx);
     return true;
 }
 
@@ -439,7 +451,7 @@ bool handle_jumps(Parser* p, char* opcode, size_t opcode_len) {
         inst = JALR(d, s1, simm);
     } 
 
-    asm_emit(inst);
+    asm_emit(inst, p->lineidx);
     return true;
 }
 
@@ -466,7 +478,7 @@ bool handle_upper(Parser* p, char* opcode, size_t opcode_len) {
     if (str_eq(opcode, opcode_len, "lui")) inst = LUI(d, simm);
     else if (str_eq(opcode, opcode_len, "auipc")) inst = AUIPC(d, simm);
 
-    asm_emit(inst);
+    asm_emit(inst, p->lineidx);
 
     return true;
 }
@@ -492,20 +504,20 @@ bool handle_li(Parser* p, char* opcode, size_t opcode_len) {
     assert(d != -1);
 
     if (simm >= -2048 && simm <= 2047) {
-        asm_emit(ADDI(d, 0, simm));
+        asm_emit(ADDI(d, 0, simm), p->lineidx);
     } else {
         int lo = simm & 0xFFF;
         if (lo >= 0x800) lo -= 0x1000;
         int hi = (simm - lo) >> 12;
-        asm_emit(LUI(d, hi));
-        asm_emit(ADDI(d, d, lo)); 
+        asm_emit(LUI(d, hi), p->lineidx);
+        asm_emit(ADDI(d, d, lo), p->lineidx); 
     }
     return true;
 }
 
 
-void handle_ecall() {
-    asm_emit(0x73);
+void handle_ecall(Parser* p) {
+    asm_emit(0x73, p->lineidx);
 }
 
 
@@ -594,13 +606,12 @@ export void assemble(char* txt, size_t s) {
         }
 
         if (str_eq(opcode, opcode_len, "ecall")) {
-            handle_ecall();
+            handle_ecall(p);
             found = true;
         }
 
         assert(found);
     }
-	printf("deferring\n");
     int oldemit = asm_emit_idx;
 	for (int i = 0; i < deferred_insns_cnt; i++) {
 		struct DeferredInsn* insn = &deferred_insns[i];
