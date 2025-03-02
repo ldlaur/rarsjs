@@ -1,5 +1,6 @@
 import {
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -71,8 +72,25 @@ function updateCss() {
     .theme-fg {
       color: ${cssTheme.foreground};
     }
-    .theme-scrollbar {
-      scrollbar-color: ${cssTheme.foreground} ${cssTheme.background};
+    .theme-fg2 {
+      color: ${interpolate(cssTheme.background, cssTheme.foreground, 0.5)};
+    }
+    .theme-scrollbar-slim {
+    scrollbar-width: thin;
+
+      scrollbar-color: ${interpolate(
+        cssTheme.background,
+        cssTheme.foreground,
+        0.5
+      )} ${cssTheme.background};
+    }
+      .theme-scrollbar {
+
+      scrollbar-color: ${interpolate(
+        cssTheme.background,
+        cssTheme.foreground,
+        0.5
+      )} ${cssTheme.background};
     }
     .theme-border {
       border-color: ${interpolate(
@@ -191,6 +209,8 @@ function doRiscV(str: string, setText) {
   loadWasm(str, setText);
 }
 import { For } from "solid-js";
+import { VirtualList } from "@solid-primitives/virtual";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 const RegisterTable = () => {
   // Generate 31 dummy registers
   const registers = Array.from({ length: 31 }, (_, i) => "0xdeadbeef");
@@ -231,47 +251,237 @@ const RegisterTable = () => {
   // round to 20ch so it has some padding between regname and hex
   // now i have the precise size in a font-independent format, as long as it's monospace
   return (
-    <div class="text-sm font-mono grid-cols-[repeat(auto-fit,minmax(20ch,1fr))] grid w-full overflow-auto theme-scrollbar">
-      <For each={registers}>
-        {(reg, idx) => (
-          <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
-            <div class="pl-[1ch] font-bold">
-              {regnames[idx()]}/x{idx() + 1}
+    <div class="overflow-auto flex-grow h-full self-start flex-shrink text-sm font-mono  theme-scrollbar-slim theme-border">
+      <div class="grid-cols-[repeat(auto-fit,minmax(20ch,1fr))] grid">
+        <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
+          <div class="self-center pl-[1ch] font-bold">pc</div>
+          <div class="self-center pr-[1ch]">{"0xdeadbeef"}</div>
+        </div>
+
+        <For each={registers}>
+          {(reg, idx) => (
+            <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
+              <div class="self-center pl-[1ch] font-bold">
+                {regnames[idx()]}/x{idx() + 1}
+              </div>
+              <div class="self-center pr-[1ch]">{reg}</div>
             </div>
-            <div class="pr-[1ch]">{reg}</div>
-          </div>
-        )}
-      </For>
-      {/* Dummy for the left border of the last element */}
-      <div class="theme-border border-l"></div>
+          )}
+        </For>
+        {/* Dummy for the left border of the last element */}
+        <div class="theme-border border-l"></div>
+      </div>
     </div>
   );
 };
 
-const MemoryView = () => {
-  const memory = Array.from({ length: 1024 }, (_, i) => "de de de de");
-  // all units being ch makes so that the precise sum is 1ch (left pad) + 7ch (x27/a10) + 10ch (0xdeadbeef) + 1ch (right pad)
-  // round to 20ch so it has some padding between regname and hex
-  // now i have the precise size in a font-independent format, as long as it's monospace
+const ROW_HEIGHT = 25;
+
+/*
+
+function HexEditor(props) {
+  let container;      // ref to the container div
+  let dummyChunk;     // hidden dummy element used to measure chunk width
+
+  // Signals to store the container width, measured chunk width, and computed chunks per line
+  const [containerWidth, setContainerWidth] = createSignal(0);
+  const [chunkWidth, setChunkWidth] = createSignal(0);
+  const [chunksPerLine, setChunksPerLine] = createSignal(1);
+
+  // Use provided data or generate some dummy data (256 bytes)
+  const data = props.data || (() => {
+    const arr = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) { arr[i] = i; }
+    return arr;
+  })();
+
+  // Break the data into 4-byte chunks (each chunk will be rendered as 4 bytes in hex)
+  const chunksArray = [];
+  for (let i = 0; i < data.length; i += 4) {
+    const chunk = Array.from(data.slice(i, i + 4));
+    chunksArray.push(chunk);
+  }
+
+  // Signal for the lines (each line is an array of chunks)
+  const [lines, setLines] = createSignal([]);
+
+  // Function to re-calculate the lines based on the number of chunks that fit per line
+  const updateLines = () => {
+    const perLine = chunksPerLine();
+    const newLines = [];
+    for (let i = 0; i < chunksArray.length; i += perLine) {
+      newLines.push(chunksArray.slice(i, i + perLine));
+    }
+    setLines(newLines);
+  };
+
+  onMount(() => {
+    // Measure the dummy element’s width once it is rendered.
+    if (dummyChunk) {
+      setChunkWidth(dummyChunk.getBoundingClientRect().width);
+    }
+    // Use ResizeObserver to monitor the container’s width.
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    if (container) ro.observe(container);
+    return () => ro.disconnect();
+  });
+
+  // Recompute how many chunks fit per line whenever container or chunk widths change.
+  createEffect(() => {
+    const cw = chunkWidth();
+    const cWidth = containerWidth();
+    if (cw > 0 && cWidth > 0) {
+      // Add some extra spacing (8px here, adjust as needed) to account for margins/padding.
+      const count = Math.floor(cWidth / (cw + 8));
+      setChunksPerLine(count || 1);
+      updateLines();
+    }
+  });
+
   return (
-    <div class="text-sm font-mono grid-cols-[repeat(auto-fit,minmax(13ch,1fr))] grid overflow-hidden">
-      <For each={memory}>
-        {(val, idx) => (
-          <div class="justify-between flex flex-row box-content theme-border py-[0.5ch]">
-            <div class="pr-[1ch]">{val}</div>
+    <div
+      ref={container}
+      class="p-4 border border-gray-300 resize overflow-auto"
+    >
+      <div
+        ref={dummyChunk}
+        class="invisible absolute font-mono p-1 bg-gray-800 text-green-400 rounded"
+      >
+        {"00 00 00 00"}
+      </div>
+
+      <For each={lines()}>
+        {line => (
+          <div class="flex space-x-2 mb-2">
+            <For each={line}>
+              {chunk => (
+                <div class="bg-gray-800 text-green-400 font-mono p-1 rounded">
+                  {chunk
+                    .map((byte) => byte.toString(16).padStart(2, "0"))
+                    .join(" ")}
+                </div>
+              )}
+            </For>
           </div>
         )}
       </For>
     </div>
   );
-};
+}
+*/
+function MemoryView() {
+  let parentRef;
+  const data = (() => {
+    const arr = new Uint8Array(131072);
+    for (let i = 0; i < 131072; i++) {
+      arr[i] = i;
+    }
+    return arr;
+  })();
+  let dummyChunk;
+  const [containerWidth, setContainerWidth] = createSignal(0);
+  const [chunkWidth, setChunkWidth] = createSignal(0);
+  const [chunksPerLine, setChunksPerLine] = createSignal(1);
+  const [lineCount, setLineCount] = createSignal(10);
 
-const App: Component = () => {
-  let editor;
+  onMount(() => {
+    if (dummyChunk) {
+      setChunkWidth(dummyChunk.getBoundingClientRect().width);
+    }
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    if (parentRef) ro.observe(parentRef);
+    return () => ro.disconnect();
+  });
+
+  // Recompute how many chunks fit per line whenever container or chunk widths change.
+  createEffect(() => {
+    const cw = chunkWidth();
+    const cWidth = containerWidth();
+    if (cw > 0 && cWidth > 0) {
+      const count = Math.floor(cWidth / cw);
+      setChunksPerLine(count);
+      setLineCount(count == 0 ? (131072 / 4) : ((131072 / 4) / count));
+    }
+  });
+
+  const rowVirtualizer = createVirtualizer({
+    get count() {
+      return lineCount();
+    },
+    getScrollElement: () => parentRef ?? null,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 5,
+  });
+
+  return (
+    <div ref={parentRef} class="h-full overflow-auto theme-scrollbar px-2">
+      <div ref={dummyChunk} class="invisible absolute font-mono">
+        {"000000000"}
+      </div>
+
+      <div
+        style={{
+          height: `${rowVirtualizer.getTotalSize()}px`,
+          width: "100%",
+          position: "relative",
+        }}
+      >
+        <For each={rowVirtualizer.getVirtualItems()}>
+          {(virtualItem) => (
+            <div
+              style={{
+                position: "absolute",
+                top: `${virtualItem.start}px`,
+                width: "100%",
+              }}
+            >
+              <div class="font-mono">
+                <Show when={chunksPerLine() > 1}>
+                  <a class="theme-fg2 pr-2">
+                    {(virtualItem.index * (chunksPerLine() - 1) * 4)
+                      .toString(16)
+                      .padStart(8, "0")}
+                  </a>
+                </Show>
+                {(() => {
+                  let str = "";
+                  let chunks = chunksPerLine() - 1;
+                  if (chunksPerLine() < 2) chunks = 1;
+                  
+                  for (let i = 0; i < chunks; i++) {
+                    for (let j = 0; j < 4; j++) {
+                      str += data[
+                        (virtualItem.index * chunks + i) * 4 + j
+                      ]
+                        .toString(16)
+                        .padStart(2, "0");
+                    }
+                    str += " ";
+                  }
+                  return str;
+                })()}
+              </div>
+            </div>
+          )}
+        </For>
+      </div>
+    </div>
+  );
+}
+
+function PaneResize(direction, a, b) {
   let handle;
+  let container;
 
   const [size, setSize] = createSignal(200);
-  const [text, setText] = createSignal("");
 
   const [resizeState, setResizeState] = createSignal(null);
 
@@ -284,17 +494,29 @@ const App: Component = () => {
 
   const resizeDown = (e) => {
     e.preventDefault();
-    const clientY = e.clientY ?? e.touches[0]?.clientY;
     document.body.style.pointerEvents = "none";
     document.body.style.userSelect = "none";
     handle.style.pointerEvents = "auto";
-    setResizeState({ origSize: size(), origY: clientY });
+    const client =
+      direction == "vertical"
+        ? e.clientY ?? e.touches[0]?.clientY
+        : e.clientX ?? e.touches[0]?.clientX;
+    setResizeState({ origSize: size(), orig: client });
   };
 
   const resizeMove = (e) => {
     if (resizeState() === null) return;
-    const clientY = e.clientY ?? e.touches[0]?.clientY;
-    setSize(resizeState().origSize - (clientY - resizeState().origY));
+    const client =
+      direction == "vertical"
+        ? e.clientY ?? e.touches[0]?.clientY
+        : e.clientX ?? e.touches[0]?.clientX;
+    const calcSize = resizeState().origSize + (client - resizeState().orig);
+    setSize(
+      Math.min(
+        calcSize,
+        direction == "vertical" ? container.clientHeight : container.clientWidth
+      )
+    );
   };
 
   onMount(() => {
@@ -302,7 +524,59 @@ const App: Component = () => {
     document.addEventListener("touchmove", resizeMove);
     document.addEventListener("mouseup", resizeUp);
     document.addEventListener("touchend", resizeUp);
+    onCleanup(() => {
+      view.destroy();
+      document.removeEventListener("mousemove", resizeMove);
+      document.removeEventListener("touchmove", resizeMove);
+      document.removeEventListener("mouseup", resizeUp);
+      document.removeEventListener("touchend", resizeUp);
+    });
+  });
+  return (
+    <div
+      class="flex w-full h-full max-h-full max-w-full theme-fg theme-bg"
+      ref={container}
+      classList={{
+        "flex-col": direction == "vertical",
+        "flex-row": direction == "horizontal",
+      }}
+    >
+      <div
+        class="theme-bg theme-fg flex-shrink overflow-hidden"
+        style={{
+          height: direction == "vertical" ? `${size()}px` : "auto",
+          "min-height": direction == "vertical" ? `${size()}px` : "auto",
+          width: direction == "horizontal" ? `${size()}px` : "auto",
+          "min-width": direction == "horizontal" ? `${size()}px` : "auto",
+        }}
+      >
+        {a}
+      </div>
+      <div
+        on:mousedown={resizeDown}
+        on:touchstart={resizeDown}
+        ref={handle}
+        style={{ "flex-shrink": 0 }}
+        class={
+          direction == "vertical"
+            ? "w-full h-1 theme-separator cursor-row-resize"
+            : "h-full w-1 theme-separator cursor-col-resize"
+        }
+      ></div>
+      <div class="theme-bg theme-fg flex-grow flex-shrink overflow-hidden">
+        {b}
+      </div>{" "}
+    </div>
+  );
+}
 
+const App: Component = () => {
+  let editor;
+  let handle;
+
+  const [text, setText] = createSignal("");
+
+  onMount(() => {
     const theme = EditorView.theme({
       "&.cm-editor": { height: "100%" },
       ".cm-scroller": { overflow: "auto" },
@@ -312,72 +586,33 @@ const App: Component = () => {
       extensions: [basicSetup, theme, cmTheme.of(gruvboxLight)],
     });
     view = new EditorView({ state, parent: editor });
-
-    onCleanup(() => {
-      view.destroy();
-    });
   });
 
-  let [clicked, setClicked] = createSignal("mem");
+  let [clicked, setClicked] = createSignal("data");
 
   const doRun = () => {
     doRiscV(view.state.doc.toString(), setText);
   };
   let [regsArr, setRegsArr] = createSignal(Array(31));
   return (
-    <div class="h-dvh m-h-dvh flex flex-col justify-between overflow-hidden">
+    <div class="h-dvh max-h-dvh w-dvw max-w-dvw flex flex-col justify-between overflow-hidden">
       <Navbar onRun={doRun} changeTheme={doChangeTheme}></Navbar>
-      <main class="w-full h-full overflow-hidden" ref={editor} />
-      <div
-        on:mousedown={resizeDown}
-        on:touchstart={resizeDown}
-        ref={handle}
-        style={{ "flex-shrink": 0 }}
-        class="w-full theme-separator cursor-row-resize text-sm"
-      >
-        <button
-          class="px-1 theme-fg"
-          classList={{ "theme-bg": clicked() == "console" }}
-          onClick={() => setClicked("console")}
-          on:touchstart={() => setClicked("console")}
-        >
-          console
-        </button>
-        <button
-          class="px-1 theme-fg"
-          classList={{ "theme-bg": clicked() == "regs" }}
-          onClick={() => setClicked("regs")}
-          on:touchstart={() => setClicked("regs")}
-        >
-          regs
-        </button>
-        <button
-          class="px-1 theme-fg"
-          classList={{ "theme-bg": clicked() == "mem" }}
-          onClick={() => setClicked("mem")}
-          on:touchstart={() => setClicked("mem")}
-        >
-          mem
-        </button>
-      </div>
-      {/* flex-shrink: 0 here is very important! */}
-      <div
-        class="w-full h-full theme-bg theme-fg"
-        style={{ "flex-shrink": 0, height: `${size()}px` }}
-      >
-        <Show when={clicked() == "console"}>
-          <div
-            innerText={"hello\n".repeat(1000)}
-            class="w-full h-full overflow-auto theme-scrollbar theme-fg theme-bg"
-            style={{ "font-family": "monospace" }}
-          ></div>
-        </Show>
-        <Show when={clicked() == "regs"}>
-            <RegisterTable />
-        </Show>
-        <Show when={clicked() == "mem"}>
-            <MemoryView />
-        </Show>
+
+      <div class="flex w-full h-full overflow-hidden">
+        {PaneResize(
+          "horizontal",
+          <main class="w-full h-full overflow-hidden" ref={editor} />,
+
+          PaneResize(
+            "vertical",
+            PaneResize("horizontal", <RegisterTable />, <MemoryView />),
+            <div
+              innerText={"hello\n".repeat(10)}
+              class="w-full h-full overflow-auto theme-scrollbar theme-fg theme-bg"
+              style={{ "font-family": "monospace" }}
+            ></div>
+          )
+        )}
       </div>
     </div>
   );
