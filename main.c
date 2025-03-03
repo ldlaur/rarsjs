@@ -548,6 +548,7 @@ export void assemble(char* txt, size_t s) {
     parser.input = txt;
     parser.size = s;
     parser.pos = 0;
+    parser.lineidx = 1;
     Parser* p = &parser;
 
     while (1) {

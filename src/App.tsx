@@ -20,13 +20,22 @@ import {
   gruvboxDark,
   gruvboxLight,
 } from "@uiw/codemirror-theme-gruvbox-dark";
-import { ViewPlugin, DecorationSet, ViewUpdate, lineNumberMarkers } from "@codemirror/view";
+import {
+  ViewPlugin,
+  DecorationSet,
+  ViewUpdate,
+  lineNumberMarkers,
+} from "@codemirror/view";
 
 import { Extension } from "@codemirror/state";
 import { Facet } from "@codemirror/state";
 
 import { Decoration } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
+
+const [dummy, setDummy] = createSignal(0);
+let riscvRam;
+
 // Define an effect to update the highlighted line number.
 const setHighlightedLine = StateEffect.define<number | null>();
 
@@ -49,22 +58,19 @@ const highlightedLineField = StateField.define<DecorationSet>({
       // Get the line's document position.
       let line = tr.state.doc.line(newLine);
       // Create a decoration that highlights the entire line.
-      console.log("here")
+      console.log("here");
       return Decoration.set([
-        Decoration.line({class: "cm-debugging"}).range(line.from, line.from)
+        Decoration.line({ class: "cm-debugging" }).range(line.from, line.from),
       ]);
     }
     // If no new effect, remap the existing decoration to account for document changes.
     return highlights.map(tr.changes);
   },
-  provide: f => EditorView.decorations.from(f)
+  provide: (f) => EditorView.decorations.from(f),
 });
 
 // Export an extension that includes our field.
-const debuggerLineHighlightExtension = [
-  highlightedLineField
-];
-
+const debuggerLineHighlightExtension = [highlightedLineField];
 
 let view: EditorView;
 let cmTheme = new Compartment();
@@ -97,7 +103,9 @@ function updateCss() {
       background-color: ${cssTheme.background};
     }
     .cm-debugging {
-      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"};
+      background-color: ${
+        cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
+      };
     }
     .theme-bg-hover:hover {
       background-color: ${interpolate(
@@ -282,18 +290,17 @@ async function buildWasm(str) {
 
   wasmInstance.exports.assemble(offset, requiredBytes);
   view.dispatch({
-    effects: setHighlightedLine.of(1)
+    effects: setHighlightedLine.of(1),
   });
+
+  riscvRam = new Uint8Array(memory.buffer, wasmInstance.exports.ram, 65536);
+  setDummy(dummy() + 1);
 
 }
 
 async function runWasm(str) {
   wasmInstance.exports.emulate();
-  const pc = new Uint32Array(
-    memory.buffer,
-    wasmInstance.exports.ip,
-    4
-  );
+  const pc = new Uint32Array(memory.buffer, wasmInstance.exports.ip, 4);
   const lines = new Uint32Array(
     memory.buffer,
     wasmInstance.exports.ram_by_linenum,
@@ -302,9 +309,12 @@ async function runWasm(str) {
   count++;
   let pc_word = pc[0] / 4;
   let lineno = lines[pc_word];
-  view.dispatch({
-    effects: setHighlightedLine.of(lineno+1)
+  if (lineno != 0) { view.dispatch({
+    effects: setHighlightedLine.of(lineno),
   });
+}
+
+  setDummy(dummy() + 1);
 }
 
 function doRiscV(str: string, setText) {
@@ -476,16 +486,12 @@ function HexEditor(props) {
     </div>
   );
 }
+
+
 */
 function MemoryView() {
   let parentRef;
-  const data = (() => {
-    const arr = new Uint8Array(131072);
-    for (let i = 0; i < 131072; i++) {
-      arr[i] = i;
-    }
-    return arr;
-  })();
+
   let dummyChunk;
   const [containerWidth, setContainerWidth] = createSignal(0);
   const [chunkWidth, setChunkWidth] = createSignal(0);
@@ -512,7 +518,7 @@ function MemoryView() {
     if (cw > 0 && cWidth > 0) {
       const count = Math.floor(cWidth / cw);
       setChunksPerLine(count);
-      setLineCount(count == 0 ? 131072 / 4 : 131072 / 4 / count);
+      setLineCount(count == 0 ? 65536 / 4 : 65536 / 4 / count);
     }
   });
 
@@ -556,13 +562,15 @@ function MemoryView() {
                   </a>
                 </Show>
                 {(() => {
+                  dummy();
+                  if (riscvRam == undefined) return "";
                   let str = "";
                   let chunks = chunksPerLine() - 1;
                   if (chunksPerLine() < 2) chunks = 1;
 
                   for (let i = 0; i < chunks; i++) {
                     for (let j = 0; j < 4; j++) {
-                      str += data[(virtualItem.index * chunks + i) * 4 + j]
+                      str += riscvRam[(virtualItem.index * chunks + i) * 4 + j]
                         .toString(16)
                         .padStart(2, "0");
                     }
@@ -727,3 +735,6 @@ const App: Component = () => {
 };
 
 export default App;
+function createStore(arg0: undefined[]): [any, any] {
+  throw new Error("Function not implemented.");
+}
