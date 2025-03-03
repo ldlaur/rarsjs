@@ -10,6 +10,9 @@ typedef uint8_t u8;
 typedef uint64_t u64;
 typedef int64_t i64;
 typedef int32_t i32;
+export int ram_by_linenum[65536] = {-1};
+export uint32_t regs[32];
+export uint32_t ip = 0;
 
 #ifdef __wasm__
 extern void panic();
@@ -117,10 +120,13 @@ typedef struct {
     size_t pos;
     size_t size;
     int lineidx;
+	int startline;
 } Parser;
 
 void parser_advance(Parser* p) {
-    if (p->input[p->pos] == '\n') p->lineidx++;
+    if (p->input[p->pos] == '\n') {
+			p->lineidx++;
+	}
     p->pos++;
 }
 
@@ -189,7 +195,6 @@ struct label_data {
     u32 addr;
 };
 struct label_data labels[256];
-int ram_by_linenum[65536] = {-1};
 int labels_bump = 0;
 
 
@@ -268,7 +273,7 @@ bool handle_alu_reg(Parser* p, char* opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "rem"))  inst = REM  (d, s1, s2);
     else if (str_eq(opcode, opcode_len, "remu")) inst = REMU (d, s1, s2);
     
-    asm_emit(inst, p->lineidx);
+    asm_emit(inst, p->startline);
     return true;
 }
 
@@ -308,7 +313,7 @@ bool handle_alu_imm(Parser* p, char* opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "srli"))  inst = SRLI (d, s1, simm);
     else if (str_eq(opcode, opcode_len, "srai"))  inst = SRAI (d, s1, simm);
     
-    asm_emit(inst, p->lineidx);
+    asm_emit(inst, p->startline);
 
     return true;
 }
@@ -351,7 +356,7 @@ bool handle_ldst(Parser* p, char* opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "sh"))  inst = SH (reg, mem, simm);
     else if (str_eq(opcode, opcode_len, "sw"))  inst = SW (reg, mem, simm);
 
-    asm_emit(inst, p->lineidx);
+    asm_emit(inst, p->startline);
 
     return true;
 }
@@ -411,7 +416,7 @@ bool handle_branch(Parser* p, char* opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "bltu"))inst = BLTU(s1, s2, simm);
     else if (str_eq(opcode, opcode_len, "bgeu"))inst = BGEU(s1, s2, simm);
 
-    asm_emit(inst, p->lineidx);
+    asm_emit(inst, p->startline);
     return true;
 }
 
@@ -451,7 +456,7 @@ bool handle_jumps(Parser* p, char* opcode, size_t opcode_len) {
         inst = JALR(d, s1, simm);
     } 
 
-    asm_emit(inst, p->lineidx);
+    asm_emit(inst, p->startline);
     return true;
 }
 
@@ -478,7 +483,7 @@ bool handle_upper(Parser* p, char* opcode, size_t opcode_len) {
     if (str_eq(opcode, opcode_len, "lui")) inst = LUI(d, simm);
     else if (str_eq(opcode, opcode_len, "auipc")) inst = AUIPC(d, simm);
 
-    asm_emit(inst, p->lineidx);
+    asm_emit(inst, p->startline);
 
     return true;
 }
@@ -504,20 +509,20 @@ bool handle_li(Parser* p, char* opcode, size_t opcode_len) {
     assert(d != -1);
 
     if (simm >= -2048 && simm <= 2047) {
-        asm_emit(ADDI(d, 0, simm), p->lineidx);
+        asm_emit(ADDI(d, 0, simm), p->startline);
     } else {
         int lo = simm & 0xFFF;
         if (lo >= 0x800) lo -= 0x1000;
         int hi = (simm - lo) >> 12;
-        asm_emit(LUI(d, hi), p->lineidx);
-        asm_emit(ADDI(d, d, lo), p->lineidx); 
+        asm_emit(LUI(d, hi), p->startline);
+        asm_emit(ADDI(d, d, lo), p->startline); 
     }
     return true;
 }
 
 
 void handle_ecall(Parser* p) {
-    asm_emit(0x73, p->lineidx);
+    asm_emit(0x73, p->startline);
 }
 
 
@@ -539,7 +544,7 @@ export void assemble(char* txt, size_t s) {
     char* opcodes_branch[] = {
         "beq", "bne", "blt", "bge", "bltu", "bgeu"
     };
-    Parser parser;
+    Parser parser = {0};
     parser.input = txt;
     parser.size = s;
     parser.pos = 0;
@@ -548,6 +553,7 @@ export void assemble(char* txt, size_t s) {
     while (1) {
         skip_whitespace(p);
         if (p->pos == p->size) break;
+		p->startline = p->lineidx;
         char *alnum, *opcode;
         size_t alnum_len, opcode_len;
         if (!parse_alnum(p, &alnum, &alnum_len)) break;
@@ -622,8 +628,6 @@ export void assemble(char* txt, size_t s) {
 	asm_emit_idx = oldemit;
 }
 
-uint32_t regs[32];
-uint32_t ip = 0;
 
 static inline i32 SIGN(int bits, u32 x) {
     int m = 32 - bits;

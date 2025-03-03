@@ -97,7 +97,7 @@ function updateCss() {
       background-color: ${cssTheme.background};
     }
     .cm-debugging {
-      background-color: #f0a020;
+      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"};
     }
     .theme-bg-hover:hover {
       background-color: ${interpolate(
@@ -289,9 +289,21 @@ async function buildWasm(str) {
 
 async function runWasm(str) {
   wasmInstance.exports.emulate();
+  const pc = new Uint32Array(
+    memory.buffer,
+    wasmInstance.exports.ip,
+    4
+  );
+  const lines = new Uint32Array(
+    memory.buffer,
+    wasmInstance.exports.ram_by_linenum,
+    65536
+  );
   count++;
+  let pc_word = pc[0] / 4;
+  let lineno = lines[pc_word];
   view.dispatch({
-    effects: setHighlightedLine.of(count+1)
+    effects: setHighlightedLine.of(lineno+1)
   });
 }
 
