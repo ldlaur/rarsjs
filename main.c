@@ -663,7 +663,12 @@ u32 LOAD(u32 A, int pow) {
     __builtin_unreachable();
 }
 
+int MemWrittenLen = 0;
+u32 MemWrittenAddr;
+
 void STORE(u32 A, u32 B, int pow) {
+    MemWrittenLen = 1 << pow;
+    MemWrittenAddr = A;
     if (pow == 0) ram[A] = B;
     else if (pow == 1) { memcpy(ram+A, &B, 2); }
     else if (pow == 2) { memcpy(ram+A, &B, 4); }
@@ -716,7 +721,9 @@ void do_syscall() {
     }
 }
 
+
 void emulate() {
+    MemWrittenLen = 0;
     regs[0] = 0;
     uint32_t inst = LOAD(ip, 2);
     uint32_t A = ip;

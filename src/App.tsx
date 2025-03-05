@@ -162,6 +162,20 @@ function updateCss() {
         0.8
       )};
     }
+
+    @keyframes fadeHighlight {
+  from {
+    background-color: ${
+      cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
+    };
+  }
+  to {
+  }
+}
+
+.animate-fade-highlight {
+  animation: fadeHighlight 1s forwards;
+}
   `;
 }
 
@@ -260,7 +274,7 @@ function loadWasmModule() {
     });
   return loadedPromise;
 }
-
+let mem_written_len, mem_written_addr;
 async function buildWasm(str) {
   await loadWasmModule();
   stop = false;
@@ -293,14 +307,25 @@ async function buildWasm(str) {
     effects: setHighlightedLine.of(1),
   });
 
+  mem_written_len = new Uint32Array(
+    memory.buffer,
+    wasmInstance.exports.MemWrittenLen,
+    4
+  );
+  mem_written_addr = new Uint32Array(
+    memory.buffer,
+    wasmInstance.exports.MemWrittenAddr,
+    4
+  );
+
   riscvRam = new Uint8Array(memory.buffer, wasmInstance.exports.ram, 65536);
   setDummy(dummy() + 1);
-
 }
 
 async function runWasm(str) {
   wasmInstance.exports.emulate();
   const pc = new Uint32Array(memory.buffer, wasmInstance.exports.ip, 4);
+
   const lines = new Uint32Array(
     memory.buffer,
     wasmInstance.exports.ram_by_linenum,
@@ -309,11 +334,14 @@ async function runWasm(str) {
   count++;
   let pc_word = pc[0] / 4;
   let lineno = lines[pc_word];
-  if (lineno != 0) { view.dispatch({
-    effects: setHighlightedLine.of(lineno),
-  });
-}
-
+  if (lineno != 0) {
+    view.dispatch({
+      effects: setHighlightedLine.of(lineno),
+    });
+  }
+  if (mem_written_len[0] != 0) {
+    console.log("MW", mem_written_addr[0], mem_written_len[0]);
+  }
   setDummy(dummy() + 1);
 }
 
@@ -391,104 +419,6 @@ const RegisterTable = () => {
 
 const ROW_HEIGHT = 25;
 
-/*
-
-function HexEditor(props) {
-  let container;      // ref to the container div
-  let dummyChunk;     // hidden dummy element used to measure chunk width
-
-  // Signals to store the container width, measured chunk width, and computed chunks per line
-  const [containerWidth, setContainerWidth] = createSignal(0);
-  const [chunkWidth, setChunkWidth] = createSignal(0);
-  const [chunksPerLine, setChunksPerLine] = createSignal(1);
-
-  // Use provided data or generate some dummy data (256 bytes)
-  const data = props.data || (() => {
-    const arr = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) { arr[i] = i; }
-    return arr;
-  })();
-
-  // Break the data into 4-byte chunks (each chunk will be rendered as 4 bytes in hex)
-  const chunksArray = [];
-  for (let i = 0; i < data.length; i += 4) {
-    const chunk = Array.from(data.slice(i, i + 4));
-    chunksArray.push(chunk);
-  }
-
-  // Signal for the lines (each line is an array of chunks)
-  const [lines, setLines] = createSignal([]);
-
-  // Function to re-calculate the lines based on the number of chunks that fit per line
-  const updateLines = () => {
-    const perLine = chunksPerLine();
-    const newLines = [];
-    for (let i = 0; i < chunksArray.length; i += perLine) {
-      newLines.push(chunksArray.slice(i, i + perLine));
-    }
-    setLines(newLines);
-  };
-
-  onMount(() => {
-    // Measure the dummy element’s width once it is rendered.
-    if (dummyChunk) {
-      setChunkWidth(dummyChunk.getBoundingClientRect().width);
-    }
-    // Use ResizeObserver to monitor the container’s width.
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        setContainerWidth(entry.contentRect.width);
-      }
-    });
-    if (container) ro.observe(container);
-    return () => ro.disconnect();
-  });
-
-  // Recompute how many chunks fit per line whenever container or chunk widths change.
-  createEffect(() => {
-    const cw = chunkWidth();
-    const cWidth = containerWidth();
-    if (cw > 0 && cWidth > 0) {
-      // Add some extra spacing (8px here, adjust as needed) to account for margins/padding.
-      const count = Math.floor(cWidth / (cw + 8));
-      setChunksPerLine(count || 1);
-      updateLines();
-    }
-  });
-
-  return (
-    <div
-      ref={container}
-      class="p-4 border border-gray-300 resize overflow-auto"
-    >
-      <div
-        ref={dummyChunk}
-        class="invisible absolute font-mono p-1 bg-gray-800 text-green-400 rounded"
-      >
-        {"00 00 00 00"}
-      </div>
-
-      <For each={lines()}>
-        {line => (
-          <div class="flex space-x-2 mb-2">
-            <For each={line}>
-              {chunk => (
-                <div class="bg-gray-800 text-green-400 font-mono p-1 rounded">
-                  {chunk
-                    .map((byte) => byte.toString(16).padStart(2, "0"))
-                    .join(" ")}
-                </div>
-              )}
-            </For>
-          </div>
-        )}
-      </For>
-    </div>
-  );
-}
-
-
-*/
 function MemoryView() {
   let parentRef;
 
@@ -564,19 +494,27 @@ function MemoryView() {
                 {(() => {
                   dummy();
                   if (riscvRam == undefined) return "";
-                  let str = "";
+                  let components = [];
                   let chunks = chunksPerLine() - 1;
                   if (chunksPerLine() < 2) chunks = 1;
 
                   for (let i = 0; i < chunks; i++) {
                     for (let j = 0; j < 4; j++) {
-                      str += riscvRam[(virtualItem.index * chunks + i) * 4 + j]
-                        .toString(16)
-                        .padStart(2, "0");
+                      let ptr = (virtualItem.index * chunks + i) * 4 + j;
+                      let is_animated =
+                        ptr >= mem_written_addr[0] &&
+                        ptr < mem_written_addr[0] + mem_written_len[0];
+                      let style = "";
+                      if (is_animated) style += "animate-fade-highlight";
+                      components.push(
+                        <a class={style}>
+                          {riscvRam[ptr].toString(16).padStart(2, "0")}
+                        </a>
+                      );
+                      if (j == 3) components.push(<a class="pr-1" />);
                     }
-                    str += " ";
                   }
-                  return str;
+                  return components;
                 })()}
               </div>
             </div>
