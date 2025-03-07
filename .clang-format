@@ -1,0 +1,10 @@
+Language: Cpp
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 120
+NamespaceIndentation: All
+AllowShortLambdasOnASingleLine: true
+BreakBeforeBinaryOperators: None
+PointerAlignment: Right
+DerivePointerAlignment: false
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
