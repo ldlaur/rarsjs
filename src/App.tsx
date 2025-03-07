@@ -276,6 +276,7 @@ function loadWasmModule() {
     });
   return loadedPromise;
 }
+let reg_written = [-1];
 let mem_written_len, mem_written_addr;
 let regs_arr;
 
@@ -322,6 +323,11 @@ async function buildWasm(str) {
     wasmInstance.exports.MemWrittenLen,
     4
   );
+  reg_written = new Uint32Array(
+    memory.buffer,
+    wasmInstance.exports.RegWritten,
+    4
+  );
   mem_written_addr = new Uint32Array(
     memory.buffer,
     wasmInstance.exports.MemWrittenAddr,
@@ -354,10 +360,10 @@ async function runWasm(str) {
   }
   let regArr = new Array(31);
   for (let i = 0; i < 31; i++) {
-      oldRegisterArray[i] = registerArray()[i];
 	  regArr[i] = regs_arr[i];
   }
-		console.log(oldRegisterArray, registerArray(), regArr);
+  console.log(regArr);
+  console.log(reg_written[0]);
   setRegistersArray(regArr);
   setDummy(dummy() + 1);
 }
@@ -423,7 +429,7 @@ const RegisterTable = () => {
                 {regnames[idx()]}/x{idx() + 1}
               </div>
 
-			  <div class={"self-center mr-[1ch] " + (reg != oldRegisterArray[idx] ? "animate-fade-highlight" : "")}>
+			  <div class={"self-center mr-[1ch] " + ((idx()+1) == reg_written[0] ? "animate-fade-highlight" : "")}>
 				{"0x"+reg
                       .toString(16)
                       .padStart(8, "0")}

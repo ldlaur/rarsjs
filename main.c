@@ -665,6 +665,7 @@ u32 LOAD(u32 A, int pow) {
 
 int MemWrittenLen = 0;
 u32 MemWrittenAddr;
+u32 RegWritten = 0;
 
 void STORE(u32 A, u32 B, int pow) {
     MemWrittenLen = 1 << pow;
@@ -729,8 +730,9 @@ void emulate() {
     uint32_t A = ip;
 
 
-    if (inst == 0x73) { do_syscall(); ip += 4; return; }
-    u32 S1 = regs[BITS(19, 15)], S2 = regs[BITS(24, 20)], *D = &regs[BITS(11, 7)];
+    if (inst == 0x73) { do_syscall(); ip += 4; RegWritten = 0; return; }
+    u32 rd = BITS(11, 7);
+    u32 S1 = regs[BITS(19, 15)], S2 = regs[BITS(24, 20)], *D = &regs[rd];
     u32 T = 0;
     u32 F7 = BITS(31, 25), F6 = F7 >> 1, F3 = BITS(14,12);
 
@@ -764,8 +766,8 @@ void emulate() {
 
     if ((opcode2 & 0b11111) == 0b01101) { *D = imm20_up; goto end; } // LUI
     if ((opcode2 & 0b11111) == 0b00101) { *D = ip + imm20_up; goto end; } // AUIPC
-    if ((opcode2 & 0b11111) == 0b11011) { *D = ip + 4; ip += jal_imm; return; } // JAL
-    if ((opcode2 & 0b11111) == 0b11001) { *D = ip + 4; ip = S1 + imm12_ext; return; } // JALR
+    if ((opcode2 & 0b11111) == 0b11011) { *D = ip + 4; ip += jal_imm; goto exit; } // JAL
+    if ((opcode2 & 0b11111) == 0b11001) { *D = ip + 4; ip = S1 + imm12_ext; goto exit; } // JALR
 
     if ((opcode & 0b1111) == 0b1100) {
         if ((opcode>>5) == 0) T = S1 == S2;
@@ -774,7 +776,8 @@ void emulate() {
         if ((opcode>>5) == 3) T = S1 < S2;
         if ((opcode>>4) & 1) T = !T;
         ip += T ? btype_imm : 4;
-        return;
+		rd = 0;	
+        goto exit;
     }
 
     if ((opcode & 0b1111) == 0b0000) {
@@ -785,6 +788,7 @@ void emulate() {
     }
     
     if ((opcode & 0b1111) == 0b0100) {
+		rd = 0;
         STORE(S1 + store_imm, S2, (opcode >> 4) & 3); goto end;
     }
 
@@ -817,7 +821,7 @@ void emulate() {
                     *D = remu32(S1, S2); goto end; // REMU
     default: ERR;
     }
-    return;
+    goto exit;
 
 inst_ADD: *D = (i32)S1 + T; goto end;
 inst_SLT: *D = (i32)S1 < (i32)T; goto end;
@@ -830,6 +834,9 @@ inst_SR: *D = zero ? (S1 >> (T & 0x1F)) : ((i32)S1 >> (T & 0x1F)); goto end;
 
 end:
     ip += 4;
+
+exit:
+	RegWritten = rd;
 }
 
 
