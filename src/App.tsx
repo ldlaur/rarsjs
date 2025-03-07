@@ -35,6 +35,8 @@ import { RangeSetBuilder } from "@codemirror/state";
 
 const [dummy, setDummy] = createSignal(0);
 let riscvRam;
+const [registerArray, setRegistersArray] = createSignal((new Array(31)).fill(0));
+let oldRegisterArray = (new Array(31)).fill(0);
 
 // Define an effect to update the highlighted line number.
 const setHighlightedLine = StateEffect.define<number | null>();
@@ -163,7 +165,7 @@ function updateCss() {
       )};
     }
 
-    @keyframes fadeHighlight {
+  @keyframes fadeHighlight {
   from {
     background-color: ${
       cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
@@ -275,6 +277,8 @@ function loadWasmModule() {
   return loadedPromise;
 }
 let mem_written_len, mem_written_addr;
+let regs_arr;
+
 async function buildWasm(str) {
   await loadWasmModule();
   stop = false;
@@ -307,6 +311,12 @@ async function buildWasm(str) {
     effects: setHighlightedLine.of(1),
   });
 
+  regs_arr = new Uint32Array(
+    memory.buffer,
+    wasmInstance.exports.regs+4,
+    31
+  );
+ 
   mem_written_len = new Uint32Array(
     memory.buffer,
     wasmInstance.exports.MemWrittenLen,
@@ -342,6 +352,13 @@ async function runWasm(str) {
   if (mem_written_len[0] != 0) {
     console.log("MW", mem_written_addr[0], mem_written_len[0]);
   }
+  let regArr = new Array(31);
+  for (let i = 0; i < 31; i++) {
+      oldRegisterArray[i] = registerArray()[i];
+	  regArr[i] = regs_arr[i];
+  }
+		console.log(oldRegisterArray, registerArray(), regArr);
+  setRegistersArray(regArr);
   setDummy(dummy() + 1);
 }
 
@@ -355,7 +372,6 @@ import { VirtualList } from "@solid-primitives/virtual";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 const RegisterTable = () => {
   // Generate 31 dummy registers
-  const registers = Array.from({ length: 31 }, (_, i) => "0xdeadbeef");
   const regnames = [
     "ra",
     "sp",
@@ -400,13 +416,19 @@ const RegisterTable = () => {
           <div class="self-center pr-[1ch]">{"0xdeadbeef"}</div>
         </div>
 
-        <For each={registers}>
+        <For each={registerArray()}>
           {(reg, idx) => (
             <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
               <div class="self-center pl-[1ch] font-bold">
                 {regnames[idx()]}/x{idx() + 1}
               </div>
-              <div class="self-center pr-[1ch]">{reg}</div>
+
+			  <div class={"self-center mr-[1ch] " + (reg != oldRegisterArray[idx] ? "animate-fade-highlight" : "")}>
+				{"0x"+reg
+                      .toString(16)
+                      .padStart(8, "0")}
+			  </div>
+                      
             </div>
           )}
         </For>
