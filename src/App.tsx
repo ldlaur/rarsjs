@@ -33,21 +33,18 @@ import { Facet } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 
+import { WasmInterface } from "./RiscV";
+
+const wasmInterface = new WasmInterface();
+
 const [dummy, setDummy] = createSignal(0);
-let riscvRam;
-const [registerArray, setRegistersArray] = createSignal((new Array(31)).fill(0));
-let oldRegisterArray = (new Array(31)).fill(0);
+const [regsArray, setRegsArray] = createSignal(new Array(31).fill(0));
+const [wasmPc, setWasmPc] = createSignal("0x00000000");
 
-// Define an effect to update the highlighted line number.
 const setHighlightedLine = StateEffect.define<number | null>();
-
-// Create a state field that produces a decoration for the highlighted line.
 const highlightedLineField = StateField.define<DecorationSet>({
-  create() {
-    return Decoration.none;
-  },
+  create() { return Decoration.none; },
   update(highlights, tr) {
-    // Look for our external effect that sets a new highlighted line.
     let newLine: number | null = null;
     for (let effect of tr.effects) {
       if (effect.is(setHighlightedLine)) {
@@ -55,23 +52,17 @@ const highlightedLineField = StateField.define<DecorationSet>({
       }
     }
     if (newLine !== null) {
-      // Assume line numbers are 1-indexed. Validate the number if necessary.
       if (newLine < 1 || newLine > tr.state.doc.lines) return Decoration.none;
-      // Get the line's document position.
       let line = tr.state.doc.line(newLine);
-      // Create a decoration that highlights the entire line.
-      console.log("here");
       return Decoration.set([
         Decoration.line({ class: "cm-debugging" }).range(line.from, line.from),
       ]);
     }
-    // If no new effect, remap the existing decoration to account for document changes.
     return highlights.map(tr.changes);
   },
   provide: (f) => EditorView.decorations.from(f),
 });
 
-// Export an extension that includes our field.
 const debuggerLineHighlightExtension = [highlightedLineField];
 
 let view: EditorView;
@@ -79,7 +70,6 @@ let cmTheme = new Compartment();
 let cssTheme = defaultSettingsGruvboxLight;
 
 function interpolate(color1, color2, percent) {
-  // Convert the hex colors to RGB values
   const r1 = parseInt(color1.substring(1, 3), 16);
   const g1 = parseInt(color1.substring(3, 5), 16);
   const b1 = parseInt(color1.substring(5, 7), 16);
@@ -88,12 +78,10 @@ function interpolate(color1, color2, percent) {
   const g2 = parseInt(color2.substring(3, 5), 16);
   const b2 = parseInt(color2.substring(5, 7), 16);
 
-  // Interpolate the RGB values
   const r = Math.max(0, Math.min(255, Math.round(r1 + (r2 - r1) * percent)));
   const g = Math.max(0, Math.min(255, Math.round(g1 + (g2 - g1) * percent)));
   const b = Math.max(0, Math.min(255, Math.round(b1 + (b2 - b1) * percent)));
 
-  // Convert the interpolated RGB values back to a hex color
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
@@ -105,33 +93,31 @@ function updateCss() {
       background-color: ${cssTheme.background};
     }
     .cm-debugging {
-      background-color: ${
-        cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
-      };
+      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
+    };
     }
     .theme-bg-hover:hover {
       background-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.1
-      )};
+      cssTheme.background,
+      cssTheme.foreground,
+      0.1
+    )};
     }
     .theme-bg-active:active {
       background-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.2
-      )};
+      cssTheme.background,
+      cssTheme.foreground,
+      0.2
+    )};
     }
     .theme-gutter {
       background-color: ${cssTheme.gutterBackground};
     }
     .theme-separator {
-      background-color: ${
-        cssTheme.gutterBackground != cssTheme.background
-          ? cssTheme.gutterBackground
-          : interpolate(cssTheme.background, cssTheme.foreground, 0.1)
-      };
+      background-color: ${cssTheme.gutterBackground != cssTheme.background
+      ? cssTheme.gutterBackground
+      : interpolate(cssTheme.background, cssTheme.foreground, 0.1)
+    };
     }
     .theme-fg {
       color: ${cssTheme.foreground};
@@ -143,32 +129,31 @@ function updateCss() {
     scrollbar-width: thin;
 
       scrollbar-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.5
-      )} ${cssTheme.background};
+      cssTheme.background,
+      cssTheme.foreground,
+      0.5
+    )} ${cssTheme.background};
     }
       .theme-scrollbar {
 
       scrollbar-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.5
-      )} ${cssTheme.background};
+      cssTheme.background,
+      cssTheme.foreground,
+      0.5
+    )} ${cssTheme.background};
     }
       
     .theme-border {
       border-color: ${interpolate(
-        cssTheme.foreground,
-        cssTheme.background,
-        0.8
-      )};
+      cssTheme.foreground,
+      cssTheme.background,
+      0.8
+    )};
     }
 
   @keyframes fadeHighlight {
   from {
-    background-color: ${
-      cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
+    background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
     };
   }
   to {
@@ -198,12 +183,9 @@ function doChangeTheme() {
   updateCss();
 }
 
-interface NavbarProps {
-  onRun: () => void;
-  changeTheme: () => void;
-}
+const Navbar: Component = () => {
+  const [debugMode, setDebugMode] = createSignal(false);
 
-const Navbar: Component<NavbarProps> = (props: NavbarProps) => {
   return (
     <nav class="sticky theme-gutter">
       <div class="mx-auto px-2">
@@ -212,21 +194,33 @@ const Navbar: Component<NavbarProps> = (props: NavbarProps) => {
             <h1 class="text-l font-bold theme-fg">rars.js</h1>
           </div>
           <div class="flex-shrink-0 mx-auto"></div>
+          <Show when={debugMode()}>
+            <button
+              on:click={singleStepRiscV}
+              class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+            >arrow_downward_alt</button>
+            <button
+              on:click={continueStepRiscV}
+              class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+            >resume</button>
+            <div class="flex-shrink-0 mx-auto"></div>
+          </Show>
           <button
-            on:click={props.changeTheme}
-            style={{ "font-size": "large" }}
+            on:click={doChangeTheme}
             class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
           >
             dark_mode
           </button>
           <button
-            on:click={props.onRun}
+            on:click={runRiscV}
             class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
           >
-            play_arrow
+            play_circle
           </button>
-          <button class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active">
-            arrow_right_alt
+          <button
+            on:click={() => { startStepRiscV(); setDebugMode(true); }}
+            class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active">
+            arrow_forward
           </button>
         </div>
       </div>
@@ -234,144 +228,6 @@ const Navbar: Component<NavbarProps> = (props: NavbarProps) => {
   );
 };
 
-let wasmInstance = null;
-let memory = new WebAssembly.Memory({ initial: 16 });
-let loadedPromise = null;
-let stop = false;
-let textbuffer;
-let globalSetText;
-let originalMemory;
-let count;
-
-function loadWasmModule() {
-  if (loadedPromise) return loadedPromise;
-  loadedPromise = fetch("http://localhost:3000/main.wasm")
-    .then((res) => res.arrayBuffer())
-    .then((buffer) =>
-      WebAssembly.instantiate(buffer, {
-        env: {
-          memory: memory,
-          putchar: (n) => {
-            textbuffer += String.fromCharCode(n);
-            globalSetText(textbuffer);
-          },
-          emu_exit: () => {
-            console.log("exit");
-            stop = true;
-          },
-          panic: () => {
-            alert("wasm panic");
-          },
-          gettime64: () => BigInt(new Date().getTime() * 10 * 1000),
-        },
-      })
-    )
-    .then((result) => {
-      wasmInstance = result.instance;
-      originalMemory = new Uint8Array(memory.buffer.slice(0));
-      console.log("Wasm module loaded");
-    })
-    .catch((err) => {
-      console.error("Failed to load wasm module", err);
-    });
-  return loadedPromise;
-}
-let reg_written = [-1];
-let mem_written_len, mem_written_addr;
-let regs_arr;
-
-async function buildWasm(str) {
-  await loadWasmModule();
-  stop = false;
-  textbuffer = "";
-  count = 0;
-
-  const memBuffer = new Uint8Array(memory.buffer);
-  memBuffer.set(originalMemory);
-
-  const encoder = new TextEncoder();
-  const strBytes = encoder.encode(str);
-  const requiredBytes = strBytes.length;
-  const pageSize = 64 * 1024;
-
-  let offset = originalMemory.length;
-  if (offset + requiredBytes > memory.buffer.byteLength) {
-    const pagesNeeded = Math.ceil(requiredBytes / pageSize);
-    memory.grow(pagesNeeded);
-  }
-
-  const updatedMemoryView = new Uint8Array(
-    memory.buffer,
-    offset,
-    requiredBytes
-  );
-  updatedMemoryView.set(strBytes);
-
-  wasmInstance.exports.assemble(offset, requiredBytes);
-  view.dispatch({
-    effects: setHighlightedLine.of(1),
-  });
-
-  regs_arr = new Uint32Array(
-    memory.buffer,
-    wasmInstance.exports.regs+4,
-    31
-  );
- 
-  mem_written_len = new Uint32Array(
-    memory.buffer,
-    wasmInstance.exports.MemWrittenLen,
-    4
-  );
-  reg_written = new Uint32Array(
-    memory.buffer,
-    wasmInstance.exports.RegWritten,
-    4
-  );
-  mem_written_addr = new Uint32Array(
-    memory.buffer,
-    wasmInstance.exports.MemWrittenAddr,
-    4
-  );
-
-  riscvRam = new Uint8Array(memory.buffer, wasmInstance.exports.ram, 65536);
-  setDummy(dummy() + 1);
-}
-
-async function runWasm(str) {
-  wasmInstance.exports.emulate();
-  const pc = new Uint32Array(memory.buffer, wasmInstance.exports.ip, 4);
-
-  const lines = new Uint32Array(
-    memory.buffer,
-    wasmInstance.exports.ram_by_linenum,
-    65536
-  );
-  count++;
-  let pc_word = pc[0] / 4;
-  let lineno = lines[pc_word];
-  if (lineno != 0) {
-    view.dispatch({
-      effects: setHighlightedLine.of(lineno),
-    });
-  }
-  if (mem_written_len[0] != 0) {
-    console.log("MW", mem_written_addr[0], mem_written_len[0]);
-  }
-  let regArr = new Array(31);
-  for (let i = 0; i < 31; i++) {
-	  regArr[i] = regs_arr[i];
-  }
-  console.log(regArr);
-  console.log(reg_written[0]);
-  setRegistersArray(regArr);
-  setDummy(dummy() + 1);
-}
-
-function doRiscV(str: string, setText) {
-  if (count == undefined) buildWasm(str);
-  else runWasm(str);
-}
 
 import { For } from "solid-js";
 import { VirtualList } from "@solid-primitives/virtual";
@@ -419,22 +275,25 @@ const RegisterTable = () => {
       <div class="grid-cols-[repeat(auto-fit,minmax(20ch,1fr))] grid">
         <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
           <div class="self-center pl-[1ch] font-bold">pc</div>
-          <div class="self-center pr-[1ch]">{"0xdeadbeef"}</div>
+          <div class="self-center pr-[1ch]">
+            {wasmPc()}
+          </div>
         </div>
-
-        <For each={registerArray()}>
+        <For each={regsArray()}>
           {(reg, idx) => (
             <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
               <div class="self-center pl-[1ch] font-bold">
                 {regnames[idx()]}/x{idx() + 1}
               </div>
 
-			  <div class={"self-center mr-[1ch] " + ((idx()+1) == reg_written[0] ? "animate-fade-highlight" : "")}>
-				{"0x"+reg
-                      .toString(16)
-                      .padStart(8, "0")}
-			  </div>
-                      
+              <div
+                class={
+                  "self-center mr-[1ch] " +
+                  ((wasmInterface.regWritten && idx() + 1 == wasmInterface.regWritten[0]) ? "animate-fade-highlight" : "")
+                }
+              >
+                {"0x" + reg.toString(16).padStart(8, "0")}
+              </div>
             </div>
           )}
         </For>
@@ -521,22 +380,21 @@ function MemoryView() {
                 </Show>
                 {(() => {
                   dummy();
-                  if (riscvRam == undefined) return "";
+                  if (!wasmInterface.riscvRam) return "";
                   let components = [];
                   let chunks = chunksPerLine() - 1;
                   if (chunksPerLine() < 2) chunks = 1;
-
                   for (let i = 0; i < chunks; i++) {
                     for (let j = 0; j < 4; j++) {
                       let ptr = (virtualItem.index * chunks + i) * 4 + j;
                       let is_animated =
-                        ptr >= mem_written_addr[0] &&
-                        ptr < mem_written_addr[0] + mem_written_len[0];
+                        ptr >= wasmInterface.memWrittenAddr[0] &&
+                        ptr < wasmInterface.memWrittenAddr[0] + wasmInterface.memWrittenLen[0];
                       let style = "";
                       if (is_animated) style += "animate-fade-highlight";
                       components.push(
                         <a class={style}>
-                          {riscvRam[ptr].toString(16).padStart(2, "0")}
+                          {wasmInterface.riscvRam[ptr].toString(16).padStart(2, "0")}
                         </a>
                       );
                       if (j == 3) components.push(<a class="pr-1" />);
@@ -557,7 +415,8 @@ function PaneResize(direction, a, b) {
   let handle;
   let container;
 
-  const [size, setSize] = createSignal(200);
+  const [size, setSize] = createSignal(0);
+  const [containerSize, setContainerSize] = createSignal(0);
 
   const [resizeState, setResizeState] = createSignal(null);
 
@@ -595,19 +454,34 @@ function PaneResize(direction, a, b) {
     );
   };
 
+  const updateSize = () => {
+    const newSize = direction == "vertical" ? container.clientHeight : container.clientWidth;
+    setSize((size() / containerSize()) * newSize);
+    setContainerSize(newSize);
+  };
+
   onMount(() => {
+    const initialSize = direction == "vertical" ? container.clientHeight : container.clientWidth;
+    setSize(initialSize / 2);
+    setContainerSize(initialSize);
+
+    const ro = new ResizeObserver(() => updateSize());
+    ro.observe(container);
+
     document.addEventListener("mousemove", resizeMove);
     document.addEventListener("touchmove", resizeMove);
     document.addEventListener("mouseup", resizeUp);
     document.addEventListener("touchend", resizeUp);
     onCleanup(() => {
       view.destroy();
+      ro.disconnect();
       document.removeEventListener("mousemove", resizeMove);
       document.removeEventListener("touchmove", resizeMove);
       document.removeEventListener("mouseup", resizeUp);
       document.removeEventListener("touchend", resizeUp);
     });
   });
+
   return (
     <div
       class="flex w-full h-full max-h-full max-w-full theme-fg theme-bg"
@@ -645,18 +519,44 @@ function PaneResize(direction, a, b) {
     </div>
   );
 }
+const [consoleText, setConsoleText] = createSignal("");
+
+async function runRiscV() {
+  await wasmInterface.build(setConsoleText, view.state.doc.toString());
+  while (wasmInterface.stopExecution == false) {
+    wasmInterface.run();
+  }
+}
+
+function startStepRiscV() {
+  wasmInterface.build(setConsoleText, view.state.doc.toString());
+}
+
+function singleStepRiscV() {
+  if (wasmInterface.stopExecution == false) {
+    wasmInterface.run();
+    setDummy(dummy() + 1);
+    setRegsArray([...wasmInterface.regArr]);
+    setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
+  }
+}
+
+function continueStepRiscV() {
+  while (wasmInterface.stopExecution == false) {
+    wasmInterface.run();
+    setDummy(dummy() + 1);
+    setRegsArray([...wasmInterface.regArr]);
+  }
+}
 
 const App: Component = () => {
   let editor;
   let handle;
 
-  const [text, setText] = createSignal("");
-  globalSetText = setText;
   onMount(() => {
     const theme = EditorView.theme({
       "&.cm-editor": { height: "100%" },
       ".cm-scroller": { overflow: "auto" },
-      // cm-debugging defined elsewhere
     });
     const state = EditorState.create({
       doc: "",
@@ -672,13 +572,11 @@ const App: Component = () => {
 
   let [clicked, setClicked] = createSignal("data");
 
-  const doRun = () => {
-    doRiscV(view.state.doc.toString(), setText);
-  };
+
   let [regsArr, setRegsArr] = createSignal(Array(31));
   return (
     <div class="h-dvh max-h-dvh w-dvw max-w-dvw flex flex-col justify-between overflow-hidden">
-      <Navbar onRun={doRun} changeTheme={doChangeTheme}></Navbar>
+      <Navbar />
 
       <div class="flex w-full h-full overflow-hidden">
         {PaneResize(
@@ -689,7 +587,7 @@ const App: Component = () => {
             "vertical",
             PaneResize("horizontal", <RegisterTable />, <MemoryView />),
             <div
-              innerText={text()}
+              innerText={consoleText()}
               class="w-full h-full overflow-auto theme-scrollbar theme-fg theme-bg"
               style={{ "font-family": "monospace" }}
             ></div>

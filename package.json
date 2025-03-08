@@ -26,7 +26,6 @@
     "@uiw/codemirror-theme-gruvbox-dark": "^4.23.8",
     "@uiw/codemirror-themes": "^4.23.8",
     "codemirror": "^6.0.1",
-    "material-symbols": "^0.28.2",
     "solid-js": "^1.9.3"
   }
 }

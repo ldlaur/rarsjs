@@ -10,31 +10,54 @@ typedef uint64_t u64;
 typedef int64_t i64;
 typedef int32_t i32;
 
-export u32 ram_by_linenum[65536];
-export u32 regs[32];
-export u32 ip = 0;
-export u8 ram[65536];
-size_t asm_emit_idx = 0;
+export u32 g_ram_by_linenum[65536];
+export u32 g_regs[32];
+export u32 g_pc = 0;
+export u8 g_ram[65536];
+export u32 g_mem_written_len = 0;
+export u32 g_mem_written_addr;
+export u32 g_reg_written = 0;
+
+size_t g_asm_emit_idx = 0;
+
+typedef struct Parser {
+    const char *input;
+    size_t pos;
+    size_t size;
+    int lineidx;
+    int startline;
+} Parser;
+
+typedef struct LabelData {
+    const char *txt;
+    size_t len;
+    u32 addr;
+} LabelData;
+
+typedef const char *DeferredInsnCb(Parser *p, const char *opcode, size_t opcode_len);
+typedef struct DeferredInsn {
+    Parser p;
+    DeferredInsnCb *cb;
+    const char *opcode;
+    size_t opcode_len;
+    size_t emit_idx;
+} DeferredInsn;
+
+LabelData *g_labels;
+size_t g_labels_len = 0, g_labels_cap = 0;
+DeferredInsn *g_deferred_insns;
+size_t g_deferred_insn_len = 0, g_deferred_insn_cap = 0;
 
 #ifdef __wasm__
+void *malloc(size_t size);
+void free(void *ptr);
 extern void panic();
 extern void emu_exit();
 extern void putchar(uint8_t);
-size_t strlen(const char *str) {
-    const char *s;
-    for (s = str; *s; ++s);
-    return s - str;
-}
-int memcmp(const void *s1, const void *s2, size_t n) {
-    const u8 *p1 = (const u8 *)s1;
-    const u8 *p2 = (const u8 *)s2;
-    for (size_t i = 0; i < n; i++) {
-        if (p1[i] != p2[i]) {
-            return p1[i] < p2[i] ? -1 : 1;
-        }
-    }
-    return 0;
-}
+size_t strlen(const char *str);
+int memcmp(const void *s1, const void *s2, size_t n);
+void *memcpy(void *dest, const void *src, size_t n);
+
 #define assert(cond)          \
     {                         \
         if (!(cond)) panic(); \
@@ -108,24 +131,6 @@ bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' '; }
 bool digit(char c) { return (c >= '0' && c <= '9'); }
 bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
 
-typedef struct Parser {
-    const char *input;
-    size_t pos;
-    size_t size;
-    int lineidx;
-    int startline;
-} Parser;
-
-struct label_data {
-    const char *txt;
-    size_t len;
-    u32 addr;
-};
-struct label_data *labels;
-size_t labels_len = 0, labels_cap = 0;
-struct DeferredInsn *deferred_insns;
-size_t deferred_insn_len = 0, deferred_insn_cap = 0;
-
 #define push(arr, len, cap) \
     ((len) >= (cap) ? grow((void **)&(arr), &(cap), sizeof(*(arr))), (arr) + (len)++ : (arr) + (len)++)
 
@@ -198,21 +203,12 @@ int atoi_len(const char *str, int len) {
 }
 
 void asm_emit(u32 inst, int linenum) {
-    ram_by_linenum[asm_emit_idx / 4] = linenum;
-    ram[asm_emit_idx++] = inst;
-    ram[asm_emit_idx++] = inst >> 8;
-    ram[asm_emit_idx++] = inst >> 16;
-    ram[asm_emit_idx++] = inst >> 24;
+    g_ram_by_linenum[g_asm_emit_idx / 4] = linenum;
+    g_ram[g_asm_emit_idx++] = inst;
+    g_ram[g_asm_emit_idx++] = inst >> 8;
+    g_ram[g_asm_emit_idx++] = inst >> 16;
+    g_ram[g_asm_emit_idx++] = inst >> 24;
 }
-
-typedef const char *DeferredInsnCb(Parser *p, const char *opcode, size_t opcode_len);
-struct DeferredInsn {
-    Parser p;
-    DeferredInsnCb *cb;
-    const char *opcode;
-    size_t opcode_len;
-    size_t emit_idx;
-};
 
 bool expect(Parser *p, char c) {
     if (p->pos >= p->size) return false;
@@ -307,7 +303,7 @@ const char *handle_alu_imm(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
-const char* handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
+const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
     const char *rreg, *rmem, *imm;
     size_t rreg_len, rmem_len, imm_len;
     int reg, mem, simm;
@@ -369,21 +365,21 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     skip_whitespace(p);
 
     bool found = false;
-    for (size_t i = 0; i < labels_len; i++) {
-        if (labels[i].len == target_len && memcmp(labels[i].txt, target, target_len) == 0) {
+    for (size_t i = 0; i < g_labels_len; i++) {
+        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
             found = true;
-            simm = labels[i].addr - asm_emit_idx;
+            simm = g_labels[i].addr - g_asm_emit_idx;
             break;
         }
     }
     if (!found) {
-        struct DeferredInsn *insn = push(deferred_insns, deferred_insn_len, deferred_insn_cap);
-        insn->emit_idx = asm_emit_idx;
+        DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
+        insn->emit_idx = g_asm_emit_idx;
         insn->p = orig;
         insn->cb = handle_branch;
         insn->opcode = opcode;
         insn->opcode_len = opcode_len;
-        asm_emit_idx += 4;
+        g_asm_emit_idx += 4;
         return NULL;
     }
 
@@ -399,7 +395,7 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
-const char* handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
+const char *handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
     const char *rd, *rs1, *imm;
     size_t rd_len, rs1_len, imm_len;
     int d, s1, simm;
@@ -435,7 +431,7 @@ const char* handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
-const char* handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
+const char *handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
     const char *rd, *imm;
     size_t rd_len, imm_len;
     int d, simm;
@@ -460,7 +456,7 @@ const char* handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
-const char* handle_li(Parser *p, const char *opcode, size_t opcode_len) {
+const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
     const char *rd, *imm;
     size_t rd_len, imm_len;
     int d, simm;
@@ -504,7 +500,7 @@ export void assemble(const char *txt, size_t s) {
     parser.pos = 0;
     parser.lineidx = 1;
     Parser *p = &parser;
-    const char* err = NULL;
+    const char *err = NULL;
 
     while (1) {
         skip_whitespace(p);
@@ -517,7 +513,8 @@ export void assemble(const char *txt, size_t s) {
         if (p->pos == p->size) break;
 
         if (expect(p, ':')) {
-            *push(labels, labels_len, labels_cap) = (struct label_data){.txt = alnum, .len = alnum_len, .addr = asm_emit_idx};
+            *push(g_labels, g_labels_len, g_labels_cap) =
+                (LabelData){.txt = alnum, .len = alnum_len, .addr = g_asm_emit_idx};
             continue;
         } else {
             opcode = alnum;
@@ -575,18 +572,14 @@ export void assemble(const char *txt, size_t s) {
         if (err) break;
     }
 
-    if (err) {
-        printf("Error on line %d: \"%s\"\n", p->lineidx, err);
-    }
-
-    int oldemit = asm_emit_idx;
-    for (size_t i = 0; i < deferred_insn_len; i++) {
-        struct DeferredInsn *insn = &deferred_insns[i];
-        asm_emit_idx = insn->emit_idx;
+    size_t oldemit = g_asm_emit_idx;
+    for (size_t i = 0; i < g_deferred_insn_len; i++) {
+        struct DeferredInsn *insn = &g_deferred_insns[i];
+        g_asm_emit_idx = insn->emit_idx;
         insn->cb(&insn->p, insn->opcode, insn->opcode_len);
-        assert(asm_emit_idx == insn->emit_idx + 4);
+        assert(g_asm_emit_idx == insn->emit_idx + 4);
     }
-    asm_emit_idx = oldemit;
+    g_asm_emit_idx = oldemit;
 }
 
 static inline i32 SIGN(int bits, u32 x) {
@@ -630,31 +623,27 @@ static inline u32 remu32(u32 a, u32 b) {
 #define ERR (__builtin_unreachable(), 1)
 
 u32 LOAD(u32 A, int pow) {
-    if (pow == 0) return ram[A];
+    if (pow == 0) return g_ram[A];
     else if (pow == 1) {
         u16 tmp;
-        memcpy(&tmp, ram + A, 2);
+        memcpy(&tmp, g_ram + A, 2);
         return tmp;
     } else if (pow == 2) {
         u32 tmp;
-        memcpy(&tmp, ram + A, 4);
+        memcpy(&tmp, g_ram + A, 4);
         return tmp;
     }
     __builtin_unreachable();
 }
 
-int MemWrittenLen = 0;
-u32 MemWrittenAddr;
-u32 RegWritten = 0;
-
 void STORE(u32 A, u32 B, int pow) {
-    MemWrittenLen = 1 << pow;
-    MemWrittenAddr = A;
-    if (pow == 0) ram[A] = B;
+    g_mem_written_len = 1 << pow;
+    g_mem_written_addr = A;
+    if (pow == 0) g_ram[A] = B;
     else if (pow == 1) {
-        memcpy(ram + A, &B, 2);
+        memcpy(g_ram + A, &B, 2);
     } else if (pow == 2) {
-        memcpy(ram + A, &B, 4);
+        memcpy(g_ram + A, &B, 4);
     } else if (pow > 2) __builtin_unreachable();
     return;
 }
@@ -664,8 +653,8 @@ void STORE(u32 A, u32 B, int pow) {
 #define BITS(endinclus, start) ((inst >> (start)) & ALL_ONES((endinclus) + 1 - (start)))
 
 void do_syscall() {
-    u32 param = regs[10];
-    if (regs[17] == 1) {
+    u32 param = g_regs[10];
+    if (g_regs[17] == 1) {
         // print int
         char buffer[12];
         int i = 0;
@@ -678,39 +667,39 @@ void do_syscall() {
             param /= 10;
         } while (param > 0);
         while (i--) putchar(buffer[i]);
-    } else if (regs[17] == 4) {
+    } else if (g_regs[17] == 4) {
         // print string
-        for (int i = 0; ram[param + i]; i++) putchar(ram[param + i]);
-    } else if (regs[17] == 11) {
+        for (int i = 0; g_ram[param + i]; i++) putchar(g_ram[param + i]);
+    } else if (g_regs[17] == 11) {
         // print char
         putchar(param);
-    } else if (regs[17] == 34) {
+    } else if (g_regs[17] == 34) {
         // print int hex
         putchar('0');
         putchar('x');
         for (int i = 32 - 4; i >= 0; i -= 4) putchar("0123456789abcdef"[(param >> i) & 15]);
-    } else if (regs[17] == 35) {
+    } else if (g_regs[17] == 35) {
         // print int binary
         putchar('0');
         putchar('b');
         for (int i = 31; i >= 0; i--) {
             putchar(((param >> i) & 1) ? '1' : '0');
         }
-    } else if (regs[17] == 93) {
+    } else if (g_regs[17] == 93) {
         emu_exit();
     }
 }
 
 // clang-format off
 void emulate() {
-    MemWrittenLen = 0;
-    regs[0] = 0;
-    u32 inst = LOAD(ip, 2);
+    g_mem_written_len = 0;
+    g_regs[0] = 0;
+    u32 inst = LOAD(g_pc, 2);
 
 
-    if (inst == 0x73) { do_syscall(); ip += 4; RegWritten = 0; return; }
+    if (inst == 0x73) { do_syscall(); g_pc += 4; g_reg_written = 0; return; }
     u32 rd = BITS(11, 7);
-    u32 S1 = regs[BITS(19, 15)], S2 = regs[BITS(24, 20)], *D = &regs[rd];
+    u32 S1 = g_regs[BITS(19, 15)], S2 = g_regs[BITS(24, 20)], *D = &g_regs[rd];
     u32 T = 0;
     u32 F7 = BITS(31, 25), F6 = F7 >> 1;
 
@@ -742,9 +731,9 @@ void emulate() {
     if (!mul) { zero = F6 == 0, one = F6 != 0; }
 
     if ((opcode2 & 0b11111) == 0b01101) { *D = imm20_up; goto end; } // LUI
-    if ((opcode2 & 0b11111) == 0b00101) { *D = ip + imm20_up; goto end; } // AUIPC
-    if ((opcode2 & 0b11111) == 0b11011) { *D = ip + 4; ip += jal_imm; goto exit; } // JAL
-    if ((opcode2 & 0b11111) == 0b11001) { *D = ip + 4; ip = S1 + imm12_ext; goto exit; } // JALR
+    if ((opcode2 & 0b11111) == 0b00101) { *D = g_pc + imm20_up; goto end; } // AUIPC
+    if ((opcode2 & 0b11111) == 0b11011) { *D = g_pc + 4; g_pc += jal_imm; goto exit; } // JAL
+    if ((opcode2 & 0b11111) == 0b11001) { *D = g_pc + 4; g_pc = S1 + imm12_ext; goto exit; } // JALR
 
     if ((opcode & 0b1111) == 0b1100) {
         if ((opcode>>5) == 0) T = S1 == S2;
@@ -752,7 +741,7 @@ void emulate() {
         if ((opcode>>5) == 2) T = (i32)S1 < (i32)S2;
         if ((opcode>>5) == 3) T = S1 < S2;
         if ((opcode>>4) & 1) T = !T;
-        ip += T ? btype_imm : 4;
+        g_pc += T ? btype_imm : 4;
 		rd = 0;	
         goto exit;
     }
@@ -810,10 +799,10 @@ inst_SLL: *D = S1 << (T & 0x1F); goto end;
 inst_SR: *D = zero ? (S1 >> (T & 0x1F)) : ((i32)S1 >> (T & 0x1F)); goto end;
 
 end:
-    ip += 4;
+    g_pc += 4;
 
 exit:
-	RegWritten = rd;
+	g_reg_written = rd;
 }
 // clang-format on
 
@@ -829,7 +818,7 @@ int main() {
     char *txt = malloc(s);
     fread(txt, s, 1, f);
     assemble(txt, s);
-    printf("assembled %zu\n", asm_emit_idx);
-    fwrite(ram, asm_emit_idx, 1, out);
+    printf("assembled %zu\n", g_asm_emit_idx);
+    fwrite(g_ram, g_asm_emit_idx, 1, out);
 }
 #endif
