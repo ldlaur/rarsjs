@@ -510,7 +510,6 @@ export void assemble(const char *txt, size_t s) {
         size_t alnum_len, opcode_len;
         parse_alnum(p, &alnum, &alnum_len);
         skip_whitespace(p);
-        if (p->pos == p->size) break;
 
         if (expect(p, ':')) {
             *push(g_labels, g_labels_len, g_labels_cap) =

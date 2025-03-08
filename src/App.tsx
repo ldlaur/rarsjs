@@ -1,6 +1,5 @@
 import {
   createEffect,
-  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -198,7 +197,7 @@ const Navbar: Component = () => {
 import { For } from "solid-js";
 import { VirtualList } from "@solid-primitives/virtual";
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import { breakpointGutter } from "./Breakpoint";
+import { breakpointGutter, breakpointState } from "./Breakpoint";
 const RegisterTable = () => {
   // Generate 31 dummy registers
   const regnames = [
@@ -488,15 +487,35 @@ function PaneResize(direction, a, b) {
 }
 const [consoleText, setConsoleText] = createSignal("");
 
+let breakpointSet = new Set();
+function setBreakpoints() {
+  const breakpoints = view.state.field(breakpointState);
+  console.log(breakpoints);
+  breakpoints.between(0, view.state.doc.length, (from) => {
+    const line = view.state.doc.lineAt(from);
+    const lineNum = line.number;
+    for (let i = 0; i < 65536; i++) {
+      if (wasmInterface.ramByLinenum[i] == lineNum) {
+        breakpointSet.add(i * 4);
+      }
+    }
+  });
+
+  // 
+}
+
 async function runRiscV() {
   await wasmInterface.build(setConsoleText, view.state.doc.toString());
-  while (wasmInterface.stopExecution == false) {
+  while (!wasmInterface.stopExecution) {
     wasmInterface.run();
   }
 }
 
 async function startStepRiscV() {
+  breakpointSet = new Set();
   await wasmInterface.build(setConsoleText, view.state.doc.toString());
+  setBreakpoints();
+
   let lineno = wasmInterface.ramByLinenum[0];
   view.dispatch({
     effects: lineHighlightEffect.of(lineno),
@@ -504,7 +523,8 @@ async function startStepRiscV() {
 }
 
 function singleStepRiscV() {
-  if (wasmInterface.stopExecution == false) {
+  if (!wasmInterface.stopExecution) {
+    console.log(wasmInterface.pc[0], wasmInterface.stopExecution);
     wasmInterface.run();
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
@@ -517,7 +537,8 @@ function singleStepRiscV() {
 }
 
 function continueStepRiscV() {
-  while (wasmInterface.stopExecution == false) {
+  while (1) {
+    console.log(wasmInterface.pc[0], wasmInterface.stopExecution);
     wasmInterface.run();
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
@@ -526,12 +547,15 @@ function continueStepRiscV() {
     view.dispatch({
       effects: lineHighlightEffect.of(lineno),
     });
+    
+    if (breakpointSet.has(wasmInterface.pc[0])) break;
+    if (wasmInterface.stopExecution) break;
   }
 }
 
+
 const App: Component = () => {
   let editor;
-  let handle;
 
   onMount(() => {
     const theme = EditorView.theme({
@@ -551,10 +575,6 @@ const App: Component = () => {
     view = new EditorView({ state, parent: editor });
   });
 
-  let [clicked, setClicked] = createSignal("data");
-
-
-  let [regsArr, setRegsArr] = createSignal(Array(31));
   return (
     <div class="h-dvh max-h-dvh w-dvw max-w-dvw flex flex-col justify-between overflow-hidden">
       <Navbar />
@@ -579,6 +599,3 @@ const App: Component = () => {
 };
 
 export default App;
-function createStore(arg0: undefined[]): [any, any] {
-  throw new Error("Function not implemented.");
-}

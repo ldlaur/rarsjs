@@ -19,7 +19,7 @@ export class WasmInterface {
     private loadedPromise?: Promise<void>;
     private originalMemory?: Uint8Array;
     public textBuffer: string = "";
-    public stopExecution: boolean = false;
+    public stopExecution: boolean;
     public regsArr?: Uint32Array;
     public memWrittenLen?: Uint32Array;
     public memWrittenAddr?: Uint32Array;
@@ -46,6 +46,7 @@ export class WasmInterface {
                         setText(this.textBuffer)
                     },
                     emu_exit: () => {
+                        console.log("EXIT");
                         this.stopExecution = true;
                     },
                     panic: () => {

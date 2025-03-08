@@ -35,7 +35,7 @@ const breakpointEffect = StateEffect.define<{ pos: number, on: boolean }>({
     map: (val, mapping) => ({ pos: mapping.mapPos(val.pos), on: val.on })
 })
 
-const breakpointState = StateField.define<RangeSet<GutterMarker>>({
+export const breakpointState = StateField.define<RangeSet<GutterMarker>>({
     create() { return RangeSet.empty },
     update(set, transaction) {
         set = set.map(transaction.changes)
@@ -51,16 +51,6 @@ const breakpointState = StateField.define<RangeSet<GutterMarker>>({
     }
 })
 
-function toggleBreakpoint(view: EditorView, pos: number) {
-    let breakpoints = view.state.field(breakpointState)
-    let hasBreakpoint = false
-    breakpoints.between(pos, pos, () => { hasBreakpoint = true })
-    view.dispatch({
-        effects: breakpointEffect.of({ pos, on: !hasBreakpoint })
-    })
-}
-
-
 export const breakpointGutter = [
     breakpointState,
     gutter({
@@ -69,8 +59,14 @@ export const breakpointGutter = [
         initialSpacer: () => breakpointMarker,
         domEventHandlers: {
             mousedown(view, line) {
-                toggleBreakpoint(view, line.from)
-                return true
+                const pos = line.from; // why is it 0-idx'd here
+                let breakpoints = view.state.field(breakpointState)
+                let hasBreakpoint = false;
+                breakpoints.between(pos, pos, () => { hasBreakpoint = true })
+                view.dispatch({
+                    effects: breakpointEffect.of({ pos, on: !hasBreakpoint })
+                });
+                return true;
             }
         }
     }),
