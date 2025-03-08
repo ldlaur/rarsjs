@@ -11,8 +11,6 @@ import { basicSetup, EditorView } from "codemirror";
 import {
   Compartment,
   EditorState,
-  StateEffect,
-  StateField,
 } from "@codemirror/state";
 import {
   defaultSettingsGruvboxDark,
@@ -20,18 +18,7 @@ import {
   gruvboxDark,
   gruvboxLight,
 } from "@uiw/codemirror-theme-gruvbox-dark";
-import {
-  ViewPlugin,
-  DecorationSet,
-  ViewUpdate,
-  lineNumberMarkers,
-} from "@codemirror/view";
-
-import { Extension } from "@codemirror/state";
-import { Facet } from "@codemirror/state";
-
-import { Decoration } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
+import { lineHighlightEffect, lineHighlightState } from "./LineHighlight";
 
 import { WasmInterface } from "./RiscV";
 
@@ -41,29 +28,6 @@ const [dummy, setDummy] = createSignal(0);
 const [regsArray, setRegsArray] = createSignal(new Array(31).fill(0));
 const [wasmPc, setWasmPc] = createSignal("0x00000000");
 
-const setHighlightedLine = StateEffect.define<number | null>();
-const highlightedLineField = StateField.define<DecorationSet>({
-  create() { return Decoration.none; },
-  update(highlights, tr) {
-    let newLine: number | null = null;
-    for (let effect of tr.effects) {
-      if (effect.is(setHighlightedLine)) {
-        newLine = effect.value;
-      }
-    }
-    if (newLine !== null) {
-      if (newLine < 1 || newLine > tr.state.doc.lines) return Decoration.none;
-      let line = tr.state.doc.line(newLine);
-      return Decoration.set([
-        Decoration.line({ class: "cm-debugging" }).range(line.from, line.from),
-      ]);
-    }
-    return highlights.map(tr.changes);
-  },
-  provide: (f) => EditorView.decorations.from(f),
-});
-
-const debuggerLineHighlightExtension = [highlightedLineField];
 
 let view: EditorView;
 let cmTheme = new Compartment();
@@ -93,22 +57,24 @@ function updateCss() {
       background-color: ${cssTheme.background};
     }
     .cm-debugging {
-      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
-    };
+      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"};
+    }
+    .cm-breakpoint-marker {
+      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#e04010" : "#ff5030"};
     }
     .theme-bg-hover:hover {
       background-color: ${interpolate(
-      cssTheme.background,
-      cssTheme.foreground,
-      0.1
-    )};
+    cssTheme.background,
+    cssTheme.foreground,
+    0.1
+  )};
     }
     .theme-bg-active:active {
       background-color: ${interpolate(
-      cssTheme.background,
-      cssTheme.foreground,
-      0.2
-    )};
+    cssTheme.background,
+    cssTheme.foreground,
+    0.2
+  )};
     }
     .theme-gutter {
       background-color: ${cssTheme.gutterBackground};
@@ -232,6 +198,7 @@ const Navbar: Component = () => {
 import { For } from "solid-js";
 import { VirtualList } from "@solid-primitives/virtual";
 import { createVirtualizer } from "@tanstack/solid-virtual";
+import { breakpointGutter } from "./Breakpoint";
 const RegisterTable = () => {
   // Generate 31 dummy registers
   const regnames = [
@@ -528,8 +495,12 @@ async function runRiscV() {
   }
 }
 
-function startStepRiscV() {
-  wasmInterface.build(setConsoleText, view.state.doc.toString());
+async function startStepRiscV() {
+  await wasmInterface.build(setConsoleText, view.state.doc.toString());
+  let lineno = wasmInterface.ramByLinenum[0];
+  view.dispatch({
+    effects: lineHighlightEffect.of(lineno),
+  });
 }
 
 function singleStepRiscV() {
@@ -538,6 +509,10 @@ function singleStepRiscV() {
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
     setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
+    let lineno = wasmInterface.ramByLinenum[wasmInterface.pc[0] / 4];
+    view.dispatch({
+      effects: lineHighlightEffect.of(lineno),
+    });
   }
 }
 
@@ -546,6 +521,11 @@ function continueStepRiscV() {
     wasmInterface.run();
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
+    setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
+    let lineno = wasmInterface.ramByLinenum[wasmInterface.pc[0] / 4];
+    view.dispatch({
+      effects: lineHighlightEffect.of(lineno),
+    });
   }
 }
 
@@ -561,10 +541,11 @@ const App: Component = () => {
     const state = EditorState.create({
       doc: "",
       extensions: [
+        breakpointGutter, // must be first so it's the first gutter
         basicSetup,
         theme,
         cmTheme.of(gruvboxLight),
-        debuggerLineHighlightExtension,
+        [lineHighlightState],
       ],
     });
     view = new EditorView({ state, parent: editor });
@@ -581,8 +562,7 @@ const App: Component = () => {
       <div class="flex w-full h-full overflow-hidden">
         {PaneResize(
           "horizontal",
-          <main class="w-full h-full overflow-hidden" ref={editor} />,
-
+          <main class="w-full h-full overflow-hidden theme-scrollbar" ref={editor} />,
           PaneResize(
             "vertical",
             PaneResize("horizontal", <RegisterTable />, <MemoryView />),
