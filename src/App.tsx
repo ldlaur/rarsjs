@@ -509,12 +509,21 @@ async function runRiscV() {
   while (!wasmInterface.stopExecution) {
     wasmInterface.run();
   }
+
+  setDummy(dummy() + 1);
+  setRegsArray([...wasmInterface.regArr]);
+  setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
+  let lineno = wasmInterface.ramByLinenum[wasmInterface.pc[0] / 4];
+  view.dispatch({
+    effects: lineHighlightEffect.of(lineno),
+  });
 }
 
 async function startStepRiscV() {
   breakpointSet = new Set();
   await wasmInterface.build(setConsoleText, view.state.doc.toString());
   setBreakpoints();
+  setDummy(dummy() + 1);
 
   let lineno = wasmInterface.ramByLinenum[0];
   view.dispatch({
@@ -547,7 +556,7 @@ function continueStepRiscV() {
     view.dispatch({
       effects: lineHighlightEffect.of(lineno),
     });
-    
+
     if (breakpointSet.has(wasmInterface.pc[0])) break;
     if (wasmInterface.stopExecution) break;
   }
