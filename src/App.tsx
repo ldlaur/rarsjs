@@ -26,6 +26,7 @@ const wasmInterface = new WasmInterface();
 const [dummy, setDummy] = createSignal(0);
 const [regsArray, setRegsArray] = createSignal(new Array(31).fill(0));
 const [wasmPc, setWasmPc] = createSignal("0x00000000");
+const [debugMode, setDebugMode] = createSignal(false);
 
 
 let view: EditorView;
@@ -154,8 +155,6 @@ function doChangeTheme() {
 }
 
 const Navbar: Component = () => {
-  const [debugMode, setDebugMode] = createSignal(false);
-
   return (
     <nav class="sticky theme-gutter">
       <div class="mx-auto px-2">
@@ -188,7 +187,7 @@ const Navbar: Component = () => {
             play_circle
           </button>
           <button
-            on:click={() => { startStepRiscV(); setDebugMode(true); }}
+            on:click={startStepRiscV}
             class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active">
             arrow_forward
           </button>
@@ -204,8 +203,8 @@ import { VirtualList } from "@solid-primitives/virtual";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { breakpointGutter, breakpointState } from "./Breakpoint";
 import { createAsmLinter } from "./AssemblerErrors";
+import { forceLinting } from "@codemirror/lint";
 const RegisterTable = () => {
-  // Generate 31 dummy registers
   const regnames = [
     "ra",
     "sp",
@@ -352,21 +351,24 @@ function MemoryView() {
                 </Show>
                 {(() => {
                   dummy();
-                  if (!wasmInterface.riscvRam) return "";
                   let components = [];
                   let chunks = chunksPerLine() - 1;
                   if (chunksPerLine() < 2) chunks = 1;
                   for (let i = 0; i < chunks; i++) {
                     for (let j = 0; j < 4; j++) {
-                      let ptr = (virtualItem.index * chunks + i) * 4 + j;
-                      let is_animated =
-                        ptr >= wasmInterface.memWrittenAddr[0] &&
-                        ptr < wasmInterface.memWrittenAddr[0] + wasmInterface.memWrittenLen[0];
+                      let text = "00";
                       let style = "";
-                      if (is_animated) style += "animate-fade-highlight";
+                      if (wasmInterface.riscvRam) {
+                        let ptr = (virtualItem.index * chunks + i) * 4 + j;
+                        let is_animated =
+                          ptr >= wasmInterface.memWrittenAddr[0] &&
+                          ptr < wasmInterface.memWrittenAddr[0] + wasmInterface.memWrittenLen[0];
+                        if (is_animated) style = "animate-fade-highlight";
+                        text = wasmInterface.riscvRam[ptr].toString(16).padStart(2, "0");
+                      }
                       components.push(
                         <a class={style}>
-                          {wasmInterface.riscvRam[ptr].toString(16).padStart(2, "0")}
+                          {text}
                         </a>
                       );
                       if (j == 3) components.push(<a class="pr-1" />);
@@ -510,7 +512,10 @@ function setBreakpoints() {
 }
 
 async function runRiscV() {
-  await wasmInterface.build(setConsoleText, view.state.doc.toString());
+  let err = await wasmInterface.build(setConsoleText, view.state.doc.toString());
+  if (err !== null) return;
+  else forceLinting(view);
+
   while (!wasmInterface.stopExecution) {
     wasmInterface.run();
   }
@@ -525,8 +530,12 @@ async function runRiscV() {
 }
 
 async function startStepRiscV() {
+  let err = await wasmInterface.build(setConsoleText, view.state.doc.toString());
+  if (err !== null) return;
+  else forceLinting(view);
+
+  setDebugMode(true);
   breakpointSet = new Set();
-  await wasmInterface.build(setConsoleText, view.state.doc.toString());
   setBreakpoints();
   setDummy(dummy() + 1);
 
@@ -547,6 +556,7 @@ function singleStepRiscV() {
     view.dispatch({
       effects: lineHighlightEffect.of(lineno),
     });
+    if (wasmInterface.stopExecution) { setDebugMode(false); }
   }
 }
 
@@ -563,7 +573,7 @@ function continueStepRiscV() {
     });
 
     if (breakpointSet.has(wasmInterface.pc[0])) break;
-    if (wasmInterface.stopExecution) break;
+    if (wasmInterface.stopExecution) { setDebugMode(false); break; }
   }
 }
 
