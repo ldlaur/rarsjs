@@ -58,6 +58,11 @@ function updateCss() {
     .cm-debugging {
       background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"};
     }
+    .cm-tooltip-lint {
+      color: ${cssTheme.foreground};
+      background-color: ${cssTheme.background};
+      font-family: monospace;
+    }
     .cm-breakpoint-marker {
       background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#e04010" : "#ff5030"};
     }
@@ -198,6 +203,7 @@ import { For } from "solid-js";
 import { VirtualList } from "@solid-primitives/virtual";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { breakpointGutter, breakpointState } from "./Breakpoint";
+import { createAsmLinter } from "./AssemblerErrors";
 const RegisterTable = () => {
   // Generate 31 dummy registers
   const regnames = [
@@ -490,7 +496,6 @@ const [consoleText, setConsoleText] = createSignal("");
 let breakpointSet = new Set();
 function setBreakpoints() {
   const breakpoints = view.state.field(breakpointState);
-  console.log(breakpoints);
   breakpoints.between(0, view.state.doc.length, (from) => {
     const line = view.state.doc.lineAt(from);
     const lineNum = line.number;
@@ -574,6 +579,7 @@ const App: Component = () => {
     const state = EditorState.create({
       doc: "",
       extensions: [
+        createAsmLinter(wasmInterface),
         breakpointGutter, // must be first so it's the first gutter
         basicSetup,
         theme,

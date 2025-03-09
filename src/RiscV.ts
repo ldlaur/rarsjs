@@ -10,6 +10,8 @@ interface WasmExports {
     g_ram: number;
     g_pc: number;
     g_ram_by_linenum: number;
+    g_error: number;
+    g_error_line: number;
 }
 
 export class WasmInterface {
@@ -63,7 +65,7 @@ export class WasmInterface {
         return this.loadedPromise;
     }
 
-    async build(setText: (str: string) => void, source: string): Promise<void> {
+    async build(setText: (str: string) => void, source: string): Promise<{ line: number, message: string } | null> {
         if (!this.wasmInstance) {
             await this.loadModule(setText);
         }
@@ -91,6 +93,13 @@ export class WasmInterface {
         strMem.set(strBytes);
 
         this.exports.assemble(offset, strLen);
+        const errorLine = (new Uint32Array(this.memory.buffer, this.exports.g_error_line, 1))[0];
+        const errorPtr = (new Uint32Array(this.memory.buffer, this.exports.g_error, 1))[0];
+        if (errorPtr) {
+            const errorLen = (new Uint8Array(this.memory.buffer, errorPtr)).indexOf(0);
+            const errorStr = new TextDecoder('utf8').decode(new Uint8Array(this.memory.buffer, errorPtr, errorLen));
+            return { line: errorLine, message: errorStr };
+        }
         this.regsArr = new Uint32Array(this.memory.buffer, this.exports.g_regs + 4, 31);
         this.memWrittenAddr = new Uint32Array(this.memory.buffer, this.exports.g_mem_written_addr, 1);
         this.memWrittenLen = new Uint32Array(this.memory.buffer, this.exports.g_mem_written_len, 1);
@@ -98,6 +107,7 @@ export class WasmInterface {
         this.riscvRam = new Uint8Array(this.memory.buffer, this.exports.g_ram, 65536);
         this.pc = new Uint32Array(this.memory.buffer, this.exports.g_pc, 1);
         this.ramByLinenum = new Uint32Array(this.memory.buffer, this.exports.g_ram_by_linenum, 65536);
+        return null;
     }
 
     run(): void {

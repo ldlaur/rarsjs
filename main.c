@@ -17,6 +17,8 @@ export u8 g_ram[65536];
 export u32 g_mem_written_len = 0;
 export u32 g_mem_written_addr;
 export u32 g_reg_written = 0;
+export u32 g_error_line;
+export const char* g_error;
 
 size_t g_asm_emit_idx = 0;
 
@@ -155,6 +157,7 @@ void skip_whitespace(Parser *p) {
 
 void parse_alnum(Parser *p, const char **str, size_t *len) {
     size_t start = p->pos;
+    if (p->pos < p->size && p->input[p->pos] == '-') parser_advance(p);
     while (p->pos < p->size && alnum(p->input[p->pos])) parser_advance(p);
     size_t end = p->pos;
     *str = p->input + start;
@@ -193,13 +196,20 @@ int regname_to_num(const char *str, size_t len) {
     return -1;
 }
 
-int atoi_len(const char *str, int len) {
+bool atoi_len(const char *str, int len, int *out) {
+    if (len == 0) return false;
     int tmp = 0, i = 0;
-    assert(len > 0);
-    if (str[0] == '-') i = 1;
-    for (; i < len; i++) tmp = tmp * 10 + (str[i] - '0');
+    if (str[0] == '-') {
+        if (len == 1) return false;
+        i = 1;
+    }
+    for (; i < len; i++) {
+        if (str[i] < '0' || str[i] > '9') return false;
+        tmp = tmp * 10 + (str[i] - '0');
+    }
     if (str[0] == '-') tmp = -tmp;
-    return tmp;
+    *out = tmp;
+    return true;
 }
 
 void asm_emit(u32 inst, int linenum) {
@@ -282,8 +292,8 @@ const char *handle_alu_imm(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     parse_alnum(p, &imm, &imm_len);
-    if (imm_len == 0) return "Invalid imm";
-    simm = atoi_len(imm, imm_len);
+    
+    if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
     if (simm < -2048 || simm > 2047) return "Out of bounds imm";
     skip_whitespace(p);
 
@@ -316,8 +326,8 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     parse_simm(p, &imm, &imm_len);
-    if (imm_len == 0) return "Invalid imm";
-    simm = atoi_len(imm, imm_len);
+    
+    if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
     skip_whitespace(p);
 
     if (!expect(p, '(')) return "Expected (";
@@ -411,8 +421,8 @@ const char *handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
 
     if (str_eq(opcode, opcode_len, "jal")) {
         parse_alnum(p, &imm, &imm_len);
-        if (imm_len == 0) return "Invalid imm";
-        simm = atoi_len(imm, imm_len);
+        
+        if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
         inst = JAL(d, simm);
     } else if (str_eq(opcode, opcode_len, "jalr")) {
         parse_alnum(p, &rs1, &rs1_len);
@@ -422,8 +432,8 @@ const char *handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
         skip_whitespace(p);
 
         parse_alnum(p, &imm, &imm_len);
-        if (imm_len == 0) return "Invalid imm";
-        simm = atoi_len(imm, imm_len);
+        
+        if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
         inst = JALR(d, s1, simm);
     }
 
@@ -446,8 +456,8 @@ const char *handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
     skip_whitespace(p);
 
     parse_simm(p, &imm, &imm_len);
-    if (imm_len == 0) return "Invalid imm";
-    simm = atoi_len(imm, imm_len);
+    
+    if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
 
     if (str_eq(opcode, opcode_len, "lui")) inst = LUI(d, simm);
     else if (str_eq(opcode, opcode_len, "auipc")) inst = AUIPC(d, simm);
@@ -470,8 +480,8 @@ const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
     skip_whitespace(p);
 
     parse_simm(p, &imm, &imm_len);
-    if (imm_len == 0) return "Invalid imm";
-    simm = atoi_len(imm, imm_len);
+    
+    if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
 
     if (simm >= -2048 && simm <= 2047) {
         asm_emit(ADDI(d, 0, simm), p->startline);
@@ -569,6 +579,15 @@ export void assemble(const char *txt, size_t s) {
         }
 
         if (err) break;
+    }
+
+    if (err) {
+        g_error = err;
+        g_error_line = p->startline;
+#ifndef __wasm__
+        printf("line %d: %s\n", p->startline, err);
+#endif
+        return;
     }
 
     size_t oldemit = g_asm_emit_idx;
