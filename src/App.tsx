@@ -1,6 +1,7 @@
 import {
   createEffect,
   createSignal,
+  JSX,
   onCleanup,
   onMount,
   Show,
@@ -18,22 +19,32 @@ import {
   gruvboxLight,
 } from "@uiw/codemirror-theme-gruvbox-dark";
 import { lineHighlightEffect, lineHighlightState } from "./LineHighlight";
+import { For } from "solid-js";
+import { createVirtualizer } from "@tanstack/solid-virtual";
+import { breakpointGutter, breakpointState } from "./Breakpoint";
+import { createAsmLinter } from "./AssemblerErrors";
+import { forceLinting } from "@codemirror/lint";
 
 import { WasmInterface } from "./RiscV";
+import { Settings } from "@uiw/codemirror-themes";
 
 const wasmInterface = new WasmInterface();
 
-const [dummy, setDummy] = createSignal(0);
-const [regsArray, setRegsArray] = createSignal(new Array(31).fill(0));
-const [wasmPc, setWasmPc] = createSignal("0x00000000");
-const [debugMode, setDebugMode] = createSignal(false);
+const [dummy, setDummy] = createSignal<number>(0);
+const [regsArray, setRegsArray] = createSignal<number[]>(new Array(31).fill(0));
+const [wasmPc, setWasmPc] = createSignal<string>("0x00000000");
+const [debugMode, setDebugMode] = createSignal<boolean>(false);
+const [consoleText, setConsoleText] = createSignal<string>("");
 
+const ROW_HEIGHT: number = 25;
 
+let breakpointSet: Set<number> = new Set();
 let view: EditorView;
-let cmTheme = new Compartment();
-let cssTheme = defaultSettingsGruvboxLight;
+let cmTheme: Compartment = new Compartment();
+let cssTheme: Settings = defaultSettingsGruvboxLight;
+let themeStyle: HTMLStyleElement | null = null;
 
-function interpolate(color1, color2, percent) {
+function interpolate(color1: string, color2: string, percent: number): string {
   const r1 = parseInt(color1.substring(1, 3), 16);
   const g1 = parseInt(color1.substring(3, 5), 16);
   const b1 = parseInt(color1.substring(5, 7), 16);
@@ -49,9 +60,8 @@ function interpolate(color1, color2, percent) {
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
-let themeStyle = null;
 
-function updateCss() {
+function updateCss(): void {
   themeStyle.innerHTML = `
     .theme-bg {
       background-color: ${cssTheme.background};
@@ -143,7 +153,7 @@ window.addEventListener("DOMContentLoaded", () => {
   updateCss();
 });
 
-function doChangeTheme() {
+function doChangeTheme(): void {
   if (cssTheme == defaultSettingsGruvboxDark) {
     cssTheme = defaultSettingsGruvboxLight;
     view.dispatch({ effects: cmTheme.reconfigure(gruvboxLight) });
@@ -198,13 +208,7 @@ const Navbar: Component = () => {
 };
 
 
-import { For } from "solid-js";
-import { VirtualList } from "@solid-primitives/virtual";
-import { createVirtualizer } from "@tanstack/solid-virtual";
-import { breakpointGutter, breakpointState } from "./Breakpoint";
-import { createAsmLinter } from "./AssemblerErrors";
-import { forceLinting } from "@codemirror/lint";
-const RegisterTable = () => {
+const RegisterTable: Component = () => {
   const regnames = [
     "ra",
     "sp",
@@ -275,16 +279,13 @@ const RegisterTable = () => {
   );
 };
 
-const ROW_HEIGHT = 25;
-
-function MemoryView() {
-  let parentRef;
-
-  let dummyChunk;
-  const [containerWidth, setContainerWidth] = createSignal(0);
-  const [chunkWidth, setChunkWidth] = createSignal(0);
-  const [chunksPerLine, setChunksPerLine] = createSignal(1);
-  const [lineCount, setLineCount] = createSignal(10);
+const MemoryView: Component = () => {
+  let parentRef: HTMLDivElement | undefined;
+  let dummyChunk: HTMLDivElement | undefined;
+  const [containerWidth, setContainerWidth] = createSignal<number>(0);
+  const [chunkWidth, setChunkWidth] = createSignal<number>(0);
+  const [chunksPerLine, setChunksPerLine] = createSignal<number>(1);
+  const [lineCount, setLineCount] = createSignal<number>(10);
 
   onMount(() => {
     if (dummyChunk) {
@@ -385,69 +386,68 @@ function MemoryView() {
   );
 }
 
-function PaneResize(direction, a, b) {
-  let handle;
-  let container;
+function PaneResize(direction: "vertical" | "horizontal", a: JSX.Element, b: JSX.Element): JSX.Element {
+  let handle: HTMLDivElement | undefined;
+  let container: HTMLDivElement | undefined;
 
-  const [size, setSize] = createSignal(0);
-  const [containerSize, setContainerSize] = createSignal(0);
+  const [size, setSize] = createSignal<number>(0);
+  const [containerSize, setContainerSize] = createSignal<number>(0);
 
-  const [resizeState, setResizeState] = createSignal(null);
+  const [resizeState, setResizeState] = createSignal<{ origSize: number; orig: number } | null>(null);
 
-  const resizeUp = (e) => {
+  const resizeUp = (e: MouseEvent | TouchEvent) => {
     setResizeState(null);
     document.body.style.pointerEvents = "";
     document.body.style.userSelect = "";
-    handle.style.pointerEvents = "";
+    handle!.style.pointerEvents = "";
   };
 
-  const resizeDown = (e) => {
+  const resizeDown = (e: MouseEvent | TouchEvent) => {
     e.preventDefault();
     document.body.style.pointerEvents = "none";
     document.body.style.userSelect = "none";
-    handle.style.pointerEvents = "auto";
+    handle!.style.pointerEvents = "auto";
     const client =
       direction == "vertical"
-        ? e.clientY ?? e.touches[0]?.clientY
-        : e.clientX ?? e.touches[0]?.clientX;
+        ? (e as MouseEvent).clientY ?? (e as TouchEvent).touches[0]?.clientY
+        : (e as MouseEvent).clientX ?? (e as TouchEvent).touches[0]?.clientX;
     setResizeState({ origSize: size(), orig: client });
   };
 
-  const resizeMove = (e) => {
+  const resizeMove = (e: MouseEvent | TouchEvent) => {
     if (resizeState() === null) return;
     const client =
       direction == "vertical"
-        ? e.clientY ?? e.touches[0]?.clientY
-        : e.clientX ?? e.touches[0]?.clientX;
-    const calcSize = resizeState().origSize + (client - resizeState().orig);
+        ? (e as MouseEvent).clientY ?? (e as TouchEvent).touches[0]?.clientY
+        : (e as MouseEvent).clientX ?? (e as TouchEvent).touches[0]?.clientX;
+    const calcSize = resizeState()!.origSize + (client - resizeState()!.orig);
     setSize(
       Math.min(
         calcSize,
-        direction == "vertical" ? container.clientHeight : container.clientWidth
+        direction == "vertical" ? container!.clientHeight : container!.clientWidth
       )
     );
   };
 
   const updateSize = () => {
-    const newSize = direction == "vertical" ? container.clientHeight : container.clientWidth;
+    const newSize = direction == "vertical" ? container!.clientHeight : container!.clientWidth;
     setSize((size() / containerSize()) * newSize);
     setContainerSize(newSize);
   };
 
   onMount(() => {
-    const initialSize = direction == "vertical" ? container.clientHeight : container.clientWidth;
+    const initialSize = direction == "vertical" ? container!.clientHeight : container!.clientWidth;
     setSize(initialSize / 2);
     setContainerSize(initialSize);
 
     const ro = new ResizeObserver(() => updateSize());
-    ro.observe(container);
+    ro.observe(container!);
 
     document.addEventListener("mousemove", resizeMove);
     document.addEventListener("touchmove", resizeMove);
     document.addEventListener("mouseup", resizeUp);
     document.addEventListener("touchend", resizeUp);
     onCleanup(() => {
-      view.destroy();
       ro.disconnect();
       document.removeEventListener("mousemove", resizeMove);
       document.removeEventListener("touchmove", resizeMove);
@@ -493,10 +493,8 @@ function PaneResize(direction, a, b) {
     </div>
   );
 }
-const [consoleText, setConsoleText] = createSignal("");
 
-let breakpointSet = new Set();
-function setBreakpoints() {
+function setBreakpoints(): void {
   const breakpoints = view.state.field(breakpointState);
   breakpoints.between(0, view.state.doc.length, (from) => {
     const line = view.state.doc.lineAt(from);
@@ -511,7 +509,7 @@ function setBreakpoints() {
   // 
 }
 
-async function runRiscV() {
+async function runRiscV(): Promise<void> {
   let err = await wasmInterface.build(setConsoleText, view.state.doc.toString());
   if (err !== null) return;
   else forceLinting(view);
@@ -529,7 +527,7 @@ async function runRiscV() {
   });
 }
 
-async function startStepRiscV() {
+async function startStepRiscV(): Promise<void> {
   let err = await wasmInterface.build(setConsoleText, view.state.doc.toString());
   if (err !== null) return;
   else forceLinting(view);
@@ -545,7 +543,7 @@ async function startStepRiscV() {
   });
 }
 
-function singleStepRiscV() {
+function singleStepRiscV(): void {
   if (!wasmInterface.stopExecution) {
     console.log(wasmInterface.pc[0], wasmInterface.stopExecution);
     wasmInterface.run();
@@ -560,7 +558,7 @@ function singleStepRiscV() {
   }
 }
 
-function continueStepRiscV() {
+function continueStepRiscV(): void {
   while (1) {
     console.log(wasmInterface.pc[0], wasmInterface.stopExecution);
     wasmInterface.run();
@@ -579,7 +577,7 @@ function continueStepRiscV() {
 
 
 const App: Component = () => {
-  let editor;
+  let editor: HTMLDivElement | undefined;
 
   onMount(() => {
     const theme = EditorView.theme({
