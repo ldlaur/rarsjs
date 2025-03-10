@@ -8,10 +8,7 @@ import {
   type Component,
 } from "solid-js";
 import { basicSetup, EditorView } from "codemirror";
-import {
-  Compartment,
-  EditorState,
-} from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import {
   defaultSettingsGruvboxDark,
   defaultSettingsGruvboxLight,
@@ -60,14 +57,15 @@ function interpolate(color1: string, color2: string, percent: number): string {
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
-
 function updateCss(): void {
   themeStyle.innerHTML = `
     .theme-bg {
       background-color: ${cssTheme.background};
     }
     .cm-debugging {
-      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"};
+      background-color: ${
+        cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
+      };
     }
     .cm-tooltip-lint {
       color: ${cssTheme.foreground};
@@ -75,30 +73,33 @@ function updateCss(): void {
       font-family: monospace;
     }
     .cm-breakpoint-marker {
-      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#e04010" : "#ff5030"};
+      background-color: ${
+        cssTheme == defaultSettingsGruvboxDark ? "#e04010" : "#ff5030"
+      };
     }
     .theme-bg-hover:hover {
       background-color: ${interpolate(
-    cssTheme.background,
-    cssTheme.foreground,
-    0.1
-  )};
+        cssTheme.background,
+        cssTheme.foreground,
+        0.1,
+      )};
     }
     .theme-bg-active:active {
       background-color: ${interpolate(
-    cssTheme.background,
-    cssTheme.foreground,
-    0.2
-  )};
+        cssTheme.background,
+        cssTheme.foreground,
+        0.2,
+      )};
     }
     .theme-gutter {
       background-color: ${cssTheme.gutterBackground};
     }
     .theme-separator {
-      background-color: ${cssTheme.gutterBackground != cssTheme.background
-      ? cssTheme.gutterBackground
-      : interpolate(cssTheme.background, cssTheme.foreground, 0.1)
-    };
+      background-color: ${
+        cssTheme.gutterBackground != cssTheme.background
+          ? cssTheme.gutterBackground
+          : interpolate(cssTheme.background, cssTheme.foreground, 0.1)
+      };
     }
     .theme-fg {
       color: ${cssTheme.foreground};
@@ -108,33 +109,32 @@ function updateCss(): void {
     }
     .theme-scrollbar-slim {
     scrollbar-width: thin;
-
       scrollbar-color: ${interpolate(
-      cssTheme.background,
-      cssTheme.foreground,
-      0.5
-    )} ${cssTheme.background};
+        cssTheme.background,
+        cssTheme.foreground,
+        0.5,
+      )} ${cssTheme.background};
     }
-      .theme-scrollbar {
-
+    .theme-scrollbar {
       scrollbar-color: ${interpolate(
-      cssTheme.background,
-      cssTheme.foreground,
-      0.5
-    )} ${cssTheme.background};
+        cssTheme.background,
+        cssTheme.foreground,
+        0.5,
+      )} ${cssTheme.background};
     }
       
     .theme-border {
       border-color: ${interpolate(
-      cssTheme.foreground,
-      cssTheme.background,
-      0.8
-    )};
+        cssTheme.foreground,
+        cssTheme.background,
+        0.8,
+      )};
     }
 
   @keyframes fadeHighlight {
   from {
-    background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
+    background-color: ${
+      cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
     };
   }
   to {
@@ -177,11 +177,15 @@ const Navbar: Component = () => {
             <button
               on:click={singleStepRiscV}
               class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-            >arrow_downward_alt</button>
+            >
+              arrow_downward_alt
+            </button>
             <button
               on:click={continueStepRiscV}
               class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-            >resume</button>
+            >
+              resume
+            </button>
             <div class="flex-shrink-0 mx-auto"></div>
           </Show>
           <button
@@ -198,7 +202,8 @@ const Navbar: Component = () => {
           </button>
           <button
             on:click={startStepRiscV}
-            class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active">
+            class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+          >
             arrow_forward
           </button>
         </div>
@@ -206,7 +211,6 @@ const Navbar: Component = () => {
     </nav>
   );
 };
-
 
 const RegisterTable: Component = () => {
   const regnames = [
@@ -250,9 +254,7 @@ const RegisterTable: Component = () => {
       <div class="grid-cols-[repeat(auto-fit,minmax(20ch,1fr))] grid">
         <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
           <div class="self-center pl-[1ch] font-bold">pc</div>
-          <div class="self-center pr-[1ch]">
-            {wasmPc()}
-          </div>
+          <div class="self-center pr-[1ch]">{wasmPc()}</div>
         </div>
         <For each={regsArray()}>
           {(reg, idx) => (
@@ -264,7 +266,10 @@ const RegisterTable: Component = () => {
               <div
                 class={
                   "self-center mr-[1ch] " +
-                  ((wasmInterface.regWritten && idx() + 1 == wasmInterface.regWritten[0]) ? "animate-fade-highlight" : "")
+                  (wasmInterface.regWritten &&
+                  idx() + 1 == wasmInterface.regWritten[0]
+                    ? "animate-fade-highlight"
+                    : "")
                 }
               >
                 {"0x" + reg.toString(16).padStart(8, "0")}
@@ -363,15 +368,15 @@ const MemoryView: Component = () => {
                         let ptr = (virtualItem.index * chunks + i) * 4 + j;
                         let is_animated =
                           ptr >= wasmInterface.memWrittenAddr[0] &&
-                          ptr < wasmInterface.memWrittenAddr[0] + wasmInterface.memWrittenLen[0];
+                          ptr <
+                            wasmInterface.memWrittenAddr[0] +
+                              wasmInterface.memWrittenLen[0];
                         if (is_animated) style = "animate-fade-highlight";
-                        text = wasmInterface.riscvRam[ptr].toString(16).padStart(2, "0");
+                        text = wasmInterface.riscvRam[ptr]
+                          .toString(16)
+                          .padStart(2, "0");
                       }
-                      components.push(
-                        <a class={style}>
-                          {text}
-                        </a>
-                      );
+                      components.push(<a class={style}>{text}</a>);
                       if (j == 3) components.push(<a class="pr-1" />);
                     }
                   }
@@ -384,16 +389,23 @@ const MemoryView: Component = () => {
       </div>
     </div>
   );
-}
+};
 
-function PaneResize(direction: "vertical" | "horizontal", a: JSX.Element, b: JSX.Element): JSX.Element {
+function PaneResize(
+  direction: "vertical" | "horizontal",
+  a: JSX.Element,
+  b: JSX.Element,
+): JSX.Element {
   let handle: HTMLDivElement | undefined;
   let container: HTMLDivElement | undefined;
 
   const [size, setSize] = createSignal<number>(0);
   const [containerSize, setContainerSize] = createSignal<number>(0);
 
-  const [resizeState, setResizeState] = createSignal<{ origSize: number; orig: number } | null>(null);
+  const [resizeState, setResizeState] = createSignal<{
+    origSize: number;
+    orig: number;
+  } | null>(null);
 
   const resizeUp = (e: MouseEvent | TouchEvent) => {
     setResizeState(null);
@@ -424,19 +436,27 @@ function PaneResize(direction: "vertical" | "horizontal", a: JSX.Element, b: JSX
     setSize(
       Math.min(
         calcSize,
-        direction == "vertical" ? container!.clientHeight : container!.clientWidth
-      )
+        direction == "vertical"
+          ? container!.clientHeight
+          : container!.clientWidth,
+      ),
     );
   };
 
   const updateSize = () => {
-    const newSize = direction == "vertical" ? container!.clientHeight : container!.clientWidth;
+    const newSize =
+      direction == "vertical"
+        ? container!.clientHeight
+        : container!.clientWidth;
     setSize((size() / containerSize()) * newSize);
     setContainerSize(newSize);
   };
 
   onMount(() => {
-    const initialSize = direction == "vertical" ? container!.clientHeight : container!.clientWidth;
+    const initialSize =
+      direction == "vertical"
+        ? container!.clientHeight
+        : container!.clientWidth;
     setSize(initialSize / 2);
     setContainerSize(initialSize);
 
@@ -506,11 +526,14 @@ function setBreakpoints(): void {
     }
   });
 
-  // 
+  //
 }
 
 async function runRiscV(): Promise<void> {
-  let err = await wasmInterface.build(setConsoleText, view.state.doc.toString());
+  let err = await wasmInterface.build(
+    setConsoleText,
+    view.state.doc.toString(),
+  );
   if (err !== null) return;
   else forceLinting(view);
 
@@ -528,7 +551,10 @@ async function runRiscV(): Promise<void> {
 }
 
 async function startStepRiscV(): Promise<void> {
-  let err = await wasmInterface.build(setConsoleText, view.state.doc.toString());
+  let err = await wasmInterface.build(
+    setConsoleText,
+    view.state.doc.toString(),
+  );
   if (err !== null) return;
   else forceLinting(view);
 
@@ -554,7 +580,9 @@ function singleStepRiscV(): void {
     view.dispatch({
       effects: lineHighlightEffect.of(lineno),
     });
-    if (wasmInterface.stopExecution) { setDebugMode(false); }
+    if (wasmInterface.stopExecution) {
+      setDebugMode(false);
+    }
   }
 }
 
@@ -571,10 +599,12 @@ function continueStepRiscV(): void {
     });
 
     if (breakpointSet.has(wasmInterface.pc[0])) break;
-    if (wasmInterface.stopExecution) { setDebugMode(false); break; }
+    if (wasmInterface.stopExecution) {
+      setDebugMode(false);
+      break;
+    }
   }
 }
-
 
 const App: Component = () => {
   let editor: HTMLDivElement | undefined;
@@ -605,7 +635,10 @@ const App: Component = () => {
       <div class="flex w-full h-full overflow-hidden">
         {PaneResize(
           "horizontal",
-          <main class="w-full h-full overflow-hidden theme-scrollbar" ref={editor} />,
+          <main
+            class="w-full h-full overflow-hidden theme-scrollbar"
+            ref={editor}
+          />,
           PaneResize(
             "vertical",
             PaneResize("horizontal", <RegisterTable />, <MemoryView />),
@@ -613,8 +646,8 @@ const App: Component = () => {
               innerText={consoleText()}
               class="w-full h-full overflow-auto theme-scrollbar theme-fg theme-bg"
               style={{ "font-family": "monospace" }}
-            ></div>
-          )
+            ></div>,
+          ),
         )}
       </div>
     </div>
