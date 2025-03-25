@@ -1,3 +1,5 @@
+import wasmUrl from '../main.wasm?url'
+
 interface WasmExports {
   emulate(): void;
   assemble: (offset: number, len: number) => void;
@@ -20,6 +22,7 @@ export class WasmInterface {
   private exports?: WasmExports;
   private loadedPromise?: Promise<void>;
   private originalMemory?: Uint8Array;
+  private setText: (str: string) => void;
   public textBuffer: string = "";
   public stopExecution: boolean;
   public regsArr?: Uint32Array;
@@ -35,17 +38,17 @@ export class WasmInterface {
     this.memory = new WebAssembly.Memory({ initial: 7 });
   }
 
-  async loadModule(setText: (str: string) => void): Promise<void> {
+  async loadModule(): Promise<void> {
     if (this.loadedPromise) return this.loadedPromise;
     this.loadedPromise = (async () => {
-      const res = await fetch("http://localhost:3000/main.wasm");
+      const res = await fetch(wasmUrl);
       const buffer = await res.arrayBuffer();
       const { instance } = await WebAssembly.instantiate(buffer, {
         env: {
           memory: this.memory,
           putchar: (n: number) => {
             this.textBuffer += String.fromCharCode(n);
-            setText(this.textBuffer);
+            if (this.setText) this.setText(this.textBuffer);
           },
           emu_exit: () => {
             console.log("EXIT");
@@ -65,12 +68,13 @@ export class WasmInterface {
     return this.loadedPromise;
   }
 
+  // TODO: distinguish dry runs for error checking
   async build(
-    setText: (str: string) => void,
     source: string,
+    type: "build" | "dryrun" = "build"
   ): Promise<{ line: number; message: string } | null> {
     if (!this.wasmInstance) {
-      await this.loadModule(setText);
+      await this.loadModule();
     }
 
     this.exports = this.wasmInstance.exports as unknown as WasmExports;
@@ -150,7 +154,8 @@ export class WasmInterface {
     return null;
   }
 
-  run(): void {
+  run(setText: (str: string) => void): void {
+    this.setText = setText;
     this.exports.emulate();
     for (let i = 0; i < 31; i++) this.regArr[i] = this.regsArr[i];
   }

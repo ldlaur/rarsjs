@@ -1,5 +1,5 @@
 node_modules
 dist
 a.out
-main.wasm
+src/main.wasm
 pnpm-lock.yaml

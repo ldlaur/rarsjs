@@ -18,7 +18,7 @@ export u32 g_mem_written_len = 0;
 export u32 g_mem_written_addr;
 export u32 g_reg_written = 0;
 export u32 g_error_line;
-export const char* g_error;
+export const char *g_error;
 
 size_t g_asm_emit_idx = 0;
 
@@ -65,6 +65,7 @@ void *memcpy(void *dest, const void *src, size_t n);
         if (!(cond)) panic(); \
     }
 #else
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -146,19 +147,50 @@ static void grow(void **arr, size_t *cap, size_t size) {
     *arr = newarr;
 }
 
-void parser_advance(Parser *p) {
+void advance(Parser *p) {
     if (p->input[p->pos] == '\n') p->lineidx++;
     p->pos++;
 }
 
+void advance_n(Parser *p, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        if (p->input[p->pos] == '\n') p->lineidx++;
+        p->pos++;
+    }
+}
+
+char peek(Parser *p) {
+    if (p->pos >= p->size) return '\0';
+    return p->input[p->pos];
+}
+
+char peek_n(Parser *p, size_t n) {
+    if (p->pos + n >= p->size) return '\0';
+    return p->input[p->pos + n];
+}
+
 void skip_whitespace(Parser *p) {
-    while (p->pos < p->size && whitespace(p->input[p->pos])) parser_advance(p);
+    while (p->pos < p->size && whitespace(p->input[p->pos])) advance(p);
+}
+
+bool consume_if(Parser *p, char c) {
+    if (p->pos >= p->size) return false;
+    if (p->input[p->pos] != c) return false;
+    advance(p);
+    return true;
+}
+
+bool consume(Parser *p, char *c) {
+    if (p->pos >= p->size) return false;
+    *c = p->input[p->pos];
+    advance(p);
+    return true;
 }
 
 void parse_alnum(Parser *p, const char **str, size_t *len) {
     size_t start = p->pos;
-    if (p->pos < p->size && p->input[p->pos] == '-') parser_advance(p);
-    while (p->pos < p->size && alnum(p->input[p->pos])) parser_advance(p);
+    if (p->pos < p->size && p->input[p->pos] == '-') advance(p);
+    while (p->pos < p->size && alnum(p->input[p->pos])) advance(p);
     size_t end = p->pos;
     *str = p->input + start;
     *len = end - start;
@@ -169,16 +201,48 @@ bool str_eq(const char *txt, size_t len, const char *c) {
     return memcmp(txt, c, len) == 0;
 }
 
-void parse_simm(Parser *p, const char **str, size_t *len) {
-    size_t start = p->pos;
-    if (p->pos < p->size && p->input[p->pos] == '-') parser_advance(p);
-    while (p->pos < p->size && alnum(p->input[p->pos])) parser_advance(p);
-    size_t end = p->pos;
-    *str = p->input + start;
-    *len = end - start;
+bool parse_numeric(Parser *p, i32 *out) {
+    Parser start = *p;
+    bool negative = false;
+    bool parsed_digit = false;
+    u32 value = 0;  // u32 to avoid the issue of signed overflow
+    int base = 10;
+
+    if (consume_if(p, '-')) negative = true;
+
+    if (peek(p) == '0') {
+        char prefix = peek_n(p, 1);
+        if (prefix == 'x' || prefix == 'X') base = 16;
+        else if (prefix == 'b' || prefix == 'B') base = 2;
+        if (base != 10) advance_n(p, 2);
+    }
+
+    // TODO: handle overflow
+    for (char c; consume(p, &c);) {
+        int digit = base;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+        if (digit >= base) break;
+        parsed_digit = true;
+        value = value * base + digit;
+    }
+
+    if (!parsed_digit) {
+        *p = start;
+        return false;
+    }
+    if (negative) value = -value;
+    *out = value;
+    return true;
 }
 
-int regname_to_num(const char *str, size_t len) {
+
+int parse_reg(Parser *p) {
+    const char *str;
+    size_t len;
+    parse_alnum(p, &str, &len);
+
     if ((len == 2 || len == 3) && str[0] == 'x') {
         if (len == 2) return str[1] - '0';
         else {
@@ -196,22 +260,6 @@ int regname_to_num(const char *str, size_t len) {
     return -1;
 }
 
-bool atoi_len(const char *str, int len, int *out) {
-    if (len == 0) return false;
-    int tmp = 0, i = 0;
-    if (str[0] == '-') {
-        if (len == 1) return false;
-        i = 1;
-    }
-    for (; i < len; i++) {
-        if (str[i] < '0' || str[i] > '9') return false;
-        tmp = tmp * 10 + (str[i] - '0');
-    }
-    if (str[0] == '-') tmp = -tmp;
-    *out = tmp;
-    return true;
-}
-
 void asm_emit(u32 inst, int linenum) {
     g_ram_by_linenum[g_asm_emit_idx / 4] = linenum;
     g_ram[g_asm_emit_idx++] = inst;
@@ -220,33 +268,21 @@ void asm_emit(u32 inst, int linenum) {
     g_ram[g_asm_emit_idx++] = inst >> 24;
 }
 
-bool expect(Parser *p, char c) {
-    if (p->pos >= p->size) return false;
-    if (p->input[p->pos] != c) return false;
-    parser_advance(p);
-    return 1;
-}
-
 const char *handle_alu_reg(Parser *p, const char *opcode, size_t opcode_len) {
-    const char *rd, *rs1, *rs2;
-    size_t rd_len, rs1_len, rs2_len;
     int d, s1, s2;
 
     skip_whitespace(p);
-    parse_alnum(p, &rd, &rd_len);
-    if ((d = regname_to_num(rd, rd_len)) == -1) return "Invalid rd";
+    if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    parse_alnum(p, &rs1, &rs1_len);
-    if ((s1 = regname_to_num(rs1, rs1_len)) == -1) return "Invalid rs1";
+    if ((s1 = parse_reg(p)) == -1) return "Invalid rs1";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    parse_alnum(p, &rs2, &rs2_len);
-    if ((s2 = regname_to_num(rs2, rs2_len)) == -1) return "Invalid rs2";
+    if ((s2 = parse_reg(p)) == -1) return "Invalid rs2";
     skip_whitespace(p);
 
     u32 inst = 0;
@@ -274,26 +310,22 @@ const char *handle_alu_reg(Parser *p, const char *opcode, size_t opcode_len) {
 }
 
 const char *handle_alu_imm(Parser *p, const char *opcode, size_t opcode_len) {
-    const char *rd, *rs1, *imm;
-    size_t rd_len, rs1_len, imm_len;
-    int d, s1, simm;
+    int d, s1;
+    i32 simm;
 
     skip_whitespace(p);
-    parse_alnum(p, &rd, &rd_len);
-    if ((d = regname_to_num(rd, rd_len)) == -1) return "Invalid rd";
+    if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    parse_alnum(p, &rs1, &rs1_len);
-    if ((s1 = regname_to_num(rs1, rs1_len)) == -1) return "Invalid rs1";
+    if ((s1 = parse_reg(p)) == -1) return "Invalid rs1";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    parse_alnum(p, &imm, &imm_len);
-    
-    if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
+
+    if (!parse_numeric(p, &simm)) return "Invalid imm";
     if (simm < -2048 || simm > 2047) return "Out of bounds imm";
     skip_whitespace(p);
 
@@ -314,28 +346,24 @@ const char *handle_alu_imm(Parser *p, const char *opcode, size_t opcode_len) {
 }
 
 const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
-    const char *rreg, *rmem, *imm;
-    size_t rreg_len, rmem_len, imm_len;
-    int reg, mem, simm;
+    int reg, mem;
+    i32 simm;
 
     skip_whitespace(p);
-    parse_alnum(p, &rreg, &rreg_len);
-    if ((reg = regname_to_num(rreg, rreg_len)) == -1) return "Invalid rreg";
+    if ((reg = parse_reg(p)) == -1) return "Invalid rreg";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    parse_simm(p, &imm, &imm_len);
-    
-    if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
+    if (!parse_numeric(p, &simm)) return "Invalid imm";
+
     skip_whitespace(p);
 
-    if (!expect(p, '(')) return "Expected (";
+    if (!consume_if(p, '(')) return "Expected (";
     skip_whitespace(p);
-    parse_alnum(p, &rmem, &rmem_len);
-    if ((mem = regname_to_num(rmem, rmem_len)) == -1) return "Invalid rmem";
+    if ((mem = parse_reg(p)) == -1) return "Invalid rmem";
     skip_whitespace(p);
-    if (!expect(p, ')')) return "Expected )";
+    if (!consume_if(p, ')')) return "Expected )";
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "lb")) inst = LB(reg, mem, simm);
@@ -353,21 +381,19 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
 
 const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     Parser orig = *p;
-    const char *rs1, *rs2, *target;
-    size_t rs1_len, rs2_len, target_len;
+    const char *target;
+    size_t target_len;
     int s1, s2, simm;
 
     skip_whitespace(p);
-    parse_alnum(p, &rs1, &rs1_len);
-    if ((s1 = regname_to_num(rs1, rs1_len)) == -1) return "Invalid rs1";
+    if ((s1 = parse_reg(p)) == -1) return "Invalid rs1";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    parse_alnum(p, &rs2, &rs2_len);
-    if ((s2 = regname_to_num(rs2, rs2_len)) == -1) return "Invalid rs2";
+    if ((s2 = parse_reg(p)) == -1) return "Invalid rs2";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
     parse_alnum(p, &target, &target_len);
@@ -405,35 +431,75 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
+const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len) {
+    Parser orig = *p;
+    const char *target;
+    size_t target_len;
+    int s, simm;
+
+    skip_whitespace(p);
+    if ((s = parse_reg(p)) == -1) return "Invalid rs";
+    skip_whitespace(p);
+    if (!consume_if(p, ',')) return "Expected ,";
+
+    skip_whitespace(p);
+    parse_alnum(p, &target, &target_len);
+    if (target_len == 0) return "Invalid target";
+    skip_whitespace(p);
+
+    bool found = false;
+    for (size_t i = 0; i < g_labels_len; i++) {
+        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
+            found = true;
+            simm = g_labels[i].addr - g_asm_emit_idx;
+            break;
+        }
+    }
+    if (!found) {
+        DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
+        insn->emit_idx = g_asm_emit_idx;
+        insn->p = orig;
+        insn->cb = handle_branch_zero;
+        insn->opcode = opcode;
+        insn->opcode_len = opcode_len;
+        g_asm_emit_idx += 4;
+        return NULL;
+    }
+
+    u32 inst = 0;
+    if (str_eq(opcode, opcode_len, "beqz")) inst = BEQ(s, 0, simm);
+    else if (str_eq(opcode, opcode_len, "bnez")) inst = BNE(s, 0, simm);
+    else if (str_eq(opcode, opcode_len, "blez")) inst = BGE(0, s, simm);
+    else if (str_eq(opcode, opcode_len, "bgez")) inst = BGE(s, 0, simm);
+    else if (str_eq(opcode, opcode_len, "bltz")) inst = BLT(s, 0, simm);
+    else if (str_eq(opcode, opcode_len, "bgtz")) inst = BLT(0, s, simm);
+
+    asm_emit(inst, p->startline);
+    return NULL;
+}
+
 const char *handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
-    const char *rd, *rs1, *imm;
-    size_t rd_len, rs1_len, imm_len;
-    int d, s1, simm;
+    int d, s1;
+    i32 simm;
+
     u32 inst = 0;
 
     skip_whitespace(p);
-    parse_alnum(p, &rd, &rd_len);
-    if ((d = regname_to_num(rd, rd_len)) == -1) return "Invalid rd";
+    if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
 
     if (str_eq(opcode, opcode_len, "jal")) {
-        parse_alnum(p, &imm, &imm_len);
-        
-        if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
+        if (!parse_numeric(p, &simm)) return "Invalid imm";
         inst = JAL(d, simm);
     } else if (str_eq(opcode, opcode_len, "jalr")) {
-        parse_alnum(p, &rs1, &rs1_len);
-        if ((s1 = regname_to_num(rs1, rs1_len)) == -1) return "Invalid rs1";
+        if ((s1 = parse_reg(p)) == -1) return "Invalid rs1";
         skip_whitespace(p);
-        if (!expect(p, ',')) return "Expected ,";
+        if (!consume_if(p, ',')) return "Expected ,";
         skip_whitespace(p);
-
-        parse_alnum(p, &imm, &imm_len);
-        
-        if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
+        if (!parse_numeric(p, &simm)) return "Invalid imm";
         inst = JALR(d, s1, simm);
     }
 
@@ -442,22 +508,18 @@ const char *handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
 }
 
 const char *handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
-    const char *rd, *imm;
-    size_t rd_len, imm_len;
-    int d, simm;
+    int d;
+    i32 simm;
     u32 inst = 0;
 
     skip_whitespace(p);
-    parse_alnum(p, &rd, &rd_len);
-    if ((d = regname_to_num(rd, rd_len)) == -1) return "Invalid rd";
+    if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
 
-    parse_simm(p, &imm, &imm_len);
-    
-    if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
+    if (!parse_numeric(p, &simm)) return "Invalid imm";
 
     if (str_eq(opcode, opcode_len, "lui")) inst = LUI(d, simm);
     else if (str_eq(opcode, opcode_len, "auipc")) inst = AUIPC(d, simm);
@@ -467,21 +529,17 @@ const char *handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
 }
 
 const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
-    const char *rd, *imm;
-    size_t rd_len, imm_len;
-    int d, simm;
+    int d;
+    i32 simm;
 
     skip_whitespace(p);
-    parse_alnum(p, &rd, &rd_len);
-    if ((d = regname_to_num(rd, rd_len)) == -1) return "Invalid rd";
+    if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
-    if (!expect(p, ',')) return "Expected ,";
+    if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
 
-    parse_simm(p, &imm, &imm_len);
-    
-    if (!atoi_len(imm, imm_len, &simm)) return "Invalid imm";
+    if (!parse_numeric(p, &simm)) return "Invalid imm";
 
     if (simm >= -2048 && simm <= 2047) {
         asm_emit(ADDI(d, 0, simm), p->startline);
@@ -504,6 +562,7 @@ export void assemble(const char *txt, size_t s) {
     const char *opcodes_alu_imm[] = {"addi", "slt", "sltiu", "andi", "ori", "xori", "slli", "srli", "srai"};
     const char *opcodes_ldst[] = {"lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw"};
     const char *opcodes_branch[] = {"beq", "bne", "blt", "bge", "bltu", "bgeu"};
+    const char *opcodes_branch_zero[] = {"beqz", "bnez", "blez", "bgez", "bltz", "bgtz"};
     Parser parser = {0};
     parser.input = txt;
     parser.size = s;
@@ -521,7 +580,7 @@ export void assemble(const char *txt, size_t s) {
         parse_alnum(p, &alnum, &alnum_len);
         skip_whitespace(p);
 
-        if (expect(p, ':')) {
+        if (consume_if(p, ':')) {
             *push(g_labels, g_labels_len, g_labels_cap) =
                 (LabelData){.txt = alnum, .len = alnum_len, .addr = g_asm_emit_idx};
             continue;
@@ -555,6 +614,13 @@ export void assemble(const char *txt, size_t s) {
             if (str_eq(opcode, opcode_len, opcodes_branch[i])) {
                 found = true;
                 if ((err = handle_branch(p, opcode, opcode_len))) break;
+            }
+        }
+
+        for (int i = 0; !found && i < sizeof(opcodes_branch_zero) / sizeof(char *); i++) {
+            if (str_eq(opcode, opcode_len, opcodes_branch_zero[i])) {
+                found = true;
+                if ((err = handle_branch_zero(p, opcode, opcode_len))) break;
             }
         }
 

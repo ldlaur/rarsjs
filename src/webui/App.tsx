@@ -525,13 +525,11 @@ function setBreakpoints(): void {
       }
     }
   });
-
-  //
 }
 
+// TODO: inhibit rebuild while running
 async function runRiscV(): Promise<void> {
   let err = await wasmInterface.build(
-    setConsoleText,
     view.state.doc.toString(),
   );
   if (err !== null) return;
@@ -642,11 +640,15 @@ const App: Component = () => {
           PaneResize(
             "vertical",
             PaneResize("horizontal", <RegisterTable />, <MemoryView />),
-            <div
+            consoleText() ? <div
               innerText={consoleText()}
               class="w-full h-full overflow-auto theme-scrollbar theme-fg theme-bg"
               style={{ "font-family": "monospace" }}
-            ></div>,
+            ></div> : <div
+            innerText={"Console output will go here..."}
+            class="w-full h-full overflow-auto theme-scrollbar theme-fg2 theme-bg"
+            style={{ "font-family": "monospace" }}
+          ></div>,
           ),
         )}
       </div>
