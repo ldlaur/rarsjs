@@ -536,7 +536,7 @@ async function runRiscV(): Promise<void> {
   else forceLinting(view);
 
   while (!wasmInterface.stopExecution) {
-    wasmInterface.run();
+    wasmInterface.run(setConsoleText);
   }
 
   setDummy(dummy() + 1);
@@ -550,7 +550,6 @@ async function runRiscV(): Promise<void> {
 
 async function startStepRiscV(): Promise<void> {
   let err = await wasmInterface.build(
-    setConsoleText,
     view.state.doc.toString(),
   );
   if (err !== null) return;
@@ -570,7 +569,7 @@ async function startStepRiscV(): Promise<void> {
 function singleStepRiscV(): void {
   if (!wasmInterface.stopExecution) {
     console.log(wasmInterface.pc[0], wasmInterface.stopExecution);
-    wasmInterface.run();
+    wasmInterface.run(setConsoleText);
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
     setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
@@ -587,7 +586,7 @@ function singleStepRiscV(): void {
 function continueStepRiscV(): void {
   while (1) {
     console.log(wasmInterface.pc[0], wasmInterface.stopExecution);
-    wasmInterface.run();
+    wasmInterface.run(setConsoleText);
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
     setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));

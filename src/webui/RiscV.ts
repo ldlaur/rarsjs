@@ -1,4 +1,4 @@
-import wasmUrl from '../main.wasm?url'
+import wasmUrl from "../main.wasm?url";
 
 interface WasmExports {
   emulate(): void;
@@ -71,23 +71,34 @@ export class WasmInterface {
   // TODO: distinguish dry runs for error checking
   async build(
     source: string,
-    type: "build" | "dryrun" = "build"
+    type: "build" | "dryrun" = "build",
   ): Promise<{ line: number; message: string } | null> {
     if (!this.wasmInstance) {
       await this.loadModule();
     }
+
+    const createU8 = (off: number) => new Uint8Array(this.memory.buffer, off);
+    const createU32 = (off: number) => new Uint32Array(this.memory.buffer, off);
 
     this.exports = this.wasmInstance.exports as unknown as WasmExports;
 
     this.stopExecution = false;
     this.textBuffer = "";
 
-    new Uint8Array(this.memory.buffer).set(this.originalMemory);
+    createU8(0).set(this.originalMemory);
 
     const encoder = new TextEncoder();
     const strBytes = encoder.encode(source);
     const strLen = strBytes.length;
     const offset = this.exports.__heap_base;
+
+    this.memWrittenAddr = createU32(this.exports.g_mem_written_addr);
+    this.memWrittenLen = createU32(this.exports.g_mem_written_len);
+    this.regWritten = createU32(this.exports.g_reg_written);
+    this.pc = createU32(this.exports.g_pc);
+    this.regsArr = createU32(this.exports.g_regs + 4);
+    this.riscvRam = createU8(this.exports.g_ram);
+    this.ramByLinenum = createU32(this.exports.g_ram_by_linenum);
 
     if (offset + strLen > this.memory.buffer.byteLength) {
       const pages = Math.ceil(
@@ -95,62 +106,19 @@ export class WasmInterface {
       );
       this.memory.grow(pages);
     }
-
-    new Uint32Array(this.memory.buffer, this.exports.g_heap_size, 1)[0] =
-      strLen;
-
-    const strMem = new Uint8Array(this.memory.buffer, offset, strLen);
-    strMem.set(strBytes);
-
+    createU8(offset).set(strBytes);
+    createU32(this.exports.g_heap_size)[0] = strLen;
     this.exports.assemble(offset, strLen);
-    const errorLine = new Uint32Array(
-      this.memory.buffer,
-      this.exports.g_error_line,
-      1,
-    )[0];
-    const errorPtr = new Uint32Array(
-      this.memory.buffer,
-      this.exports.g_error,
-      1,
-    )[0];
+
+    const errorLine = createU32(this.exports.g_error_line)[0];
+    const errorPtr = createU32(this.exports.g_error)[0];
     if (errorPtr) {
-      const errorLen = new Uint8Array(this.memory.buffer, errorPtr).indexOf(0);
-      const errorStr = new TextDecoder("utf8").decode(
-        new Uint8Array(this.memory.buffer, errorPtr, errorLen),
-      );
+      const error = createU8(errorPtr);
+      const errorLen = error.indexOf(0);
+      const errorStr = new TextDecoder("utf8").decode(error.slice(0, errorLen));
       return { line: errorLine, message: errorStr };
     }
-    this.regsArr = new Uint32Array(
-      this.memory.buffer,
-      this.exports.g_regs + 4,
-      31,
-    );
-    this.memWrittenAddr = new Uint32Array(
-      this.memory.buffer,
-      this.exports.g_mem_written_addr,
-      1,
-    );
-    this.memWrittenLen = new Uint32Array(
-      this.memory.buffer,
-      this.exports.g_mem_written_len,
-      1,
-    );
-    this.regWritten = new Uint32Array(
-      this.memory.buffer,
-      this.exports.g_reg_written,
-      1,
-    );
-    this.riscvRam = new Uint8Array(
-      this.memory.buffer,
-      this.exports.g_ram,
-      65536,
-    );
-    this.pc = new Uint32Array(this.memory.buffer, this.exports.g_pc, 1);
-    this.ramByLinenum = new Uint32Array(
-      this.memory.buffer,
-      this.exports.g_ram_by_linenum,
-      65536,
-    );
+
     return null;
   }
 
