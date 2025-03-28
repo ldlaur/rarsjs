@@ -3,3 +3,4 @@ dist
 a.out
 src/main.wasm
 pnpm-lock.yaml
+src/exec/a.bin

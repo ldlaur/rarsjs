@@ -1,3 +1,4 @@
+    la t0, data1
     blez t0, boop
     blez t1, boop
     li t3, 0
@@ -12,3 +13,6 @@ forB:
     addi t3, t3, 1
     bne t3, t0, forA
 boop:
+
+.data
+data1: .word 5
