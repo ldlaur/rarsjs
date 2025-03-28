@@ -71,8 +71,6 @@ size_t g_labels_len = 0, g_labels_cap = 0;
 DeferredInsn *g_deferred_insns = NULL;
 size_t g_deferred_insn_len = 0, g_deferred_insn_cap = 0;
 
-
-
 #ifdef __wasm__
 void *malloc(size_t size);
 void free(void *ptr);
@@ -153,7 +151,7 @@ u32 JAL(int rd, int off) { return 0b1101111 | (rd << 7) | (((off >> 12) & 255) <
 u32 JALR(int rd, int rs1, int off) { return 0b1100111 | (rd << 7) | (rs1 << 15) | (off << 20); }
 // clang-format on
 
-bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' '; }
+bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' ' || c == '\r'; }
 bool digit(char c) { return (c >= '0' && c <= '9'); }
 bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
 
@@ -178,8 +176,7 @@ void advance(Parser *p) {
 
 void advance_n(Parser *p, size_t n) {
     for (size_t i = 0; i < n; i++) {
-        if (p->input[p->pos] == '\n') p->lineidx++;
-        p->pos++;
+        advance(p);
     }
 }
 
@@ -748,17 +745,22 @@ export void assemble(const char *txt, size_t s) {
                 }
             }
         }
+        if (!found) {
+            err = "Unknown opcode";
+        }
         if (err) break;
     }
 
-    g_in_fixup = true;
-    for (size_t i = 0; i < g_deferred_insn_len; i++) {
-        struct DeferredInsn *insn = &g_deferred_insns[i];
-        g_text_emit_idx = insn->emit_idx;
-        g_section = insn->section;
-        p = &insn->p;
-        err = insn->cb(&insn->p, insn->opcode, insn->opcode_len);
-        if (err) break;
+    if (!err) {
+        g_in_fixup = true;
+        for (size_t i = 0; i < g_deferred_insn_len; i++) {
+            struct DeferredInsn *insn = &g_deferred_insns[i];
+            g_text_emit_idx = insn->emit_idx;
+            g_section = insn->section;
+            p = &insn->p;
+            err = insn->cb(&insn->p, insn->opcode, insn->opcode_len);
+            if (err) break;
+        }
     }
 
     if (err) {
@@ -1016,10 +1018,8 @@ exit:
 }
 // clang-format on
 
-#ifndef __wasm__
-#include <stdlib.h>
-int main(int argc, char **argv) {
-    FILE *f = fopen(argv[1], "r");
+void assemble_from_file(const char *src_path, bool dump) {
+    FILE *f = fopen(src_path, "r");
     FILE *out = fopen("a.bin", "wb");
 
     fseek(f, 0, SEEK_END);
@@ -1027,8 +1027,36 @@ int main(int argc, char **argv) {
     rewind(f);
     char *txt = malloc(s);
     fread(txt, s, 1, f);
+    printf("about to assemble %zu\n", s);
     assemble(txt, s);
-    printf("assembled %zu\n", (g_text_len));
-    fwrite(g_text, g_text_len, 1, out);
+    if (dump) {
+        fwrite(g_text, g_text_len, 1, out);
+    }
+}
+
+#ifndef __wasm__
+#include <stdlib.h>
+int main(int argc, char **argv) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s {ssemble|run|emulate} <file>\n", argv[0]);
+        return -1;
+    }
+
+    if (str_eq("assemble", 8, argv[1])) {
+        assemble_from_file(argv[2], true);
+#ifdef _DEBUG
+        printf("assembled %zu\n", (g_text_len));
+#endif
+    } else if (str_eq("run", 3, argv[1])) {
+        fprintf(stderr, "ERROR: Not implemented yet\n");
+    } else if (str_eq("emulate", 7, argv[1])) {
+        assemble_from_file(argv[2], false);
+
+        while (g_pc < TEXT_BASE + g_text_len) {
+            emulate();
+        }
+    } else {
+        fprintf(stderr, "ERROR: Unknown command: %s\n", argv[1]);
+    }
 }
 #endif
