@@ -91,6 +91,9 @@ void *memcpy(void *dest, const void *src, size_t n);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "vendor/commander.h"
+
 void emu_exit() { exit(0); }
 #endif
 
@@ -1034,29 +1037,29 @@ void assemble_from_file(const char *src_path, bool dump) {
     }
 }
 
+// CLI commands
+static void c_assemble(command_t *self) { assemble_from_file(self->arg, true); }
+static void c_run(command_t *self) { fprintf(stderr, "ERROR: Not implemented yet\n"); }
+static void c_emulate(command_t *self) {
+    assemble_from_file(self->arg, false);
+
+    while (g_pc < TEXT_BASE + g_text_len) {
+        emulate();
+    }
+}
+
 #ifndef __wasm__
 #include <stdlib.h>
 int main(int argc, char **argv) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s {ssemble|run|emulate} <file>\n", argv[0]);
-        return -1;
-    }
-
-    if (str_eq("assemble", 8, argv[1])) {
-        assemble_from_file(argv[2], true);
-#ifdef _DEBUG
-        printf("assembled %zu\n", (g_text_len));
-#endif
-    } else if (str_eq("run", 3, argv[1])) {
-        fprintf(stderr, "ERROR: Not implemented yet\n");
-    } else if (str_eq("emulate", 7, argv[1])) {
-        assemble_from_file(argv[2], false);
-
-        while (g_pc < TEXT_BASE + g_text_len) {
-            emulate();
-        }
-    } else {
-        fprintf(stderr, "ERROR: Unknown command: %s\n", argv[1]);
-    }
+    command_t cmd;
+    // TODO: place real version number
+    command_init(&cmd, argv[0], "0.0.1");
+    command_option(&cmd, "-a", "--assemble <file>",
+                   "assemble an RV32 assembly file"
+                   " and output an ELF32 executable",
+                   c_assemble);
+    command_option(&cmd, "-r", "--run <file>", "run an ELF32 executable", c_run);
+    command_option(&cmd, "-e", "--emulate <file>", "assemble and run an RV32 assembly file", c_emulate);
+    command_parse(&cmd, argc, argv);
 }
 #endif
