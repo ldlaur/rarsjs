@@ -25,6 +25,17 @@ import { forceLinting } from "@codemirror/lint";
 import { WasmInterface } from "./RiscV";
 import { Settings } from "@uiw/codemirror-themes";
 
+import { parser } from "./riscv.grammar";
+import { highlighting } from "./GrammarHighlight";
+import { LRLanguage, LanguageSupport } from "@codemirror/language"
+
+let parserWithMetadata = parser.configure({
+  props: [highlighting]
+})
+export const riscvLanguage = LRLanguage.define({
+  parser: parserWithMetadata,
+})
+
 const wasmInterface = new WasmInterface();
 
 export const [dummy, setDummy] = createSignal<number>(0);
@@ -622,6 +633,7 @@ const App: Component = () => {
     const state = EditorState.create({
       doc: "",
       extensions: [
+        new LanguageSupport(riscvLanguage),
         createAsmLinter(wasmInterface),
         breakpointGutter, // must be first so it's the first gutter
         basicSetup,

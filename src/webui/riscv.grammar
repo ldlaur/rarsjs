@@ -1,0 +1,48 @@
+@top File { (Instruction | Number | Register | Directive | String)* }
+
+@skip { spaces | newline | LineComment | BlockComment }
+
+@skip {} {
+  BlockComment { "/*" (blockCommentContent | blockCommentNewline)* blockCommentEnd }
+}
+
+@local tokens {
+  blockCommentEnd { "*/" }
+  blockCommentNewline { "\n" }
+  @else blockCommentContent
+}
+
+@tokens {
+  // this is somewhat hacky
+  // i should make so that instructions are followed by an expressionlist
+  // but that is too complicated
+  Instruction { 
+    ("add" | "slt" | "sltu" | "and" | "or" | "xor" | "sll" | "srl" | "sub" | "sra" | "mul" | "mulh" | "mulu" | "mulhu" | "div" |
+    "divu" | "rem" | "remu" |
+    "addi" | "slt" | "sltiu" | "andi" | "ori" | "xori" | "slli" | "srli" | "srai" |
+    "lb" | "lh" | "lw" | "lbu" | "lhu" | "sb" | "sh" | "sw" |
+    "beq" | "bne" | "blt" | "bge" | "bltu" | "bgeu" |
+    "beqz" | "bnez" | "blez" | "bgez" | "bltz" | "bgtz" |
+    "jal" | "jalrs" |
+    "lui" | "auipc" |
+    "li" |
+    "la" |
+    "ecall") (spaces | newline | @eof)
+  }
+  Register {
+    "x"$[0-9] | "x"$[1-2]$[0-9] | "x3"$[0-1] |
+    "zero" | "ra" | "sp" | "gp" | "tp" | "fp"
+    "t"$[0-6] | "s"$[0-9] | "s1"$[0-1] | "a"$[0-7]
+  }
+  spaces[@export] { $[\u0009 \u000b\u00a0]+ }
+  newline[@export] { $[\r\n] }
+  LineComment { "//" ![\n]* }
+  String {
+    '"' (![\\\n"] | "\\" _)* '"'? |
+    "'" (![\\\n'] | "\\" _)* "'"?
+  }
+  hex { @digit | $[a-fA-F] }
+  Number { "-"? (@digit+ | "0x" hex+ | "0b" $[01]+) }
+
+  Directive { "." @asciiLetter* }
+}

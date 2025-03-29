@@ -23,6 +23,9 @@
   "dependencies": {
     "@babel/runtime": "^7.27.0",
     "@codemirror/lint": "^6.8.5",
+    "@lezer/generator": "^1.7.2",
+    "@lezer/highlight": "^1.2.1",
+    "@lezer/lr": "^1.4.2",
     "@solid-primitives/virtual": "^0.2.0",
     "@tanstack/solid-virtual": "^3.13.5",
     "@uiw/codemirror-theme-gruvbox-dark": "^4.23.10",

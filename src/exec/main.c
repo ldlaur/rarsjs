@@ -158,6 +158,8 @@ u32 JALR(int rd, int rs1, int off) { return 0b1100111 | (rd << 7) | (rs1 << 15) 
 // clang-format on
 
 bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' ' || c == '\r'; }
+bool trailing(char c) { return c == '\t' || c == ' '; }
+
 bool digit(char c) { return (c >= '0' && c <= '9'); }
 bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
 
@@ -196,8 +198,55 @@ char peek_n(Parser *p, size_t n) {
     return p->input[p->pos + n];
 }
 
+
+// the difference between the whitespace and trailing functions
+// is that whitespace also includes newlines
+// and as such can be done between tokens in a line
+// for example
+//     li x0,
+//        1234
+// whereas i need the trailing space to end the line gracefully
+// otherwise i would be marking as valid stuff like
+// li x0, 1234li x0, 1234
+
+bool skip_comment(Parser *p) {
+    if (peek(p) == '/') {
+        if (peek_n(p, 1) == '/') {
+            while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
+        } else if (peek_n(p, 1) == '*') {
+            advance_n(p, 2);
+            while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/')) advance(p);
+            advance_n(p, 2);
+        }
+        return true;
+    } 
+    return false;
+}
+
 void skip_whitespace(Parser *p) {
-    while (p->pos < p->size && whitespace(p->input[p->pos])) advance(p);
+    while (p->pos < p->size) {
+        while (p->pos < p->size && whitespace(p->input[p->pos])) advance(p);
+        if (!skip_comment(p)) break;
+    }
+}
+
+void skip_trailing(Parser *p) {
+    while (p->pos < p->size) {
+        if (trailing(p->input[p->pos])) {
+            advance(p);
+        } else if (peek(p) == '/') {
+            if (peek_n(p, 1) == '/') {
+                while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
+                continue;
+            }
+            if (peek_n(p, 1) == '*') {
+                advance_n(p, 2);
+                while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/')) advance(p);
+                advance_n(p, 2);
+                continue;
+            }
+        } else break;
+    }
 }
 
 bool consume_if(Parser *p, char c) {
@@ -754,6 +803,8 @@ export void assemble(const char *txt, size_t s) {
         }
         if (err) break;
 
+        // see comment above skip_trailing on why this is distinct from skip_whitespace
+        skip_trailing(p);
         char next = peek(p);
         if (next != '\n' && next != '\0') {
             err = "Expected newline";
