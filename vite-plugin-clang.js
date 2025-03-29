@@ -36,7 +36,11 @@ export default function clangPlugin() {
 
 
     async buildStart() {
-      await compile(path.resolve(__dirname, outputDir), isProduction);
+      try {
+        await compile(path.resolve(__dirname, outputDir), isProduction);
+      } catch (err) {
+        throw new Error(err);
+      }
     },
 
     async handleHotUpdate({ file, server }) {

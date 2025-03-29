@@ -11,9 +11,13 @@ interface WasmExports {
   g_reg_written: number;
   g_ram: number;
   g_pc: number;
-  g_ram_by_linenum: number;
+  g_text_by_linenum: number;
+  g_text_by_linenum_len: number;
   g_error: number;
   g_error_line: number;
+  g_runtime_error_pc: number;
+  g_runtime_error_addr: number;
+  g_runtime_error_type: number;
 }
 
 export class WasmInterface {
@@ -31,8 +35,12 @@ export class WasmInterface {
   public regWritten?: Uint32Array;
   public riscvRam?: Uint8Array;
   public pc?: Uint32Array;
-  public ramByLinenum?: Uint32Array;
+  public textByLinenum?: Uint32Array;
+  public textByLinenumLen?: Uint32Array;
   public regArr: Array<number> = new Array(31);
+  public runtimeErrorAddr?: Uint32Array;
+  public runtimeErrorType?: Uint32Array;
+  public LOAD: (addr: number, pow: number) => number;
 
   constructor() {
     this.memory = new WebAssembly.Memory({ initial: 7 });
@@ -61,6 +69,7 @@ export class WasmInterface {
         },
       });
       this.wasmInstance = instance;
+      this.LOAD = instance.exports["LOAD"] as (addr: number, pow: number) => number;
       // Save a snapshot of the original memory to restore between builds.
       this.originalMemory = new Uint8Array(this.memory.buffer.slice(0));
       console.log("Wasm module loaded");
@@ -68,10 +77,8 @@ export class WasmInterface {
     return this.loadedPromise;
   }
 
-  // TODO: distinguish dry runs for error checking
   async build(
     source: string,
-    type: "build" | "dryrun" = "build",
   ): Promise<{ line: number; message: string } | null> {
     if (!this.wasmInstance) {
       await this.loadModule();
@@ -98,17 +105,22 @@ export class WasmInterface {
     this.pc = createU32(this.exports.g_pc);
     this.regsArr = createU32(this.exports.g_regs + 4);
     this.riscvRam = createU8(this.exports.g_ram);
-    this.ramByLinenum = createU32(this.exports.g_ram_by_linenum);
-
+    this.runtimeErrorAddr = createU32(this.exports.g_runtime_error_addr);
+    this.runtimeErrorType = createU32(this.exports.g_runtime_error_type);
+    this.pc[0] = 0x00400000; // TODO: get address of _start symbol
     if (offset + strLen > this.memory.buffer.byteLength) {
       const pages = Math.ceil(
         (offset + strLen - this.memory.buffer.byteLength) / 65536,
       );
       this.memory.grow(pages);
     }
+
     createU8(offset).set(strBytes);
-    createU32(this.exports.g_heap_size)[0] = strLen;
+    createU32(this.exports.g_heap_size)[0] = (strLen + 7) & (~7); // align up to 8
     this.exports.assemble(offset, strLen);
+    const textByLinenumPtr = createU32(this.exports.g_text_by_linenum)[0];
+    this.textByLinenum = createU32(textByLinenumPtr);
+    this.textByLinenumLen = createU32(this.exports.g_text_by_linenum_len);
 
     const errorLine = createU32(this.exports.g_error_line)[0];
     const errorPtr = createU32(this.exports.g_error)[0];
@@ -126,5 +138,16 @@ export class WasmInterface {
     this.setText = setText;
     this.exports.emulate();
     for (let i = 0; i < 31; i++) this.regArr[i] = this.regsArr[i];
+    if (this.runtimeErrorType[0] != 0) {
+      const errorType = this.runtimeErrorType[0];
+      switch (errorType) {
+        case 1: this.textBuffer += `ERROR: cannot fetch instruction from PC=0x${this.pc[0].toString(16)}\n`; break;
+        case 2: this.textBuffer += `ERROR: cannot load from address 0x${this.runtimeErrorAddr[0].toString(16)} at PC=0x${this.pc[0].toString(16)}\n`; break;
+        case 3: this.textBuffer += `ERROR: cannot store to address 0x${this.runtimeErrorAddr[0].toString(16)} at PC=0x${this.pc[0].toString(16)}\n`; break;
+        default: this.textBuffer += `ERROR: PC=0x${this.pc[0].toString(16)}\n`; break;
+      }
+      setText(this.textBuffer);
+      this.stopExecution = true;
+    }
   }
 }

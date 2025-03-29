@@ -1,12 +1,14 @@
 import { linter } from "@codemirror/lint";
 import { WasmInterface } from "./RiscV";
+import { setDummy, dummy } from "./App";
 
 export const createAsmLinter = (wasmInterface: WasmInterface) => {
   let delay: number = 750;
   return linter(
     async (ev) => {
       const code = ev.state.doc.toString();
-      let err = await wasmInterface.build(null, code);
+      let err = await wasmInterface.build(code);
+      setDummy(dummy() + 1);
       if (err !== null)
         return [
           {
@@ -16,8 +18,10 @@ export const createAsmLinter = (wasmInterface: WasmInterface) => {
             severity: "error",
           },
         ];
-      else return [];
-    },
+      else {
+        return [];
+      }
+      },
     {
       delay: delay,
     },

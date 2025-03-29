@@ -5,9 +5,8 @@
 
 extern char __heap_base;
 size_t g_heap_size = 0;
-
+extern void panic();
 void *malloc(size_t size) {
-    size = (size + 7) & ~((size_t)7);
     size_t bytes = __builtin_wasm_memory_size(0) << 16;
     if ((g_heap_size + size) > bytes) {
         size_t pages = (g_heap_size + size - bytes + 65535) >> 16;
@@ -45,6 +44,16 @@ void *memcpy(void *dest, const void *src, size_t n) {
 
     for (size_t i = 0; i < n; i++) {
         pdest[i] = psrc[i];
+    }
+
+    return dest;
+}
+
+void *memset(void *dest, int c, size_t n) {
+    uint8_t *pdest = (uint8_t *)dest;
+
+    for (size_t i = 0; i < n; i++) {
+        pdest[i] = c;
     }
 
     return dest;

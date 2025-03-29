@@ -36,6 +36,16 @@ export u32 g_reg_written = 0;
 export u32 g_error_line;
 export const char *g_error;
 
+typedef enum Error : u32 {
+    ERROR_NONE = 0,
+    ERROR_FETCH = 1,
+    ERROR_LOAD = 2,
+    ERROR_STORE = 3
+} Error;
+
+export u32 g_runtime_error_addr = 0;
+export Error g_runtime_error_type = 0;
+
 typedef struct Parser {
     const char *input;
     size_t pos;
@@ -80,6 +90,7 @@ extern void putchar(uint8_t);
 size_t strlen(const char *str);
 int memcmp(const void *s1, const void *s2, size_t n);
 void *memcpy(void *dest, const void *src, size_t n);
+void *memset(void *dest, int c, size_t n);
 
 #define assert(cond)          \
     {                         \
@@ -161,7 +172,7 @@ bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || 
 static void grow(void **arr, size_t *cap, size_t size) {
     size_t oldcap = *cap;
     if (oldcap) *cap = oldcap * 2;
-    else *cap = 16;
+    else *cap = 4;
     void *newarr = malloc(*cap * size);
     memset(newarr, 0, *cap * size);
     if (arr) memcpy(newarr, *arr, oldcap * size);
@@ -239,7 +250,7 @@ bool parse_numeric(Parser *p, i32 *out) {
     }
 
     // TODO: handle overflow
-    for (char c; consume(p, &c);) {
+    for (char c; (c = peek(p));) {
         int digit = base;
         if (c >= '0' && c <= '9') digit = c - '0';
         else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
@@ -247,6 +258,7 @@ bool parse_numeric(Parser *p, i32 *out) {
         if (digit >= base) break;
         parsed_digit = true;
         value = value * base + digit;
+        advance(p);
     }
 
     if (!parsed_digit) {
@@ -284,8 +296,9 @@ void asm_emit_byte(u8 byte, int linenum) {
     if (g_dryrun) return;
     if (g_section == SECTION_TEXT) {
         if (!g_in_fixup) {
-            if (g_text_emit_idx % 4 == 0)
+            if (g_text_emit_idx % 4 == 0) {
                 *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) = linenum;
+            }
             *push(g_text, g_text_len, g_text_cap) = byte;
         } else g_text[g_text_emit_idx] = byte;
         g_text_emit_idx++;
@@ -813,16 +826,22 @@ static inline u32 remu32(u32 a, u32 b) {
 
 #define ERR (__builtin_unreachable(), 1)
 
+bool check_addr_range(u32 A, u32 size) {
+    if (A >= TEXT_BASE && A + size <= TEXT_BASE + g_text_len) return true;
+    else if (A >= DATA_BASE && A + size <= DATA_BASE + g_data_len) return true;
+    return false;
+}
+
 u32 LOAD(u32 A, int pow) {
     u8 *memspace;
-    if (A >= TEXT_BASE && A < TEXT_END) {
+    if (A >= TEXT_BASE && A < TEXT_BASE + g_text_len) {
         memspace = (u8 *)g_text;
         A -= TEXT_BASE;
-    } else if (A >= DATA_BASE && A < DATA_END) {
+    } else if (A >= DATA_BASE && A < DATA_BASE + g_data_len) {
         memspace = (u8 *)g_data;
         A -= DATA_BASE;
     } else {
-        assert(false);
+        return 0;
     }
 
     if (pow == 0) return memspace[A];
@@ -847,7 +866,7 @@ void STORE(u32 A, u32 B, int pow) {
         memspace = (u8 *)g_data;
         A -= DATA_BASE;
     } else {
-        assert(false);
+        return;
     }
     g_mem_written_len = 1 << pow;
     g_mem_written_addr = A;
@@ -904,8 +923,15 @@ void do_syscall() {
 
 // clang-format off
 void emulate() {
+    g_runtime_error_type = ERROR_NONE;
     g_mem_written_len = 0;
     g_regs[0] = 0;
+
+    if (!check_addr_range(g_pc, 2)) {
+        g_runtime_error_addr = g_pc;
+        g_runtime_error_type = ERROR_FETCH;
+        return;
+    }
     u32 inst = LOAD(g_pc, 2);
 
 
@@ -960,6 +986,12 @@ void emulate() {
 
     if ((opcode & 0b1111) == 0b0000) {
         T = (opcode >> 4) & 3;
+        int pow = (opcode >> 4) & 3;
+        if (!check_addr_range(S1 + imm12_ext, 1<<pow)) {
+            g_runtime_error_addr = S1 + imm12_ext;
+            g_runtime_error_type = ERROR_LOAD;
+            return;
+        }
         u32 load = LOAD(S1 + imm12_ext, T);
         *D = (opcode >> 6) ? load : SIGN(8 << T, load);
         goto end;
@@ -967,7 +999,14 @@ void emulate() {
     
     if ((opcode & 0b1111) == 0b0100) {
 		rd = 0;
-        STORE(S1 + store_imm, S2, (opcode >> 4) & 3); goto end;
+        int pow = (opcode >> 4) & 3;
+        if (!check_addr_range(S1 + store_imm, 1<<pow)) {
+            g_runtime_error_addr = S1 + store_imm;
+            g_runtime_error_type = ERROR_STORE;
+            return;
+        }
+        STORE(S1 + store_imm, S2, pow);
+        goto end;
     }
 
     switch(opcode) {
@@ -1016,6 +1055,9 @@ end:
 exit:
 	g_reg_written = rd;
 }
+
+#ifndef __wasm__
+
 // clang-format on
 
 void assemble_from_file(const char *src_path, bool dump) {
@@ -1034,7 +1076,6 @@ void assemble_from_file(const char *src_path, bool dump) {
     }
 }
 
-#ifndef __wasm__
 #include <stdlib.h>
 int main(int argc, char **argv) {
     if (argc != 3) {

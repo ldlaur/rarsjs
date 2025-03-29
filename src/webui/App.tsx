@@ -27,7 +27,7 @@ import { Settings } from "@uiw/codemirror-themes";
 
 const wasmInterface = new WasmInterface();
 
-const [dummy, setDummy] = createSignal<number>(0);
+export const [dummy, setDummy] = createSignal<number>(0);
 const [regsArray, setRegsArray] = createSignal<number[]>(new Array(31).fill(0));
 const [wasmPc, setWasmPc] = createSignal<string>("0x00000000");
 const [debugMode, setDebugMode] = createSignal<boolean>(false);
@@ -63,9 +63,8 @@ function updateCss(): void {
       background-color: ${cssTheme.background};
     }
     .cm-debugging {
-      background-color: ${
-        cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
-      };
+      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
+    };
     }
     .cm-tooltip-lint {
       color: ${cssTheme.foreground};
@@ -73,33 +72,31 @@ function updateCss(): void {
       font-family: monospace;
     }
     .cm-breakpoint-marker {
-      background-color: ${
-        cssTheme == defaultSettingsGruvboxDark ? "#e04010" : "#ff5030"
-      };
+      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#e04010" : "#ff5030"
+    };
     }
     .theme-bg-hover:hover {
       background-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.1,
-      )};
+      cssTheme.background,
+      cssTheme.foreground,
+      0.1,
+    )};
     }
     .theme-bg-active:active {
       background-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.2,
-      )};
+      cssTheme.background,
+      cssTheme.foreground,
+      0.2,
+    )};
     }
     .theme-gutter {
       background-color: ${cssTheme.gutterBackground};
     }
     .theme-separator {
-      background-color: ${
-        cssTheme.gutterBackground != cssTheme.background
-          ? cssTheme.gutterBackground
-          : interpolate(cssTheme.background, cssTheme.foreground, 0.1)
-      };
+      background-color: ${cssTheme.gutterBackground != cssTheme.background
+      ? cssTheme.gutterBackground
+      : interpolate(cssTheme.background, cssTheme.foreground, 0.1)
+    };
     }
     .theme-fg {
       color: ${cssTheme.foreground};
@@ -110,31 +107,30 @@ function updateCss(): void {
     .theme-scrollbar-slim {
     scrollbar-width: thin;
       scrollbar-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.5,
-      )} ${cssTheme.background};
+      cssTheme.background,
+      cssTheme.foreground,
+      0.5,
+    )} ${cssTheme.background};
     }
     .theme-scrollbar {
       scrollbar-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.5,
-      )} ${cssTheme.background};
+      cssTheme.background,
+      cssTheme.foreground,
+      0.5,
+    )} ${cssTheme.background};
     }
       
     .theme-border {
       border-color: ${interpolate(
-        cssTheme.foreground,
-        cssTheme.background,
-        0.8,
-      )};
+      cssTheme.foreground,
+      cssTheme.background,
+      0.8,
+    )};
     }
 
   @keyframes fadeHighlight {
   from {
-    background-color: ${
-      cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
+    background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
     };
   }
   to {
@@ -267,7 +263,7 @@ const RegisterTable: Component = () => {
                 class={
                   "self-center mr-[1ch] " +
                   (wasmInterface.regWritten &&
-                  idx() + 1 == wasmInterface.regWritten[0]
+                    idx() + 1 == wasmInterface.regWritten[0]
                     ? "animate-fade-highlight"
                     : "")
                 }
@@ -324,70 +320,86 @@ const MemoryView: Component = () => {
     estimateSize: () => ROW_HEIGHT,
     overscan: 5,
   });
+  const [activeTab, setActiveTab] = createSignal(".text");
 
   return (
-    <div ref={parentRef} class="h-full overflow-auto theme-scrollbar px-2">
-      <div ref={dummyChunk} class="invisible absolute font-mono">
-        {"000000000"}
-      </div>
-
-      <div
-        style={{
-          height: `${rowVirtualizer.getTotalSize()}px`,
-          width: "100%",
-          position: "relative",
-        }}
-      >
-        <For each={rowVirtualizer.getVirtualItems()}>
-          {(virtualItem) => (
-            <div
-              style={{
-                position: "absolute",
-                top: `${virtualItem.start}px`,
-                width: "100%",
-              }}
+    <>
+      <div class="w-full">
+        <div class="w-full flex flex-wrap justify-stretch theme-bg theme-fg">
+          {[".text", ".data"].map((tab) => (
+            <button
+              class={`grow text-center px-2 font-semibold ${activeTab() === tab ? "border-b-2 theme-bg theme-fg" : "border-b-1 theme-fg2"}`}
+              onClick={() => setActiveTab(tab)}
             >
-              <div class="font-mono">
-                <Show when={chunksPerLine() > 1}>
-                  <a class="theme-fg2 pr-2">
-                    {(virtualItem.index * (chunksPerLine() - 1) * 4)
-                      .toString(16)
-                      .padStart(8, "0")}
-                  </a>
-                </Show>
-                {(() => {
-                  dummy();
-                  let components = [];
-                  let chunks = chunksPerLine() - 1;
-                  if (chunksPerLine() < 2) chunks = 1;
-                  for (let i = 0; i < chunks; i++) {
-                    for (let j = 0; j < 4; j++) {
-                      let text = "00";
-                      let style = "";
-                      if (wasmInterface.riscvRam) {
-                        let ptr = (virtualItem.index * chunks + i) * 4 + j;
-                        let is_animated =
-                          ptr >= wasmInterface.memWrittenAddr[0] &&
-                          ptr <
-                            wasmInterface.memWrittenAddr[0] +
-                              wasmInterface.memWrittenLen[0];
-                        if (is_animated) style = "animate-fade-highlight";
-                        text = wasmInterface.riscvRam[ptr]
-                          .toString(16)
-                          .padStart(2, "0");
-                      }
-                      components.push(<a class={style}>{text}</a>);
-                      if (j == 3) components.push(<a class="pr-1" />);
-                    }
-                  }
-                  return components;
-                })()}
-              </div>
-            </div>
-          )}
-        </For>
+              {tab}
+            </button>
+          ))}
+        </div>
       </div>
-    </div>
+      <div ref={parentRef} class="h-full overflow-auto theme-scrollbar px-2">
+        <div ref={dummyChunk} class="invisible absolute font-mono">
+          {"000000000"}
+        </div>
+        <div
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          <For each={rowVirtualizer.getVirtualItems()}>
+            {(virtualItem) => (
+              <div
+                style={{
+                  position: "absolute",
+                  top: `${virtualItem.start}px`,
+                  width: "100%",
+                }}
+              >
+                <div class="font-mono">
+                  <Show when={chunksPerLine() > 1}>
+                    <a class="theme-fg2 pr-2">
+                      {(activeTab() === ".text" ? 0x00400000 : 0x10000000 + virtualItem.index * (chunksPerLine() - 1) * 4)
+                        .toString(16)
+                        .padStart(8, "0")}
+                    </a>
+                  </Show>
+                  {(() => {
+                    let start = activeTab() === ".text" ? 0x00400000 : 0x10000000;
+                    dummy();
+                    let components = [];
+                    let chunks = chunksPerLine() - 1;
+                    if (chunksPerLine() < 2) chunks = 1;
+                    for (let i = 0; i < chunks; i++) {
+                      for (let j = 0; j < 4; j++) {
+                        let text = "00";
+                        let style = "";
+                        if (wasmInterface.riscvRam) {
+                          let ptr = start + (virtualItem.index * chunks + i) * 4 + j;
+                          let is_animated =
+                            ptr >= wasmInterface.memWrittenAddr[0] &&
+                            ptr <
+                            wasmInterface.memWrittenAddr[0] +
+                            wasmInterface.memWrittenLen[0];
+                          if (is_animated) style = "animate-fade-highlight";
+                          text = wasmInterface.LOAD(ptr, 0)
+                            .toString(16)
+                            .padStart(2, "0");
+                        }
+                        components.push(<a class={style}>{text}</a>);
+                        if (j == 3) components.push(<a class="pr-1" />);
+                      }
+                    }
+                    return components;
+                  })()}
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
+      </div>
+    </>
+
   );
 };
 
@@ -520,11 +532,21 @@ function setBreakpoints(): void {
     const line = view.state.doc.lineAt(from);
     const lineNum = line.number;
     for (let i = 0; i < 65536; i++) {
-      if (wasmInterface.ramByLinenum[i] == lineNum) {
+      if (wasmInterface.textByLinenum[i] == lineNum) {
         breakpointSet.add(i * 4);
       }
     }
   });
+}
+
+function updateLineNumber() {
+  let linenoIdx = (wasmInterface.pc[0] - 0x00400000) / 4;
+  if (linenoIdx < wasmInterface.textByLinenumLen[0]) {
+    let lineno = wasmInterface.textByLinenum[linenoIdx];
+    view.dispatch({
+      effects: lineHighlightEffect.of(lineno),
+    });
+  }
 }
 
 // TODO: inhibit rebuild while running
@@ -532,8 +554,10 @@ async function runRiscV(): Promise<void> {
   let err = await wasmInterface.build(
     view.state.doc.toString(),
   );
-  if (err !== null) return;
-  else forceLinting(view);
+  if (err !== null) {
+    forceLinting(view);
+    return;
+  }
 
   while (!wasmInterface.stopExecution) {
     wasmInterface.run(setConsoleText);
@@ -542,10 +566,7 @@ async function runRiscV(): Promise<void> {
   setDummy(dummy() + 1);
   setRegsArray([...wasmInterface.regArr]);
   setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
-  let lineno = wasmInterface.ramByLinenum[wasmInterface.pc[0] / 4];
-  view.dispatch({
-    effects: lineHighlightEffect.of(lineno),
-  });
+  updateLineNumber();
 }
 
 async function startStepRiscV(): Promise<void> {
@@ -559,24 +580,16 @@ async function startStepRiscV(): Promise<void> {
   breakpointSet = new Set();
   setBreakpoints();
   setDummy(dummy() + 1);
-
-  let lineno = wasmInterface.ramByLinenum[0];
-  view.dispatch({
-    effects: lineHighlightEffect.of(lineno),
-  });
+  updateLineNumber();
 }
 
 function singleStepRiscV(): void {
   if (!wasmInterface.stopExecution) {
-    console.log(wasmInterface.pc[0], wasmInterface.stopExecution);
     wasmInterface.run(setConsoleText);
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
     setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
-    let lineno = wasmInterface.ramByLinenum[wasmInterface.pc[0] / 4];
-    view.dispatch({
-      effects: lineHighlightEffect.of(lineno),
-    });
+    updateLineNumber();
     if (wasmInterface.stopExecution) {
       setDebugMode(false);
     }
@@ -585,16 +598,11 @@ function singleStepRiscV(): void {
 
 function continueStepRiscV(): void {
   while (1) {
-    console.log(wasmInterface.pc[0], wasmInterface.stopExecution);
     wasmInterface.run(setConsoleText);
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
     setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
-    let lineno = wasmInterface.ramByLinenum[wasmInterface.pc[0] / 4];
-    view.dispatch({
-      effects: lineHighlightEffect.of(lineno),
-    });
-
+    updateLineNumber();
     if (breakpointSet.has(wasmInterface.pc[0])) break;
     if (wasmInterface.stopExecution) {
       setDebugMode(false);
@@ -639,15 +647,11 @@ const App: Component = () => {
           PaneResize(
             "vertical",
             PaneResize("horizontal", <RegisterTable />, <MemoryView />),
-            consoleText() ? <div
-              innerText={consoleText()}
-              class="w-full h-full overflow-auto theme-scrollbar theme-fg theme-bg"
+            <div
+              innerText={consoleText() ? consoleText() : "Console output will go here..."}
+              class={"w-full h-full overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
               style={{ "font-family": "monospace" }}
-            ></div> : <div
-            innerText={"Console output will go here..."}
-            class="w-full h-full overflow-auto theme-scrollbar theme-fg2 theme-bg"
-            style={{ "font-family": "monospace" }}
-          ></div>,
+            ></div>
           ),
         )}
       </div>
