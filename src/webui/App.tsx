@@ -359,7 +359,7 @@ const MemoryView: Component = () => {
                 <div class="font-mono">
                   <Show when={chunksPerLine() > 1}>
                     <a class="theme-fg2 pr-2">
-                      {(activeTab() === ".text" ? 0x00400000 : 0x10000000 + virtualItem.index * (chunksPerLine() - 1) * 4)
+                      {((activeTab() === ".text" ? 0x00400000 : 0x10000000) + virtualItem.index * (chunksPerLine() - 1) * 4)
                         .toString(16)
                         .padStart(8, "0")}
                     </a>
@@ -533,7 +533,7 @@ function setBreakpoints(): void {
     const lineNum = line.number;
     for (let i = 0; i < 65536; i++) {
       if (wasmInterface.textByLinenum[i] == lineNum) {
-        breakpointSet.add(i * 4);
+        breakpointSet.add(0x00400000 + i * 4);
       }
     }
   });
