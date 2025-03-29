@@ -1,4 +1,5 @@
 #define export __attribute__((visibility("default")))
+#include <elf.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -7,6 +8,21 @@
 #define TEXT_END 0x10000000
 #define DATA_BASE 0x10000000
 #define DATA_END 0x80000000
+
+#define AT_NULL 0
+#define AT_IGNORE 1
+#define AT_EXECFD 2
+#define AT_PHDR 3
+#define AT_PHENT 4
+#define AT_PHNUM 5
+#define AT_PAGESZ 6
+#define AT_BASE 7
+#define AT_FLAGS 8
+#define AT_ENTRY 9
+#define AT_NOTELF 10
+#define AT_UID 11
+#define AT_EUID 12
+#define AT_GID 13
 
 typedef uint32_t u32;
 typedef uint16_t u16;
@@ -65,6 +81,59 @@ typedef struct DeferredInsn {
     size_t opcode_len;
     size_t emit_idx;
 } DeferredInsn;
+
+// Source from SalernOS Kernel: https://github.com/Alessandro-Salerno/SalernOS-Kernel/blob/main/src/com/sys/elf.c
+// Docs from: https://wiki.osdev.org/ELF
+typedef struct {
+    struct {
+        uint8_t byte1;
+        uint8_t byte2;
+        uint8_t byte3;
+        uint8_t byte4;
+    } magic;
+    uint8_t bits;
+    uint8_t endianness;
+    uint8_t ehdr_ver;
+    uint8_t abi;
+    uint64_t unused;
+    uint16_t type;
+    uint16_t isa;
+    uint32_t elf_ver;
+    uint32_t entry;
+    uint32_t phdrs_off;
+    uint32_t shdrs_off;
+    uint32_t flags;
+    uint16_t ehdr_sz;
+    uint16_t phent_sz;
+    uint16_t phent_num;
+    uint16_t shent_sz;
+    uint16_t shent_num;
+    uint16_t shdr_str_idx;
+} __attribute__((packed)) ElfHeader;
+
+typedef struct {
+    uint32_t type;
+    uint32_t off;
+    uint32_t virt_addr;
+    uint32_t phys_addr;
+    uint32_t file_sz;
+    uint32_t mem_sz;
+    uint32_t flags;
+    uint32_t align;
+} ElfProgramHeader;
+
+typedef struct {
+    uint32_t name_off;
+    uint32_t type;
+    uint32_t flags;
+    uint32_t virt_addr;
+    uint32_t off;
+    uint32_t mem_sz;
+    uint32_t link;
+    uint32_t info;
+    uint32_t align;
+    uint32_t ent_sz;
+} __attribute__((packed)) ElfSectionHeader;
 
 LabelData *g_labels = NULL;
 size_t g_labels_len = 0, g_labels_cap = 0;
@@ -1021,7 +1090,7 @@ exit:
 }
 // clang-format on
 
-void assemble_from_file(const char *src_path, bool dump) {
+void assemble_from_file(const char *src_path) {
     FILE *f = fopen(src_path, "r");
     FILE *out = fopen("a.bin", "wb");
 
@@ -1030,18 +1099,148 @@ void assemble_from_file(const char *src_path, bool dump) {
     rewind(f);
     char *txt = malloc(s);
     fread(txt, s, 1, f);
-    printf("about to assemble %zu\n", s);
     assemble(txt, s);
-    if (dump) {
+}
+
+void generate_elf_executable(const char *path) {
+    FILE *out = fopen(path, "wb");
+
+    if (NULL == out) {
+        fprintf(stderr, "ERROR: could not open file '%s'\n", path);
+        return;
+    }
+
+    // LAYOUT
+    // ELF header
+    // Program headers (PHs)
+    // Section headers (SHs)
+    // Text PH
+    // Data PH
+    // String table
+
+    const char str_tab[] = "\0.text\0.data\0str_tab\0";
+    uint32_t segments_count = (0 != g_text_len) + (0 != g_data_len);
+    uint32_t sections_count = 1 + segments_count;
+    uint32_t phdrs_sz = sizeof(ElfProgramHeader) * segments_count;
+    uint32_t shdrs_off = sizeof(ElfHeader) + phdrs_sz;
+    uint32_t shdrs_sz = sizeof(ElfSectionHeader) * sections_count;
+    uint32_t text_seg_off = shdrs_off + shdrs_sz;
+    uint32_t data_seg_off = text_seg_off + g_text_len;
+    uint32_t str_tab_off = data_seg_off + g_data_len;
+
+    // Write ELF header
+    ElfHeader e_hdr = {.magic = {.byte1 = 0x7F, .byte2 = 'E', .byte3 = 'L', .byte4 = 'F'},  // ELF magic
+                       .bits = 1,                                                           // 32 bits
+                       .endianness = 1,                                                     // little endian
+                       .ehdr_ver = 1,                                                       // ELF header version 1
+                       .abi = 0,                                                            // System V ABI
+                       .type = 2,                                                           // Executable
+                       .isa = 0xF3,                                                         // Arch = RISC-V
+                       .elf_ver = 1,                                                        // ELF version 1
+                       .entry = 0,                                                          // Program entrypoint
+                       .phdrs_off = sizeof(ElfHeader),        // Start offset of program header tabe
+                       .phent_num = segments_count,           // 2 program headers
+                       .phent_sz = sizeof(ElfProgramHeader),  // Size of each program header table entry
+                       .shdrs_off = shdrs_off,                // Start offset of section header table
+                       .shent_num = sections_count,           // 2 sections (.text, .data)
+                       .shent_sz = sizeof(ElfSectionHeader),  // Size of each section header
+                       .ehdr_sz = sizeof(ElfHeader),          // Size of the ELF ehader
+                       .flags = 0,                            // Flags
+                       .shdr_str_idx = sections_count - 1};
+
+    fwrite(&e_hdr, sizeof(e_hdr), 1, out);
+
+    // Write Text PH
+    if (0 != g_text_len) {
+        ElfProgramHeader text_header = {.type = PT_LOAD,
+                                        .flags = 0b101,
+                                        .off = text_seg_off,
+                                        .virt_addr = TEXT_BASE,
+                                        .phys_addr = TEXT_BASE,
+                                        .file_sz = g_text_len,
+                                        .mem_sz = g_text_len,
+                                        .align = 4};
+        fwrite(&text_header, sizeof(text_header), 1, out);
+    }
+
+    // Write data PH
+    if (0 != g_data_len) {
+        ElfProgramHeader data_header = {.type = PT_LOAD,
+                                        .flags = 0b110,
+                                        .off = data_seg_off,
+                                        .virt_addr = DATA_BASE,
+                                        .phys_addr = DATA_BASE,
+                                        .file_sz = g_data_len,
+                                        .mem_sz = g_data_len,
+                                        .align = 1};
+        fwrite(&data_header, sizeof(data_header), 1, out);
+    }
+
+    // Write text SH
+    if (0 != g_text_len) {
+        ElfSectionHeader text_sec = {.name_off = 1,
+                                     .type = SHT_PROGBITS,
+                                     .flags = SHF_EXECINSTR | SHF_ALLOC,
+                                     .off = text_seg_off,
+                                     .virt_addr = TEXT_BASE,
+                                     .mem_sz = g_text_len,
+                                     .align = 4,
+                                     .link = 0,
+                                     .ent_sz = 0};
+        fwrite(&text_sec, sizeof(text_sec), 1, out);
+    }
+
+    // Write data SH
+    if (0 != g_data_len) {
+        ElfSectionHeader data_sec = {.name_off = 7,
+                                     .type = SHT_PROGBITS,
+                                     .flags = SHF_WRITE | SHF_ALLOC,
+                                     .off = data_seg_off,
+                                     .virt_addr = DATA_BASE,
+                                     .mem_sz = g_data_len,
+                                     .align = 1,
+                                     .link = 0,
+                                     .ent_sz = 0};
+        fwrite(&data_sec, sizeof(data_sec), 1, out);
+    }
+
+    // Write string table SH
+    ElfSectionHeader str_tab_sec = {.name_off = 13,
+                                    .type = SHT_STRTAB,
+                                    .flags = SHF_STRINGS,
+                                    .off = str_tab_off,
+                                    .virt_addr = 0,
+                                    .mem_sz = sizeof(str_tab),
+                                    .align = 1,
+                                    .link = 0,
+                                    .ent_sz = 0};
+    fwrite(&str_tab_sec, sizeof(str_tab_sec), 1, out);
+
+    // Write text segment
+    if (0 != g_text_len) {
         fwrite(g_text, g_text_len, 1, out);
     }
+
+    // Write data section
+    if (0 != g_data_len) {
+        fwrite(g_data, g_data_len, 1, out);
+    }
+
+    // Write string table
+    fwrite(str_tab, sizeof(str_tab), 1, out);
+
+    fclose(out);
 }
 
 // CLI commands
-static void c_assemble(command_t *self) { assemble_from_file(self->arg, true); }
+static void c_build(command_t *self) {
+    assemble_from_file(self->arg);
+    generate_elf_executable("a.elf");
+}
+
 static void c_run(command_t *self) { fprintf(stderr, "ERROR: Not implemented yet\n"); }
 static void c_emulate(command_t *self) {
-    assemble_from_file(self->arg, false);
+    assemble_from_file(self->arg);
 
     while (g_pc < TEXT_BASE + g_text_len) {
         emulate();
@@ -1054,10 +1253,10 @@ int main(int argc, char **argv) {
     command_t cmd;
     // TODO: place real version number
     command_init(&cmd, argv[0], "0.0.1");
-    command_option(&cmd, "-a", "--assemble <file>",
+    command_option(&cmd, "-a", "--build <file>",
                    "assemble an RV32 assembly file"
                    " and output an ELF32 executable",
-                   c_assemble);
+                   c_build);
     command_option(&cmd, "-r", "--run <file>", "run an ELF32 executable", c_run);
     command_option(&cmd, "-e", "--emulate <file>", "assemble and run an RV32 assembly file", c_emulate);
     command_parse(&cmd, argc, argv);
