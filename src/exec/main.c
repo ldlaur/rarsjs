@@ -36,12 +36,7 @@ export u32 g_reg_written = 0;
 export u32 g_error_line;
 export const char *g_error;
 
-typedef enum Error : u32 {
-    ERROR_NONE = 0,
-    ERROR_FETCH = 1,
-    ERROR_LOAD = 2,
-    ERROR_STORE = 3
-} Error;
+typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERROR_STORE = 3 } Error;
 
 export u32 g_runtime_error_addr = 0;
 export Error g_runtime_error_type = 0;
@@ -332,7 +327,6 @@ const char *handle_alu_reg(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     if ((s2 = parse_reg(p)) == -1) return "Invalid rs2";
-    skip_whitespace(p);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "add")) inst = ADD(d, s1, s2);
@@ -376,7 +370,6 @@ const char *handle_alu_imm(Parser *p, const char *opcode, size_t opcode_len) {
 
     if (!parse_numeric(p, &simm)) return "Invalid imm";
     if (simm < -2048 || simm > 2047) return "Out of bounds imm";
-    skip_whitespace(p);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "addi")) inst = ADDI(d, s1, simm);
@@ -447,7 +440,6 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     skip_whitespace(p);
     parse_alnum(p, &target, &target_len);
     if (target_len == 0) return "Invalid target";
-    skip_whitespace(p);
 
     bool found = false;
     for (size_t i = 0; i < g_labels_len; i++) {
@@ -496,7 +488,6 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     skip_whitespace(p);
     parse_alnum(p, &target, &target_len);
     if (target_len == 0) return "Invalid target";
-    skip_whitespace(p);
 
     bool found = false;
     for (size_t i = 0; i < g_labels_len; i++) {
@@ -541,7 +532,6 @@ const char *handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
-
     skip_whitespace(p);
 
     if (str_eq(opcode, opcode_len, "jal")) {
@@ -569,9 +559,7 @@ const char *handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
-
     skip_whitespace(p);
-
     if (!parse_numeric(p, &simm)) return "Invalid imm";
 
     if (str_eq(opcode, opcode_len, "lui")) inst = LUI(d, simm);
@@ -589,9 +577,7 @@ const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
-
     skip_whitespace(p);
-
     if (!parse_numeric(p, &simm)) return "Invalid imm";
 
     if (simm >= -2048 && simm <= 2047) {
@@ -621,7 +607,6 @@ const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
 
     parse_alnum(p, &target, &target_len);
     if (target_len == 0) return "Invalid target";
-    skip_whitespace(p);
 
     bool found = false;
     for (size_t i = 0; i < g_labels_len; i++) {
@@ -716,17 +701,24 @@ export void assemble(const char *txt, size_t s) {
                 skip_whitespace(p);
                 i32 value;
                 if (!parse_numeric(p, &value)) {
-                    err = "Invalid word";
+                    err = "Invalid byte";
                     break;
                 }
-                // TODO: check range
+                if (value < -128 || value > 255) {
+                    err = "Out of bounds byte";
+                    break;
+                }
                 asm_emit_byte(value, p->startline);
                 continue;
             } else if (str_eq(directive, directive_len, "half")) {
                 skip_whitespace(p);
                 i32 value;
                 if (!parse_numeric(p, &value)) {
-                    err = "Invalid word";
+                    err = "Invalid half";
+                    break;
+                }
+                if (value < -32768 || value > 65535) {
+                    err = "Out of bounds half";
                     break;
                 }
                 // TODO: check range
@@ -740,7 +732,6 @@ export void assemble(const char *txt, size_t s) {
                     err = "Invalid word";
                     break;
                 }
-                // TODO: check range
                 asm_emit(value, p->startline);
                 continue;
             }
@@ -762,6 +753,12 @@ export void assemble(const char *txt, size_t s) {
             err = "Unknown opcode";
         }
         if (err) break;
+
+        char next = peek(p);
+        if (next != '\n' && next != '\0') {
+            err = "Expected newline";
+            break;
+        }
     }
 
     if (!err) {
