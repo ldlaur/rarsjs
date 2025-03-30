@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
     command_t cmd;
     // TODO: place real version number
     command_init(&cmd, argv[0], "0.0.1");
-    command_option(&cmd, "-a", "--build <file>",
+    command_option(&cmd, "-b", "--build <file>",
                    "assemble an RV32 assembly file"
                    " and output an ELF32 executable",
                    c_build);
@@ -47,4 +47,8 @@ int main(int argc, char **argv) {
     command_option(&cmd, "-e", "--emulate <file>", "assemble and run an RV32 assembly file", c_emulate);
     command_option(&cmd, "-i", "--readelf <file>", "show information about ELF file", c_readelf);
     command_parse(&cmd, argc, argv);
+
+    if (1 == argc) {
+        command_help(&cmd);
+    }
 }
