@@ -1,36 +1,8 @@
-#define export __attribute__((visibility("default")))
-#include <elf.h>
+#include "rarsjs/core.h"
+
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
 
-#define TEXT_BASE 0x00400000
-#define TEXT_END 0x10000000
-#define DATA_BASE 0x10000000
-#define DATA_END 0x80000000
-
-#define AT_NULL 0
-#define AT_IGNORE 1
-#define AT_EXECFD 2
-#define AT_PHDR 3
-#define AT_PHENT 4
-#define AT_PHNUM 5
-#define AT_PAGESZ 6
-#define AT_BASE 7
-#define AT_FLAGS 8
-#define AT_ENTRY 9
-#define AT_NOTELF 10
-#define AT_UID 11
-#define AT_EUID 12
-#define AT_GID 13
-
-typedef uint32_t u32;
-typedef uint16_t u16;
-typedef uint8_t u8;
-typedef uint64_t u64;
-typedef int64_t i64;
-typedef int32_t i32;
-
+Section g_section = SECTION_TEXT;
 export u32 *g_text_by_linenum = NULL;
 export size_t g_text_by_linenum_len = 0, g_text_by_linenum_cap = 0;
 
@@ -52,119 +24,15 @@ export u32 g_reg_written = 0;
 export u32 g_error_line;
 export const char *g_error;
 
-typedef struct Parser {
-    const char *input;
-    size_t pos;
-    size_t size;
-    int lineidx;
-    int startline;
-} Parser;
+typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERROR_STORE = 3 } Error;
 
-typedef struct LabelData {
-    const char *txt;
-    size_t len;
-    u32 addr;
-} LabelData;
-
-typedef enum Section {
-    SECTION_TEXT,
-    SECTION_DATA,
-} Section;
-Section g_section = SECTION_TEXT;
-
-typedef const char *DeferredInsnCb(Parser *p, const char *opcode, size_t opcode_len);
-typedef struct DeferredInsn {
-    Parser p;
-    Section section;
-    DeferredInsnCb *cb;
-    const char *opcode;
-    size_t opcode_len;
-    size_t emit_idx;
-} DeferredInsn;
-
-// Source from SalernOS Kernel: https://github.com/Alessandro-Salerno/SalernOS-Kernel/blob/main/src/com/sys/elf.c
-// Docs from: https://wiki.osdev.org/ELF
-typedef struct {
-    struct {
-        uint8_t byte1;
-        uint8_t byte2;
-        uint8_t byte3;
-        uint8_t byte4;
-    } magic;
-    uint8_t bits;
-    uint8_t endianness;
-    uint8_t ehdr_ver;
-    uint8_t abi;
-    uint64_t unused;
-    uint16_t type;
-    uint16_t isa;
-    uint32_t elf_ver;
-    uint32_t entry;
-    uint32_t phdrs_off;
-    uint32_t shdrs_off;
-    uint32_t flags;
-    uint16_t ehdr_sz;
-    uint16_t phent_sz;
-    uint16_t phent_num;
-    uint16_t shent_sz;
-    uint16_t shent_num;
-    uint16_t shdr_str_idx;
-} __attribute__((packed)) ElfHeader;
-
-typedef struct {
-    uint32_t type;
-    uint32_t off;
-    uint32_t virt_addr;
-    uint32_t phys_addr;
-    uint32_t file_sz;
-    uint32_t mem_sz;
-    uint32_t flags;
-    uint32_t align;
-} ElfProgramHeader;
-
-typedef struct {
-    uint32_t name_off;
-    uint32_t type;
-    uint32_t flags;
-    uint32_t virt_addr;
-    uint32_t off;
-    uint32_t mem_sz;
-    uint32_t link;
-    uint32_t info;
-    uint32_t align;
-    uint32_t ent_sz;
-} __attribute__((packed)) ElfSectionHeader;
+export u32 g_runtime_error_addr = 0;
+export Error g_runtime_error_type = 0;
 
 LabelData *g_labels = NULL;
 size_t g_labels_len = 0, g_labels_cap = 0;
 DeferredInsn *g_deferred_insns = NULL;
 size_t g_deferred_insn_len = 0, g_deferred_insn_cap = 0;
-
-#ifdef __wasm__
-void *malloc(size_t size);
-void free(void *ptr);
-extern void panic();
-extern void emu_exit();
-extern void putchar(uint8_t);
-size_t strlen(const char *str);
-int memcmp(const void *s1, const void *s2, size_t n);
-void *memcpy(void *dest, const void *src, size_t n);
-
-#define assert(cond)          \
-    {                         \
-        if (!(cond)) panic(); \
-    }
-#else
-
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include "vendor/commander.h"
-
-void emu_exit() { exit(0); }
-#endif
 
 // clang-format off
 u32 DS1S2(u32 d, u32 s1, u32 s2) { return (d << 7) | (s1 << 15) | (s2 << 20); }
@@ -224,6 +92,8 @@ u32 JALR(int rd, int rs1, int off) { return 0b1100111 | (rd << 7) | (rs1 << 15) 
 // clang-format on
 
 bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' ' || c == '\r'; }
+bool trailing(char c) { return c == '\t' || c == ' '; }
+
 bool digit(char c) { return (c >= '0' && c <= '9'); }
 bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
 
@@ -233,7 +103,7 @@ bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || 
 static void grow(void **arr, size_t *cap, size_t size) {
     size_t oldcap = *cap;
     if (oldcap) *cap = oldcap * 2;
-    else *cap = 16;
+    else *cap = 4;
     void *newarr = malloc(*cap * size);
     memset(newarr, 0, *cap * size);
     if (arr) memcpy(newarr, *arr, oldcap * size);
@@ -262,8 +132,54 @@ char peek_n(Parser *p, size_t n) {
     return p->input[p->pos + n];
 }
 
+// the difference between the whitespace and trailing functions
+// is that whitespace also includes newlines
+// and as such can be done between tokens in a line
+// for example
+//     li x0,
+//        1234
+// whereas i need the trailing space to end the line gracefully
+// otherwise i would be marking as valid stuff like
+// li x0, 1234li x0, 1234
+
+bool skip_comment(Parser *p) {
+    if (peek(p) == '/') {
+        if (peek_n(p, 1) == '/') {
+            while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
+        } else if (peek_n(p, 1) == '*') {
+            advance_n(p, 2);
+            while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/')) advance(p);
+            advance_n(p, 2);
+        }
+        return true;
+    }
+    return false;
+}
+
 void skip_whitespace(Parser *p) {
-    while (p->pos < p->size && whitespace(p->input[p->pos])) advance(p);
+    while (p->pos < p->size) {
+        while (p->pos < p->size && whitespace(p->input[p->pos])) advance(p);
+        if (!skip_comment(p)) break;
+    }
+}
+
+void skip_trailing(Parser *p) {
+    while (p->pos < p->size) {
+        if (trailing(p->input[p->pos])) {
+            advance(p);
+        } else if (peek(p) == '/') {
+            if (peek_n(p, 1) == '/') {
+                while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
+                continue;
+            }
+            if (peek_n(p, 1) == '*') {
+                advance_n(p, 2);
+                while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/')) advance(p);
+                advance_n(p, 2);
+                continue;
+            }
+        } else break;
+    }
 }
 
 bool consume_if(Parser *p, char c) {
@@ -311,7 +227,7 @@ bool parse_numeric(Parser *p, i32 *out) {
     }
 
     // TODO: handle overflow
-    for (char c; consume(p, &c);) {
+    for (char c; (c = peek(p));) {
         int digit = base;
         if (c >= '0' && c <= '9') digit = c - '0';
         else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
@@ -319,6 +235,7 @@ bool parse_numeric(Parser *p, i32 *out) {
         if (digit >= base) break;
         parsed_digit = true;
         value = value * base + digit;
+        advance(p);
     }
 
     if (!parsed_digit) {
@@ -356,8 +273,9 @@ void asm_emit_byte(u8 byte, int linenum) {
     if (g_dryrun) return;
     if (g_section == SECTION_TEXT) {
         if (!g_in_fixup) {
-            if (g_text_emit_idx % 4 == 0)
+            if (g_text_emit_idx % 4 == 0) {
                 *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) = linenum;
+            }
             *push(g_text, g_text_len, g_text_cap) = byte;
         } else g_text[g_text_emit_idx] = byte;
         g_text_emit_idx++;
@@ -391,7 +309,6 @@ const char *handle_alu_reg(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     if ((s2 = parse_reg(p)) == -1) return "Invalid rs2";
-    skip_whitespace(p);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "add")) inst = ADD(d, s1, s2);
@@ -435,7 +352,6 @@ const char *handle_alu_imm(Parser *p, const char *opcode, size_t opcode_len) {
 
     if (!parse_numeric(p, &simm)) return "Invalid imm";
     if (simm < -2048 || simm > 2047) return "Out of bounds imm";
-    skip_whitespace(p);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "addi")) inst = ADDI(d, s1, simm);
@@ -506,7 +422,6 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     skip_whitespace(p);
     parse_alnum(p, &target, &target_len);
     if (target_len == 0) return "Invalid target";
-    skip_whitespace(p);
 
     bool found = false;
     for (size_t i = 0; i < g_labels_len; i++) {
@@ -555,7 +470,6 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     skip_whitespace(p);
     parse_alnum(p, &target, &target_len);
     if (target_len == 0) return "Invalid target";
-    skip_whitespace(p);
 
     bool found = false;
     for (size_t i = 0; i < g_labels_len; i++) {
@@ -600,7 +514,6 @@ const char *handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
-
     skip_whitespace(p);
 
     if (str_eq(opcode, opcode_len, "jal")) {
@@ -628,9 +541,7 @@ const char *handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
-
     skip_whitespace(p);
-
     if (!parse_numeric(p, &simm)) return "Invalid imm";
 
     if (str_eq(opcode, opcode_len, "lui")) inst = LUI(d, simm);
@@ -648,9 +559,7 @@ const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
-
     skip_whitespace(p);
-
     if (!parse_numeric(p, &simm)) return "Invalid imm";
 
     if (simm >= -2048 && simm <= 2047) {
@@ -680,7 +589,6 @@ const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
 
     parse_alnum(p, &target, &target_len);
     if (target_len == 0) return "Invalid target";
-    skip_whitespace(p);
 
     bool found = false;
     for (size_t i = 0; i < g_labels_len; i++) {
@@ -775,17 +683,24 @@ export void assemble(const char *txt, size_t s) {
                 skip_whitespace(p);
                 i32 value;
                 if (!parse_numeric(p, &value)) {
-                    err = "Invalid word";
+                    err = "Invalid byte";
                     break;
                 }
-                // TODO: check range
+                if (value < -128 || value > 255) {
+                    err = "Out of bounds byte";
+                    break;
+                }
                 asm_emit_byte(value, p->startline);
                 continue;
             } else if (str_eq(directive, directive_len, "half")) {
                 skip_whitespace(p);
                 i32 value;
                 if (!parse_numeric(p, &value)) {
-                    err = "Invalid word";
+                    err = "Invalid half";
+                    break;
+                }
+                if (value < -32768 || value > 65535) {
+                    err = "Out of bounds half";
                     break;
                 }
                 // TODO: check range
@@ -799,7 +714,6 @@ export void assemble(const char *txt, size_t s) {
                     err = "Invalid word";
                     break;
                 }
-                // TODO: check range
                 asm_emit(value, p->startline);
                 continue;
             }
@@ -821,6 +735,14 @@ export void assemble(const char *txt, size_t s) {
             err = "Unknown opcode";
         }
         if (err) break;
+
+        // see comment above skip_trailing on why this is distinct from skip_whitespace
+        skip_trailing(p);
+        char next = peek(p);
+        if (next != '\n' && next != '\0') {
+            err = "Expected newline";
+            break;
+        }
     }
 
     if (!err) {
@@ -885,16 +807,22 @@ static inline u32 remu32(u32 a, u32 b) {
 
 #define ERR (__builtin_unreachable(), 1)
 
+bool check_addr_range(u32 A, u32 size) {
+    if (A >= TEXT_BASE && A + size <= TEXT_BASE + g_text_len) return true;
+    else if (A >= DATA_BASE && A + size <= DATA_BASE + g_data_len) return true;
+    return false;
+}
+
 u32 LOAD(u32 A, int pow) {
     u8 *memspace;
-    if (A >= TEXT_BASE && A < TEXT_END) {
+    if (A >= TEXT_BASE && A < TEXT_BASE + g_text_len) {
         memspace = (u8 *)g_text;
         A -= TEXT_BASE;
-    } else if (A >= DATA_BASE && A < DATA_END) {
+    } else if (A >= DATA_BASE && A < DATA_BASE + g_data_len) {
         memspace = (u8 *)g_data;
         A -= DATA_BASE;
     } else {
-        assert(false);
+        return 0;
     }
 
     if (pow == 0) return memspace[A];
@@ -919,7 +847,7 @@ void STORE(u32 A, u32 B, int pow) {
         memspace = (u8 *)g_data;
         A -= DATA_BASE;
     } else {
-        assert(false);
+        return;
     }
     g_mem_written_len = 1 << pow;
     g_mem_written_addr = A;
@@ -976,8 +904,15 @@ void do_syscall() {
 
 // clang-format off
 void emulate() {
+    g_runtime_error_type = ERROR_NONE;
     g_mem_written_len = 0;
     g_regs[0] = 0;
+
+    if (!check_addr_range(g_pc, 2)) {
+        g_runtime_error_addr = g_pc;
+        g_runtime_error_type = ERROR_FETCH;
+        return;
+    }
     u32 inst = LOAD(g_pc, 2);
 
 
@@ -1032,6 +967,12 @@ void emulate() {
 
     if ((opcode & 0b1111) == 0b0000) {
         T = (opcode >> 4) & 3;
+        int pow = (opcode >> 4) & 3;
+        if (!check_addr_range(S1 + imm12_ext, 1<<pow)) {
+            g_runtime_error_addr = S1 + imm12_ext;
+            g_runtime_error_type = ERROR_LOAD;
+            return;
+        }
         u32 load = LOAD(S1 + imm12_ext, T);
         *D = (opcode >> 6) ? load : SIGN(8 << T, load);
         goto end;
@@ -1039,7 +980,14 @@ void emulate() {
     
     if ((opcode & 0b1111) == 0b0100) {
 		rd = 0;
-        STORE(S1 + store_imm, S2, (opcode >> 4) & 3); goto end;
+        int pow = (opcode >> 4) & 3;
+        if (!check_addr_range(S1 + store_imm, 1<<pow)) {
+            g_runtime_error_addr = S1 + store_imm;
+            g_runtime_error_type = ERROR_STORE;
+            return;
+        }
+        STORE(S1 + store_imm, S2, pow);
+        goto end;
     }
 
     switch(opcode) {
@@ -1088,177 +1036,4 @@ end:
 exit:
 	g_reg_written = rd;
 }
-// clang-format on
 
-void assemble_from_file(const char *src_path) {
-    FILE *f = fopen(src_path, "r");
-    FILE *out = fopen("a.bin", "wb");
-
-    fseek(f, 0, SEEK_END);
-    size_t s = ftell(f);
-    rewind(f);
-    char *txt = malloc(s);
-    fread(txt, s, 1, f);
-    assemble(txt, s);
-}
-
-void generate_elf_executable(const char *path) {
-    FILE *out = fopen(path, "wb");
-
-    if (NULL == out) {
-        fprintf(stderr, "ERROR: could not open file '%s'\n", path);
-        return;
-    }
-
-    // LAYOUT
-    // ELF header
-    // Program headers (PHs)
-    // Section headers (SHs)
-    // Text PH
-    // Data PH
-    // String table
-
-    const char str_tab[] = "\0.text\0.data\0str_tab\0";
-    uint32_t segments_count = (0 != g_text_len) + (0 != g_data_len);
-    uint32_t sections_count = 1 + segments_count;
-    uint32_t phdrs_sz = sizeof(ElfProgramHeader) * segments_count;
-    uint32_t shdrs_off = sizeof(ElfHeader) + phdrs_sz;
-    uint32_t shdrs_sz = sizeof(ElfSectionHeader) * sections_count;
-    uint32_t text_seg_off = shdrs_off + shdrs_sz;
-    uint32_t data_seg_off = text_seg_off + g_text_len;
-    uint32_t str_tab_off = data_seg_off + g_data_len;
-
-    // Write ELF header
-    ElfHeader e_hdr = {.magic = {.byte1 = 0x7F, .byte2 = 'E', .byte3 = 'L', .byte4 = 'F'},  // ELF magic
-                       .bits = 1,                                                           // 32 bits
-                       .endianness = 1,                                                     // little endian
-                       .ehdr_ver = 1,                                                       // ELF header version 1
-                       .abi = 0,                                                            // System V ABI
-                       .type = 2,                                                           // Executable
-                       .isa = 0xF3,                                                         // Arch = RISC-V
-                       .elf_ver = 1,                                                        // ELF version 1
-                       .entry = 0,                                                          // Program entrypoint
-                       .phdrs_off = sizeof(ElfHeader),        // Start offset of program header tabe
-                       .phent_num = segments_count,           // 2 program headers
-                       .phent_sz = sizeof(ElfProgramHeader),  // Size of each program header table entry
-                       .shdrs_off = shdrs_off,                // Start offset of section header table
-                       .shent_num = sections_count,           // 2 sections (.text, .data)
-                       .shent_sz = sizeof(ElfSectionHeader),  // Size of each section header
-                       .ehdr_sz = sizeof(ElfHeader),          // Size of the ELF ehader
-                       .flags = 0,                            // Flags
-                       .shdr_str_idx = sections_count - 1};
-
-    fwrite(&e_hdr, sizeof(e_hdr), 1, out);
-
-    // Write Text PH
-    if (0 != g_text_len) {
-        ElfProgramHeader text_header = {.type = PT_LOAD,
-                                        .flags = 0b101,
-                                        .off = text_seg_off,
-                                        .virt_addr = TEXT_BASE,
-                                        .phys_addr = TEXT_BASE,
-                                        .file_sz = g_text_len,
-                                        .mem_sz = g_text_len,
-                                        .align = 4};
-        fwrite(&text_header, sizeof(text_header), 1, out);
-    }
-
-    // Write data PH
-    if (0 != g_data_len) {
-        ElfProgramHeader data_header = {.type = PT_LOAD,
-                                        .flags = 0b110,
-                                        .off = data_seg_off,
-                                        .virt_addr = DATA_BASE,
-                                        .phys_addr = DATA_BASE,
-                                        .file_sz = g_data_len,
-                                        .mem_sz = g_data_len,
-                                        .align = 1};
-        fwrite(&data_header, sizeof(data_header), 1, out);
-    }
-
-    // Write text SH
-    if (0 != g_text_len) {
-        ElfSectionHeader text_sec = {.name_off = 1,
-                                     .type = SHT_PROGBITS,
-                                     .flags = SHF_EXECINSTR | SHF_ALLOC,
-                                     .off = text_seg_off,
-                                     .virt_addr = TEXT_BASE,
-                                     .mem_sz = g_text_len,
-                                     .align = 4,
-                                     .link = 0,
-                                     .ent_sz = 0};
-        fwrite(&text_sec, sizeof(text_sec), 1, out);
-    }
-
-    // Write data SH
-    if (0 != g_data_len) {
-        ElfSectionHeader data_sec = {.name_off = 7,
-                                     .type = SHT_PROGBITS,
-                                     .flags = SHF_WRITE | SHF_ALLOC,
-                                     .off = data_seg_off,
-                                     .virt_addr = DATA_BASE,
-                                     .mem_sz = g_data_len,
-                                     .align = 1,
-                                     .link = 0,
-                                     .ent_sz = 0};
-        fwrite(&data_sec, sizeof(data_sec), 1, out);
-    }
-
-    // Write string table SH
-    ElfSectionHeader str_tab_sec = {.name_off = 13,
-                                    .type = SHT_STRTAB,
-                                    .flags = SHF_STRINGS,
-                                    .off = str_tab_off,
-                                    .virt_addr = 0,
-                                    .mem_sz = sizeof(str_tab),
-                                    .align = 1,
-                                    .link = 0,
-                                    .ent_sz = 0};
-    fwrite(&str_tab_sec, sizeof(str_tab_sec), 1, out);
-
-    // Write text segment
-    if (0 != g_text_len) {
-        fwrite(g_text, g_text_len, 1, out);
-    }
-
-    // Write data section
-    if (0 != g_data_len) {
-        fwrite(g_data, g_data_len, 1, out);
-    }
-
-    // Write string table
-    fwrite(str_tab, sizeof(str_tab), 1, out);
-
-    fclose(out);
-}
-
-// CLI commands
-static void c_build(command_t *self) {
-    assemble_from_file(self->arg);
-    generate_elf_executable("a.elf");
-}
-
-static void c_run(command_t *self) { fprintf(stderr, "ERROR: Not implemented yet\n"); }
-static void c_emulate(command_t *self) {
-    assemble_from_file(self->arg);
-
-    while (g_pc < TEXT_BASE + g_text_len) {
-        emulate();
-    }
-}
-
-#ifndef __wasm__
-#include <stdlib.h>
-int main(int argc, char **argv) {
-    command_t cmd;
-    // TODO: place real version number
-    command_init(&cmd, argv[0], "0.0.1");
-    command_option(&cmd, "-a", "--build <file>",
-                   "assemble an RV32 assembly file"
-                   " and output an ELF32 executable",
-                   c_build);
-    command_option(&cmd, "-r", "--run <file>", "run an ELF32 executable", c_run);
-    command_option(&cmd, "-e", "--emulate <file>", "assemble and run an RV32 assembly file", c_emulate);
-    command_parse(&cmd, argc, argv);
-}
-#endif
