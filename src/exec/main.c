@@ -1,8 +1,20 @@
-#include "rarsjs/core.h"
-
+#define export __attribute__((visibility("default")))
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
-Section g_section = SECTION_TEXT;
+#define TEXT_BASE 0x00400000
+#define TEXT_END 0x10000000
+#define DATA_BASE 0x10000000
+#define DATA_END 0x80000000
+
+typedef uint32_t u32;
+typedef uint16_t u16;
+typedef uint8_t u8;
+typedef uint64_t u64;
+typedef int64_t i64;
+typedef int32_t i32;
+
 export u32 *g_text_by_linenum = NULL;
 export size_t g_text_by_linenum_len = 0, g_text_by_linenum_cap = 0;
 
@@ -14,12 +26,9 @@ export u8 *g_data = NULL;
 export size_t g_data_len = 0, g_data_cap = 0;
 size_t g_data_emit_idx = 0;
 
-export u8 *g_stack = NULL;
-export size_t g_stack_len = 0;
-
 export bool g_dryrun = false;
 export bool g_in_fixup = false;
-export u32 g_regs[32] = { [2] = STACK_TOP - 4 };
+export u32 g_regs[32] = { [2] = STACK_};
 export u32 g_pc = 0;
 export u32 g_mem_written_len = 0;
 export u32 g_mem_written_addr;
@@ -32,10 +41,64 @@ typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERRO
 export u32 g_runtime_error_addr = 0;
 export Error g_runtime_error_type = 0;
 
+typedef struct Parser {
+    const char *input;
+    size_t pos;
+    size_t size;
+    int lineidx;
+    int startline;
+} Parser;
+
+typedef struct LabelData {
+    const char *txt;
+    size_t len;
+    u32 addr;
+} LabelData;
+
+typedef enum Section {
+    SECTION_TEXT,
+    SECTION_DATA,
+} Section;
+Section g_section = SECTION_TEXT;
+
+typedef const char *DeferredInsnCb(Parser *p, const char *opcode, size_t opcode_len);
+typedef struct DeferredInsn {
+    Parser p;
+    Section section;
+    DeferredInsnCb *cb;
+    const char *opcode;
+    size_t opcode_len;
+    size_t emit_idx;
+} DeferredInsn;
+
 LabelData *g_labels = NULL;
 size_t g_labels_len = 0, g_labels_cap = 0;
 DeferredInsn *g_deferred_insns = NULL;
 size_t g_deferred_insn_len = 0, g_deferred_insn_cap = 0;
+
+#ifdef __wasm__
+void *malloc(size_t size);
+void free(void *ptr);
+extern void panic();
+extern void emu_exit();
+extern void putchar(uint8_t);
+size_t strlen(const char *str);
+int memcmp(const void *s1, const void *s2, size_t n);
+void *memcpy(void *dest, const void *src, size_t n);
+void *memset(void *dest, int c, size_t n);
+
+#define assert(cond)          \
+    {                         \
+        if (!(cond)) panic(); \
+    }
+#else
+
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+void emu_exit() { exit(0); }
+#endif
 
 // clang-format off
 u32 DS1S2(u32 d, u32 s1, u32 s2) { return (d << 7) | (s1 << 15) | (s2 << 20); }
@@ -98,7 +161,7 @@ bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' ' || c == '\r'
 bool trailing(char c) { return c == '\t' || c == ' '; }
 
 bool digit(char c) { return (c >= '0' && c <= '9'); }
-bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'); }
+bool identifier(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'; }
 
 #define push(arr, len, cap) \
     ((len) >= (cap) ? grow((void **)&(arr), &(cap), sizeof(*(arr))), (arr) + (len)++ : (arr) + (len)++)
@@ -135,6 +198,7 @@ char peek_n(Parser *p, size_t n) {
     return p->input[p->pos + n];
 }
 
+
 // the difference between the whitespace and trailing functions
 // is that whitespace also includes newlines
 // and as such can be done between tokens in a line
@@ -155,7 +219,7 @@ bool skip_comment(Parser *p) {
             advance_n(p, 2);
         }
         return true;
-    }
+    } 
     return false;
 }
 
@@ -199,10 +263,10 @@ bool consume(Parser *p, char *c) {
     return true;
 }
 
-void parse_alnum(Parser *p, const char **str, size_t *len) {
+void parse_identifier(Parser *p, const char **str, size_t *len) {
     size_t start = p->pos;
     if (p->pos < p->size && p->input[p->pos] == '-') advance(p);
-    while (p->pos < p->size && alnum(p->input[p->pos])) advance(p);
+    while (p->pos < p->size && identifier(p->input[p->pos])) advance(p);
     size_t end = p->pos;
     *str = p->input + start;
     *len = end - start;
@@ -253,7 +317,7 @@ bool parse_numeric(Parser *p, i32 *out) {
 int parse_reg(Parser *p) {
     const char *str;
     size_t len;
-    parse_alnum(p, &str, &len);
+    parse_identifier(p, &str, &len);
 
     if ((len == 2 || len == 3) && str[0] == 'x') {
         if (len == 2) return str[1] - '0';
@@ -269,7 +333,6 @@ int parse_reg(Parser *p) {
     for (int i = 0; i < 32; i++) {
         if (str_eq(str, len, names[i])) return i;
     }
-    if (str_eq(str, len, "s0")) return 8; // s0 = fp
     return -1;
 }
 
@@ -407,34 +470,11 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
-const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcode, size_t opcode_len, u32 *out_addr) {
-    const char *target;
-    size_t target_len;
-
-    parse_alnum(p, &target, &target_len);
-    if (target_len == 0) return "Invalid target";
-
-    for (size_t i = 0; i < g_labels_len; i++) {
-        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
-            *out_addr = g_labels[i].addr;
-            return NULL;
-        }
-    }
-    if (g_in_fixup) return "Invalid label";
-    DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
-    insn->emit_idx = g_text_emit_idx;
-    insn->p = *orig;
-    insn->cb = cb;
-    insn->opcode = opcode;
-    insn->opcode_len = opcode_len;
-    insn->section = g_section;
-    return NULL;
-}
-
 const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     Parser orig = *p;
-    u32 addr;
-    int s1, s2;
+    const char *target;
+    size_t target_len;
+    int s1, s2, simm;
 
     skip_whitespace(p);
     if ((s1 = parse_reg(p)) == -1) return "Invalid rs1";
@@ -447,9 +487,29 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_branch, opcode, opcode_len, &addr);
-    if (err) return err;
-    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
+    parse_identifier(p, &target, &target_len);
+    if (target_len == 0) return "Invalid target";
+
+    bool found = false;
+    for (size_t i = 0; i < g_labels_len; i++) {
+        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
+            found = true;
+            simm = g_labels[i].addr - (g_text_emit_idx + TEXT_BASE);
+            break;
+        }
+    }
+    if (!found) {
+        if (g_in_fixup) return "Invalid label";
+        DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
+        insn->emit_idx = g_text_emit_idx;
+        insn->p = orig;
+        insn->cb = handle_branch;
+        insn->opcode = opcode;
+        insn->opcode_len = opcode_len;
+        insn->section = g_section;
+        asm_emit(0, p->startline);
+        return NULL;
+    }
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "beq")) inst = BEQ(s1, s2, simm);
@@ -458,18 +518,16 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "bge")) inst = BGE(s1, s2, simm);
     else if (str_eq(opcode, opcode_len, "bltu")) inst = BLTU(s1, s2, simm);
     else if (str_eq(opcode, opcode_len, "bgeu")) inst = BGEU(s1, s2, simm);
-    else if (str_eq(opcode, opcode_len, "bgt")) inst = BLT(s2, s1, simm);
-    else if (str_eq(opcode, opcode_len, "ble")) inst = BGE(s2, s1, simm);
-    else if (str_eq(opcode, opcode_len, "bgtu")) inst = BLTU(s2, s1, simm);
-    else if (str_eq(opcode, opcode_len, "bleu")) inst = BGEU(s2, s1, simm);
+
     asm_emit(inst, p->startline);
     return NULL;
 }
 
 const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len) {
     Parser orig = *p;
-    u32 addr;
-    int s;
+    const char *target;
+    size_t target_len;
+    int s, simm;
 
     skip_whitespace(p);
     if ((s = parse_reg(p)) == -1) return "Invalid rs";
@@ -477,9 +535,29 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_branch_zero, opcode, opcode_len, &addr);
-    if (err) return err;
-    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
+    parse_identifier(p, &target, &target_len);
+    if (target_len == 0) return "Invalid target";
+
+    bool found = false;
+    for (size_t i = 0; i < g_labels_len; i++) {
+        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
+            found = true;
+            simm = g_labels[i].addr - (g_text_emit_idx + TEXT_BASE);
+            break;
+        }
+    }
+    if (!found) {
+        if (g_in_fixup) return "Invalid label";
+        DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
+        insn->emit_idx = g_text_emit_idx;
+        insn->p = orig;
+        insn->cb = handle_branch_zero;
+        insn->opcode = opcode;
+        insn->opcode_len = opcode_len;
+        insn->section = g_section;
+        asm_emit(0, p->startline);
+        return NULL;
+    }
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "beqz")) inst = BEQ(s, 0, simm);
@@ -493,107 +571,31 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     return NULL;
 }
 
-const char *handle_alu_pseudo(Parser *p, const char *opcode, size_t opcode_len) {
-    u32 addr;
-    int d, s;
+const char *handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
+    int d, s1;
+    i32 simm;
+
+    u32 inst = 0;
 
     skip_whitespace(p);
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
-
     skip_whitespace(p);
-    if ((s = parse_reg(p)) == -1) return "Invalid rs";
 
-    u32 inst = 0;
-    if (str_eq(opcode, opcode_len, "mv")) inst = ADDI(d, s, 0);
-    else if (str_eq(opcode, opcode_len, "not")) inst = XORI(d, s, -1);
-    else if (str_eq(opcode, opcode_len, "neg")) inst = SUB(d, 0, s);
-    else if (str_eq(opcode, opcode_len, "seqz")) inst = SLTIU(d, s, 1);
-    else if (str_eq(opcode, opcode_len, "snez")) inst = SLTU(d, 0, s);
-    else if (str_eq(opcode, opcode_len, "sltz")) inst = SLT(d, s, 0);
-    else if (str_eq(opcode, opcode_len, "sgtz")) inst = SLT(d, 0, s);
+    if (str_eq(opcode, opcode_len, "jal")) {
+        if (!parse_numeric(p, &simm)) return "Invalid imm";
+        inst = JAL(d, simm);
+    } else if (str_eq(opcode, opcode_len, "jalr")) {
+        if ((s1 = parse_reg(p)) == -1) return "Invalid rs1";
+        skip_whitespace(p);
+        if (!consume_if(p, ',')) return "Expected ,";
+        skip_whitespace(p);
+        if (!parse_numeric(p, &simm)) return "Invalid imm";
+        inst = JALR(d, s1, simm);
+    }
 
     asm_emit(inst, p->startline);
-    return NULL;
-}
-
-const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
-    int d;
-    Parser orig = *p;
-    const char *err = NULL;
-
-    skip_whitespace(p);
-    // jal optionally takes a register argument
-    if (str_eq(opcode, opcode_len, "jal")) {
-        if ((d = parse_reg(p)) == -1) err = "Invalid rd";
-        skip_whitespace(p);
-        if (consume_if(p, ',')) {
-            if (err) return err;
-        } else {
-            *p = orig;
-            d = 1;
-        }
-    } else if (str_eq(opcode, opcode_len, "j")) {
-        d = 0;
-    } else assert(false);
-
-    skip_whitespace(p);
-    u32 addr;
-    err = label(p, &orig, handle_jump, opcode, opcode_len, &addr);
-    if (err) return err;
-    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
-    asm_emit(JAL(d, simm), p->startline);
-    return NULL;
-}
-
-const char *handle_jump_reg(Parser *p, const char *opcode, size_t opcode_len) {
-    int d, s;
-    i32 simm;
-
-    skip_whitespace(p);
-    // jalr rs
-    // jalr rd, rs, simm
-    // jalr rd, simm(rs)
-    if (str_eq(opcode, opcode_len, "jalr")) {
-        if ((d = parse_reg(p)) == -1) return "Invalid register";
-        skip_trailing(p);
-        if (!consume_if(p, ',')) {
-            asm_emit(JALR(1, d, 0), p->startline);
-            return NULL;
-        }
-        skip_whitespace(p);
-        if (parse_numeric(p, &simm)) {  // simm(rs)
-            skip_whitespace(p);
-            if (!consume_if(p, '(')) return "Expected (";
-            skip_whitespace(p);
-            if ((s = parse_reg(p)) == -1) return "Invalid rs";
-            skip_whitespace(p);
-            if (!consume_if(p, ')')) return "Expected )";
-        } else if (consume_if(p, '(')) {  // (rs)
-            simm = 0;
-            skip_whitespace(p);
-            if ((s = parse_reg(p)) == -1) return "Invalid rs";
-            skip_whitespace(p);
-            if (!consume_if(p, ')')) return "Expected )";
-        } else {  // rs1, simm
-            if ((s = parse_reg(p)) == -1) return "Invalid rs";
-            skip_whitespace(p);
-            if (!consume_if(p, ',')) return "Expected ,";
-            skip_whitespace(p);
-            if (!parse_numeric(p, &simm)) return "Invalid imm";
-        }
-        if (simm >= -2048 && simm <= 2047) asm_emit(JALR(d, s, simm), p->startline);
-        else return "Immediate out of range";
-    } else if (str_eq(opcode, opcode_len, "jr")) {
-        if ((s = parse_reg(p)) == -1) return "Invalid rs";
-        asm_emit(JALR(0, s, 0), p->startline);
-    }
-    return NULL;
-}
-
-const char *handle_ret(Parser *p, const char *opcode, size_t opcode_len) {
-    asm_emit(JALR(0, 1, 0), p->startline);
     return NULL;
 }
 
@@ -642,18 +644,40 @@ const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
 const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
     Parser orig = *p;
     int d;
+    i32 simm;
+    const char *target;
+    size_t target_len;
 
     skip_whitespace(p);
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
-
-    u32 addr;
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_la, opcode, opcode_len, &addr);
-    if (err) return err;
-    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
 
+    parse_identifier(p, &target, &target_len);
+    if (target_len == 0) return "Invalid target";
+
+    bool found = false;
+    for (size_t i = 0; i < g_labels_len; i++) {
+        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
+            found = true;
+            simm = g_labels[i].addr - (g_text_emit_idx + TEXT_BASE);
+            break;
+        }
+    }
+    if (!found) {
+        if (g_in_fixup) return "Invalid label";
+        DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
+        insn->emit_idx = g_text_emit_idx;
+        insn->p = orig;
+        insn->cb = handle_la;
+        insn->opcode = opcode;
+        insn->opcode_len = opcode_len;
+        insn->section = g_section;
+        asm_emit(0, p->startline);
+        asm_emit(0, p->startline);
+        return NULL;
+    }
     int lo = simm & 0xFFF;
     if (lo >= 0x800) lo -= 0x1000;
     int hi = (simm - lo) >> 12;
@@ -680,12 +704,9 @@ OpcodeHandling opcode_types[] = {
     },
     {handle_alu_imm, {"addi", "slt", "sltiu", "andi", "ori", "xori", "slli", "srli", "srai"}},
     {handle_ldst, {"lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw"}},
-    {handle_branch, {"beq", "bne", "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu", "bleu"}},
+    {handle_branch, {"beq", "bne", "blt", "bge", "bltu", "bgeu"}},
     {handle_branch_zero, {"beqz", "bnez", "blez", "bgez", "bltz", "bgtz"}},
-    {handle_alu_pseudo, {"mv", "not", "neg", "seqz", "snez", "sltz", "sgtz"}},
-    {handle_jump, {"j", "jal"}},
-    {handle_jump_reg, {"jr", "jalr"}},
-    {handle_ret, {"ret"}},
+    {handle_jumps, {"jal", "jalrs"}},
     {handle_upper, {"lui", "auipc"}},
     {handle_li, {"li"}},
     {handle_la, {"la"}},
@@ -693,10 +714,6 @@ OpcodeHandling opcode_types[] = {
 };
 
 export void assemble(const char *txt, size_t s) {
-    // TODO: dynamically growing stacks?
-    g_stack_len = 4096;
-    g_stack = malloc(g_stack_len);
-
     Parser parser = {0};
     parser.input = txt;
     parser.size = s;
@@ -713,7 +730,7 @@ export void assemble(const char *txt, size_t s) {
         if (consume_if(p, '.')) {
             const char *directive;
             size_t directive_len;
-            parse_alnum(p, &directive, &directive_len);
+            parse_identifier(p, &directive, &directive_len);
             skip_whitespace(p);
             if (str_eq(directive, directive_len, "data")) {
                 g_section = SECTION_DATA;
@@ -763,9 +780,8 @@ export void assemble(const char *txt, size_t s) {
 
         const char *alnum, *opcode;
         size_t alnum_len, opcode_len;
-        parse_alnum(p, &alnum, &alnum_len);
-        skip_trailing(p);
-
+        parse_identifier(p, &alnum, &alnum_len);
+        skip_whitespace(p);
         if (consume_if(p, ':')) {
             u32 addr = g_section == SECTION_TEXT ? (g_text_emit_idx + TEXT_BASE) : (g_data_emit_idx + DATA_BASE);
             *push(g_labels, g_labels_len, g_labels_cap) = (LabelData){.txt = alnum, .len = alnum_len, .addr = addr};
@@ -774,7 +790,6 @@ export void assemble(const char *txt, size_t s) {
 
         opcode = alnum;
         opcode_len = alnum_len;
-
         bool found = false;
         for (int i = 0; !found && i < sizeof(opcode_types) / sizeof(OpcodeHandling); i++) {
             for (int j = 0; !found && opcode_types[i].opcodes[j]; j++) {
@@ -863,7 +878,6 @@ static inline u32 remu32(u32 a, u32 b) {
 bool check_addr_range(u32 A, u32 size) {
     if (A >= TEXT_BASE && A + size <= TEXT_BASE + g_text_len) return true;
     else if (A >= DATA_BASE && A + size <= DATA_BASE + g_data_len) return true;
-    if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) return true; 
     return false;
 }
 
@@ -872,9 +886,6 @@ u32 LOAD(u32 A, int pow) {
     if (A >= TEXT_BASE && A < TEXT_BASE + g_text_len) {
         memspace = (u8 *)g_text;
         A -= TEXT_BASE;
-    } else if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) {
-        memspace = (u8 *)g_stack;
-        A -= STACK_TOP - g_stack_len;
     } else if (A >= DATA_BASE && A < DATA_BASE + g_data_len) {
         memspace = (u8 *)g_data;
         A -= DATA_BASE;
@@ -900,9 +911,6 @@ void STORE(u32 A, u32 B, int pow) {
     if (A >= TEXT_BASE && A < TEXT_END) {
         memspace = (u8 *)g_text;
         A -= TEXT_BASE;
-    } else if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) {
-        memspace = (u8 *)g_stack;
-        A -= STACK_TOP - g_stack_len;
     } else if (A >= DATA_BASE && A < DATA_END) {
         memspace = (u8 *)g_data;
         A -= DATA_BASE;
@@ -1096,3 +1104,49 @@ end:
 exit:
 	g_reg_written = rd;
 }
+
+#ifndef __wasm__
+
+// clang-format on
+
+void assemble_from_file(const char *src_path, bool dump) {
+    FILE *f = fopen(src_path, "r");
+    FILE *out = fopen("a.bin", "wb");
+
+    fseek(f, 0, SEEK_END);
+    size_t s = ftell(f);
+    rewind(f);
+    char *txt = malloc(s);
+    fread(txt, s, 1, f);
+    printf("about to assemble %zu\n", s);
+    assemble(txt, s);
+    if (dump) {
+        fwrite(g_text, g_text_len, 1, out);
+    }
+}
+
+#include <stdlib.h>
+int main(int argc, char **argv) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s {ssemble|run|emulate} <file>\n", argv[0]);
+        return -1;
+    }
+
+    if (str_eq("assemble", 8, argv[1])) {
+        assemble_from_file(argv[2], true);
+#ifdef _DEBUG
+        printf("assembled %zu\n", (g_text_len));
+#endif
+    } else if (str_eq("run", 3, argv[1])) {
+        fprintf(stderr, "ERROR: Not implemented yet\n");
+    } else if (str_eq("emulate", 7, argv[1])) {
+        assemble_from_file(argv[2], false);
+
+        while (g_pc < TEXT_BASE + g_text_len) {
+            emulate();
+        }
+    } else {
+        fprintf(stderr, "ERROR: Unknown command: %s\n", argv[1]);
+    }
+}
+#endif

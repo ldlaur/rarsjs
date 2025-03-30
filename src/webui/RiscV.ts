@@ -9,7 +9,6 @@ interface WasmExports {
   g_mem_written_addr: number;
   g_mem_written_len: number;
   g_reg_written: number;
-  g_ram: number;
   g_pc: number;
   g_text_by_linenum: number;
   g_text_by_linenum_len: number;
@@ -33,7 +32,6 @@ export class WasmInterface {
   public memWrittenLen?: Uint32Array;
   public memWrittenAddr?: Uint32Array;
   public regWritten?: Uint32Array;
-  public riscvRam?: Uint8Array;
   public pc?: Uint32Array;
   public textByLinenum?: Uint32Array;
   public textByLinenumLen?: Uint32Array;
@@ -104,7 +102,6 @@ export class WasmInterface {
     this.regWritten = createU32(this.exports.g_reg_written);
     this.pc = createU32(this.exports.g_pc);
     this.regsArr = createU32(this.exports.g_regs + 4);
-    this.riscvRam = createU8(this.exports.g_ram);
     this.runtimeErrorAddr = createU32(this.exports.g_runtime_error_addr);
     this.runtimeErrorType = createU32(this.exports.g_runtime_error_type);
     this.pc[0] = 0x00400000; // TODO: get address of _start symbol

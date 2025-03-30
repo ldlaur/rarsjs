@@ -33,9 +33,10 @@ void *memset(void *dest, int c, size_t n);
 #endif
 
 #define TEXT_BASE 0x00400000
-#define TEXT_END 0x10000000
+#define TEXT_END  0x10000000
 #define DATA_BASE 0x10000000
-#define DATA_END 0x80000000
+#define STACK_TOP 0x7FFFF000
+#define DATA_END  0x80000000
 
 typedef struct Parser {
     const char *input;

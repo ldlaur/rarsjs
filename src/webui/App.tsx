@@ -44,7 +44,7 @@ const [wasmPc, setWasmPc] = createSignal<string>("0x00000000");
 const [debugMode, setDebugMode] = createSignal<boolean>(false);
 const [consoleText, setConsoleText] = createSignal<string>("");
 
-const ROW_HEIGHT: number = 25;
+const ROW_HEIGHT: number = 24;
 
 let breakpointSet: Set<number> = new Set();
 let view: EditorView;
@@ -319,7 +319,8 @@ const MemoryView: Component = () => {
     if (cw > 0 && cWidth > 0) {
       const count = Math.floor(cWidth / cw);
       setChunksPerLine(count);
-      setLineCount(count == 0 ? 65536 / 4 : 65536 / 4 / count);
+      if (count < 2) setLineCount(65536 / 4 + 1);
+      else setLineCount(Math.ceil(65536 / 4 / (count-1)));
     }
   });
 
@@ -331,13 +332,32 @@ const MemoryView: Component = () => {
     estimateSize: () => ROW_HEIGHT,
     overscan: 5,
   });
+
   const [activeTab, setActiveTab] = createSignal(".text");
 
+  // Scroll to last line on mount and when lineCount updates
+  createEffect(() => {
+    if (parentRef) {
+      if (activeTab() == "stack") {
+        const lastIndex = lineCount() - 1;
+        rowVirtualizer.scrollToIndex(lastIndex);
+      } else {
+        rowVirtualizer.scrollToIndex(0);
+      }
+    }
+  });
+
+  const getStartAddr = () => {
+    if (activeTab() == ".text") return 0x00400000;
+    else if (activeTab() == ".data") return 0x10000000;
+    else if (activeTab() == "stack") return 0x7FFFF000 - 65536; // TODO: runtime stack size detection
+    return 0;
+  }
   return (
-    <>
+    <div class="h-full flex flex-col">
       <div class="w-full">
         <div class="w-full flex flex-wrap justify-stretch theme-bg theme-fg">
-          {[".text", ".data"].map((tab) => (
+          {[".text", ".data", "stack"].map((tab) => (
             <button
               class={`grow text-center px-2 font-semibold ${activeTab() === tab ? "border-b-2 theme-bg theme-fg" : "border-b-1 theme-fg2"}`}
               onClick={() => setActiveTab(tab)}
@@ -347,7 +367,7 @@ const MemoryView: Component = () => {
           ))}
         </div>
       </div>
-      <div ref={parentRef} class="h-full overflow-auto theme-scrollbar px-2">
+      <div ref={parentRef} class=" overflow-auto theme-scrollbar px-2">
         <div ref={dummyChunk} class="invisible absolute font-mono">
           {"000000000"}
         </div>
@@ -370,13 +390,13 @@ const MemoryView: Component = () => {
                 <div class="font-mono">
                   <Show when={chunksPerLine() > 1}>
                     <a class="theme-fg2 pr-2">
-                      {((activeTab() === ".text" ? 0x00400000 : 0x10000000) + virtualItem.index * (chunksPerLine() - 1) * 4)
+                      {(getStartAddr() + virtualItem.index * (chunksPerLine() - 1) * 4)
                         .toString(16)
                         .padStart(8, "0")}
                     </a>
                   </Show>
                   {(() => {
-                    let start = activeTab() === ".text" ? 0x00400000 : 0x10000000;
+                    let start = getStartAddr();
                     dummy();
                     let components = [];
                     let chunks = chunksPerLine() - 1;
@@ -385,9 +405,9 @@ const MemoryView: Component = () => {
                       for (let j = 0; j < 4; j++) {
                         let text = "00";
                         let style = "";
-                        if (wasmInterface.riscvRam) {
+                        if (wasmInterface.memWrittenAddr) {
                           let ptr = start + (virtualItem.index * chunks + i) * 4 + j;
-                          let is_animated =
+                          let is_animated = 
                             ptr >= wasmInterface.memWrittenAddr[0] &&
                             ptr <
                             wasmInterface.memWrittenAddr[0] +
@@ -409,7 +429,7 @@ const MemoryView: Component = () => {
           </For>
         </div>
       </div>
-    </>
+    </div>
 
   );
 };
