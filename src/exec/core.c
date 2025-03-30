@@ -152,7 +152,7 @@ bool skip_comment(Parser *p) {
             advance_n(p, 2);
         }
         return true;
-    } 
+    }
     return false;
 }
 
@@ -403,11 +403,34 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
-const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
-    Parser orig = *p;
+const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcode, size_t opcode_len, u32 *out_addr) {
     const char *target;
     size_t target_len;
-    int s1, s2, simm;
+
+    parse_alnum(p, &target, &target_len);
+    if (target_len == 0) return "Invalid target";
+
+    for (size_t i = 0; i < g_labels_len; i++) {
+        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
+            *out_addr = g_labels[i].addr;
+            return NULL;
+        }
+    }
+    if (g_in_fixup) return "Invalid label";
+    DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
+    insn->emit_idx = g_text_emit_idx;
+    insn->p = *orig;
+    insn->cb = cb;
+    insn->opcode = opcode;
+    insn->opcode_len = opcode_len;
+    insn->section = g_section;
+    return NULL;
+}
+
+const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
+    Parser orig = *p;
+    u32 addr;
+    int s1, s2;
 
     skip_whitespace(p);
     if ((s1 = parse_reg(p)) == -1) return "Invalid rs1";
@@ -420,29 +443,9 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    parse_alnum(p, &target, &target_len);
-    if (target_len == 0) return "Invalid target";
-
-    bool found = false;
-    for (size_t i = 0; i < g_labels_len; i++) {
-        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
-            found = true;
-            simm = g_labels[i].addr - (g_text_emit_idx + TEXT_BASE);
-            break;
-        }
-    }
-    if (!found) {
-        if (g_in_fixup) return "Invalid label";
-        DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
-        insn->emit_idx = g_text_emit_idx;
-        insn->p = orig;
-        insn->cb = handle_branch;
-        insn->opcode = opcode;
-        insn->opcode_len = opcode_len;
-        insn->section = g_section;
-        asm_emit(0, p->startline);
-        return NULL;
-    }
+    const char *err = label(p, &orig, handle_branch, opcode, opcode_len, &addr);
+    if (err) return err;
+    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "beq")) inst = BEQ(s1, s2, simm);
@@ -451,16 +454,18 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     else if (str_eq(opcode, opcode_len, "bge")) inst = BGE(s1, s2, simm);
     else if (str_eq(opcode, opcode_len, "bltu")) inst = BLTU(s1, s2, simm);
     else if (str_eq(opcode, opcode_len, "bgeu")) inst = BGEU(s1, s2, simm);
-
+    else if (str_eq(opcode, opcode_len, "bgt")) inst = BLT(s2, s1, simm);
+    else if (str_eq(opcode, opcode_len, "ble")) inst = BGE(s2, s1, simm);
+    else if (str_eq(opcode, opcode_len, "bgtu")) inst = BLTU(s2, s1, simm);
+    else if (str_eq(opcode, opcode_len, "bleu")) inst = BGEU(s2, s1, simm);
     asm_emit(inst, p->startline);
     return NULL;
 }
 
 const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len) {
     Parser orig = *p;
-    const char *target;
-    size_t target_len;
-    int s, simm;
+    u32 addr;
+    int s;
 
     skip_whitespace(p);
     if ((s = parse_reg(p)) == -1) return "Invalid rs";
@@ -468,29 +473,9 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    parse_alnum(p, &target, &target_len);
-    if (target_len == 0) return "Invalid target";
-
-    bool found = false;
-    for (size_t i = 0; i < g_labels_len; i++) {
-        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
-            found = true;
-            simm = g_labels[i].addr - (g_text_emit_idx + TEXT_BASE);
-            break;
-        }
-    }
-    if (!found) {
-        if (g_in_fixup) return "Invalid label";
-        DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
-        insn->emit_idx = g_text_emit_idx;
-        insn->p = orig;
-        insn->cb = handle_branch_zero;
-        insn->opcode = opcode;
-        insn->opcode_len = opcode_len;
-        insn->section = g_section;
-        asm_emit(0, p->startline);
-        return NULL;
-    }
+    const char *err = label(p, &orig, handle_branch_zero, opcode, opcode_len, &addr);
+    if (err) return err;
+    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "beqz")) inst = BEQ(s, 0, simm);
@@ -504,31 +489,107 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     return NULL;
 }
 
-const char *handle_jumps(Parser *p, const char *opcode, size_t opcode_len) {
-    int d, s1;
-    i32 simm;
-
-    u32 inst = 0;
+const char *handle_alu_pseudo(Parser *p, const char *opcode, size_t opcode_len) {
+    u32 addr;
+    int d, s;
 
     skip_whitespace(p);
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
-    skip_whitespace(p);
 
-    if (str_eq(opcode, opcode_len, "jal")) {
-        if (!parse_numeric(p, &simm)) return "Invalid imm";
-        inst = JAL(d, simm);
-    } else if (str_eq(opcode, opcode_len, "jalr")) {
-        if ((s1 = parse_reg(p)) == -1) return "Invalid rs1";
-        skip_whitespace(p);
-        if (!consume_if(p, ',')) return "Expected ,";
-        skip_whitespace(p);
-        if (!parse_numeric(p, &simm)) return "Invalid imm";
-        inst = JALR(d, s1, simm);
-    }
+    skip_whitespace(p);
+    if ((s = parse_reg(p)) == -1) return "Invalid rs";
+
+    u32 inst = 0;
+    if (str_eq(opcode, opcode_len, "mv")) inst = ADDI(d, s, 0);
+    else if (str_eq(opcode, opcode_len, "not")) inst = XORI(d, s, -1);
+    else if (str_eq(opcode, opcode_len, "neg")) inst = SUB(d, 0, s);
+    else if (str_eq(opcode, opcode_len, "seqz")) inst = SLTIU(d, s, 1);
+    else if (str_eq(opcode, opcode_len, "snez")) inst = SLTU(d, 0, s);
+    else if (str_eq(opcode, opcode_len, "sltz")) inst = SLT(d, s, 0);
+    else if (str_eq(opcode, opcode_len, "sgtz")) inst = SLT(d, 0, s);
 
     asm_emit(inst, p->startline);
+    return NULL;
+}
+
+const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
+    int d;
+    Parser orig = *p;
+    const char *err = NULL;
+
+    skip_whitespace(p);
+    // jal optionally takes a register argument
+    if (str_eq(opcode, opcode_len, "jal")) {
+        if ((d = parse_reg(p)) == -1) err = "Invalid rd";
+        skip_whitespace(p);
+        if (consume_if(p, ',')) {
+            if (err) return err;
+        } else {
+            *p = orig;
+            d = 1;
+        }
+    } else if (str_eq(opcode, opcode_len, "j")) {
+        d = 0;
+    } else assert(false);
+
+    skip_whitespace(p);
+    u32 addr;
+    err = label(p, &orig, handle_jump, opcode, opcode_len, &addr);
+    if (err) return err;
+    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
+    asm_emit(JAL(d, simm), p->startline);
+    return NULL;
+}
+
+const char *handle_jump_reg(Parser *p, const char *opcode, size_t opcode_len) {
+    int d, s;
+    i32 simm;
+
+    skip_whitespace(p);
+    // jalr rs
+    // jalr rd, rs, simm
+    // jalr rd, simm(rs)
+    if (str_eq(opcode, opcode_len, "jalr")) {
+        if ((d = parse_reg(p)) == -1) return "Invalid register";
+        skip_trailing(p);
+        if (!consume_if(p, ',')) {
+            asm_emit(JALR(1, d, 0), p->startline);
+            return NULL;
+        }
+        skip_whitespace(p);
+        if (parse_numeric(p, &simm)) {  // simm(rs)
+            skip_whitespace(p);
+            if (!consume_if(p, '(')) return "Expected (";
+            skip_whitespace(p);
+            if ((s = parse_reg(p)) == -1) return "Invalid rs";
+            skip_whitespace(p);
+            if (!consume_if(p, ')')) return "Expected )";
+        } else if (consume_if(p, '(')) {  // (rs)
+            simm = 0;
+            skip_whitespace(p);
+            if ((s = parse_reg(p)) == -1) return "Invalid rs";
+            skip_whitespace(p);
+            if (!consume_if(p, ')')) return "Expected )";
+        } else {  // rs1, simm
+            if ((s = parse_reg(p)) == -1) return "Invalid rs";
+            skip_whitespace(p);
+            if (!consume_if(p, ',')) return "Expected ,";
+            skip_whitespace(p);
+            if (!parse_numeric(p, &simm)) return "Invalid imm";
+        }
+        if (simm >= -2048 && simm <= 2047) asm_emit(JALR(d, s, simm), p->startline);
+        else return "Immediate out of range";
+    } else if (str_eq(opcode, opcode_len, "jr")) {
+        if ((s = parse_reg(p)) == -1) return "Invalid rs";
+        asm_emit(JALR(0, s, 0), p->startline);
+    }
+    return NULL;
+}
+
+const char *handle_ret(Parser *p, const char *opcode, size_t opcode_len) {
+    asm_emit(JALR(0, 1, 0), p->startline);
     return NULL;
 }
 
@@ -577,40 +638,18 @@ const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
 const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
     Parser orig = *p;
     int d;
-    i32 simm;
-    const char *target;
-    size_t target_len;
 
     skip_whitespace(p);
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
+
+    u32 addr;
     skip_whitespace(p);
+    const char *err = label(p, &orig, handle_la, opcode, opcode_len, &addr);
+    if (err) return err;
+    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
 
-    parse_alnum(p, &target, &target_len);
-    if (target_len == 0) return "Invalid target";
-
-    bool found = false;
-    for (size_t i = 0; i < g_labels_len; i++) {
-        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
-            found = true;
-            simm = g_labels[i].addr - (g_text_emit_idx + TEXT_BASE);
-            break;
-        }
-    }
-    if (!found) {
-        if (g_in_fixup) return "Invalid label";
-        DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
-        insn->emit_idx = g_text_emit_idx;
-        insn->p = orig;
-        insn->cb = handle_la;
-        insn->opcode = opcode;
-        insn->opcode_len = opcode_len;
-        insn->section = g_section;
-        asm_emit(0, p->startline);
-        asm_emit(0, p->startline);
-        return NULL;
-    }
     int lo = simm & 0xFFF;
     if (lo >= 0x800) lo -= 0x1000;
     int hi = (simm - lo) >> 12;
@@ -637,9 +676,12 @@ OpcodeHandling opcode_types[] = {
     },
     {handle_alu_imm, {"addi", "slt", "sltiu", "andi", "ori", "xori", "slli", "srli", "srai"}},
     {handle_ldst, {"lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw"}},
-    {handle_branch, {"beq", "bne", "blt", "bge", "bltu", "bgeu"}},
+    {handle_branch, {"beq", "bne", "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu", "bleu"}},
     {handle_branch_zero, {"beqz", "bnez", "blez", "bgez", "bltz", "bgtz"}},
-    {handle_jumps, {"jal", "jalrs"}},
+    {handle_alu_pseudo, {"mv", "not", "neg", "seqz", "snez", "sltz", "sgtz"}},
+    {handle_jump, {"j", "jal"}},
+    {handle_jump_reg, {"jr", "jalr"}},
+    {handle_ret, {"ret"}},
     {handle_upper, {"lui", "auipc"}},
     {handle_li, {"li"}},
     {handle_la, {"la"}},

@@ -17,17 +17,22 @@
   // i should make so that instructions are followed by an expressionlist
   // but that is too complicated
   Instruction { 
-    ("add" | "slt" | "sltu" | "and" | "or" | "xor" | "sll" | "srl" | "sub" | "sra" | "mul" | "mulh" | "mulu" | "mulhu" | "div" |
-    "divu" | "rem" | "remu" |
-    "addi" | "slt" | "sltiu" | "andi" | "ori" | "xori" | "slli" | "srli" | "srai" |
-    "lb" | "lh" | "lw" | "lbu" | "lhu" | "sb" | "sh" | "sw" |
-    "beq" | "bne" | "blt" | "bge" | "bltu" | "bgeu" |
-    "beqz" | "bnez" | "blez" | "bgez" | "bltz" | "bgtz" |
-    "jal" | "jalrs" |
-    "lui" | "auipc" |
-    "li" |
-    "la" |
-    "ecall") (spaces | newline | @eof)
+    (
+      "add" | "slt" | "sltu" | "and" | "or" | "xor" | "sll" | "srl" | "sub" | "sra" | "mul" | "mulh" | "mulu" | "mulhu" | "div" |
+              "divu" | "rem" | "remu" |
+      "addi" | "slt" | "sltiu" | "andi" | "ori" | "xori" | "slli" | "srli" | "srai" |
+      "lb" | "lh" | "lw" | "lbu" | "lhu" | "sb" | "sh" | "sw" |
+      "beq" | "bne" | "blt" | "bge" | "bltu" | "bgeu" | "bgt" | "ble" | "bgtu" | "bleu" |
+      "beqz" | "bnez" | "blez" | "bgez" | "bltz" | "bgtz" |
+      "mv" | "not" | "neg" | "seqz" | "snez" | "sltz" | "sgtz" |
+      "j" | "jal" |
+      "jr" | "jalr" |
+      "ret" |
+      "lui" | "auipc" |
+      "li" |
+      "la" |
+      "ecall"
+    ) (spaces | newline | @eof)
   }
   Register {
     "x"$[0-9] | "x"$[1-2]$[0-9] | "x3"$[0-1] |
