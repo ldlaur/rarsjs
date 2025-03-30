@@ -5,8 +5,25 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "rarsjs/core.h"
+
+static LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
+    LabelData *ret = NULL;
+
+    for (size_t i = 0; i < g_labels_len; i++) {
+        LabelData *l = &g_labels[i];
+        printf("Label: %s\n", l->txt);
+
+        if (0 == strncmp(sym, l->txt, sym_len)) {
+            ret = l;
+            break;
+        }
+    }
+
+    return ret;
+}
 
 bool elf_emit_exec(const char *path) {
     FILE *out = fopen(path, "wb");
@@ -33,6 +50,12 @@ bool elf_emit_exec(const char *path) {
     u32 text_seg_off = shdrs_off + shdrs_sz;
     u32 data_seg_off = text_seg_off + g_text_len;
     u32 str_tab_off = data_seg_off + g_data_len;
+    LabelData *start = resolve_symbol("_start", strlen("_start"), true);
+
+    if (NULL == start) {
+        fprintf(stderr, "linker: could not find `_start`\n");
+        return false;
+    }
 
     // Write ELF header
     ElfHeader e_hdr = {.magic = {0x7F, 'E', 'L', 'F'},        // ELF magic
@@ -43,7 +66,7 @@ bool elf_emit_exec(const char *path) {
                        .type = 2,                             // Executable
                        .isa = 0xF3,                           // Arch = RISC-V
                        .elf_ver = 1,                          // ELF version 1
-                       .entry = 0,                            // Program entrypoint
+                       .entry = start->addr,                  // Program entrypoint
                        .phdrs_off = sizeof(ElfHeader),        // Start offset of program header tabe
                        .phent_num = segments_count,           // 2 program headers
                        .phent_sz = sizeof(ElfProgramHeader),  // Size of each program header table entry
