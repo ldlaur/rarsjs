@@ -41,7 +41,7 @@ const wasmInterface = new WasmInterface();
 export const [dummy, setDummy] = createSignal<number>(0);
 const [regsArray, setRegsArray] = createSignal<number[]>(new Array(31).fill(0));
 const [wasmPc, setWasmPc] = createSignal<string>("0x00000000");
-const [debugMode, setDebugMode] = createSignal<boolean>(false);
+export const [debugMode, setDebugMode] = createSignal<boolean>(false);
 const [consoleText, setConsoleText] = createSignal<string>("");
 
 const ROW_HEIGHT: number = 24;
@@ -74,7 +74,7 @@ function updateCss(): void {
       background-color: ${cssTheme.background};
     }
     .cm-debugging {
-      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
+      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#603000" : "#f8c080"
     };
     }
     .cm-tooltip-lint {
@@ -137,6 +137,9 @@ function updateCss(): void {
       cssTheme.background,
       0.8,
     )};
+    }
+    .frame-highlight {
+      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#307010" : "#90f080"};
     }
 
   @keyframes fadeHighlight {
@@ -320,7 +323,7 @@ const MemoryView: Component = () => {
       const count = Math.floor(cWidth / cw);
       setChunksPerLine(count);
       if (count < 2) setLineCount(65536 / 4 + 1);
-      else setLineCount(Math.ceil(65536 / 4 / (count-1)));
+      else setLineCount(Math.ceil(65536 / 4 / (count - 1)));
     }
   });
 
@@ -407,12 +410,16 @@ const MemoryView: Component = () => {
                         let style = "";
                         if (wasmInterface.memWrittenAddr) {
                           let ptr = start + (virtualItem.index * chunks + i) * 4 + j;
-                          let is_animated = 
+                          let isAnimated =
                             ptr >= wasmInterface.memWrittenAddr[0] &&
                             ptr <
                             wasmInterface.memWrittenAddr[0] +
                             wasmInterface.memWrittenLen[0];
-                          if (is_animated) style = "animate-fade-highlight";
+                          let fp = wasmInterface.regsArr[8 - 1];
+                          let sp = wasmInterface.regsArr[2 - 1];
+                          let isFrame = ptr < fp && ptr >= sp;
+                          if (isAnimated) style += "animate-fade-highlight ";
+                          if (isFrame) style += "frame-highlight";
                           text = wasmInterface.LOAD(ptr, 0)
                             .toString(16)
                             .padStart(2, "0");
@@ -556,6 +563,7 @@ function PaneResize(
 }
 
 function setBreakpoints(): void {
+  breakpointSet = new Set();
   const breakpoints = view.state.field(breakpointState);
   breakpoints.between(0, view.state.doc.length, (from) => {
     const line = view.state.doc.lineAt(from);
@@ -606,7 +614,6 @@ async function startStepRiscV(): Promise<void> {
   else forceLinting(view);
 
   setDebugMode(true);
-  breakpointSet = new Set();
   setBreakpoints();
   setDummy(dummy() + 1);
   updateLineNumber();
@@ -627,6 +634,7 @@ function singleStepRiscV(): void {
 
 function continueStepRiscV(): void {
   while (1) {
+    setBreakpoints();
     wasmInterface.run(setConsoleText);
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
