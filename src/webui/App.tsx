@@ -415,6 +415,7 @@ const MemoryView: Component = () => {
 };
 
 function PaneResize(
+  firstSize: number,
   direction: "vertical" | "horizontal",
   a: JSX.Element,
   b: JSX.Element,
@@ -456,14 +457,10 @@ function PaneResize(
         ? (e as MouseEvent).clientY ?? (e as TouchEvent).touches[0]?.clientY
         : (e as MouseEvent).clientX ?? (e as TouchEvent).touches[0]?.clientX;
     const calcSize = resizeState()!.origSize + (client - resizeState()!.orig);
-    setSize(
-      Math.min(
-        calcSize,
-        direction == "vertical"
-          ? container!.clientHeight
-          : container!.clientWidth,
-      ),
-    );
+    const dim = direction == "vertical"
+      ? container!.clientHeight
+      : container!.clientWidth;
+    setSize(Math.max(0, Math.min(calcSize, dim - 4)));
   };
 
   const updateSize = () => {
@@ -471,6 +468,7 @@ function PaneResize(
       direction == "vertical"
         ? container!.clientHeight
         : container!.clientWidth;
+    if (newSize === 0) return;
     setSize((size() / containerSize()) * newSize);
     setContainerSize(newSize);
   };
@@ -480,7 +478,7 @@ function PaneResize(
       direction == "vertical"
         ? container!.clientHeight
         : container!.clientWidth;
-    setSize(initialSize / 2);
+    setSize(initialSize * firstSize);
     setContainerSize(initialSize);
 
     const ro = new ResizeObserver(() => updateSize());
@@ -526,8 +524,8 @@ function PaneResize(
         style={{ "flex-shrink": 0 }}
         class={
           direction == "vertical"
-            ? "w-full h-1 theme-separator cursor-row-resize"
-            : "h-full w-1 theme-separator cursor-col-resize"
+            ? "w-full h-[4px] theme-separator cursor-row-resize"
+            : "h-full w-[4px] theme-separator cursor-col-resize"
         }
       ></div>
       <div class="theme-bg theme-fg flex-grow flex-shrink overflow-hidden">
@@ -651,14 +649,16 @@ const App: Component = () => {
 
       <div class="flex w-full h-full overflow-hidden">
         {PaneResize(
+          0.5,
           "horizontal",
           <main
             class="w-full h-full overflow-hidden theme-scrollbar"
             ref={editor}
           />,
           PaneResize(
+            0.75,
             "vertical",
-            PaneResize("horizontal", <RegisterTable />, <MemoryView />),
+            PaneResize(0.55, "horizontal", <RegisterTable />, <MemoryView />),
             <div
               innerText={consoleText() ? consoleText() : "Console output will go here..."}
               class={"w-full h-full overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
