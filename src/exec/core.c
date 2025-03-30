@@ -896,6 +896,9 @@ u32 LOAD(u32 A, int pow) {
 }
 
 void STORE(u32 A, u32 B, int pow) {
+    g_mem_written_len = 1 << pow;
+    g_mem_written_addr = A;
+
     u8 *memspace;
     if (A >= TEXT_BASE && A < TEXT_END) {
         memspace = (u8 *)g_text;
@@ -909,8 +912,6 @@ void STORE(u32 A, u32 B, int pow) {
     } else {
         return;
     }
-    g_mem_written_len = 1 << pow;
-    g_mem_written_addr = A;
     if (pow == 0) memspace[A] = B;
     else if (pow == 1) {
         memcpy(memspace + A, &B, 2);
