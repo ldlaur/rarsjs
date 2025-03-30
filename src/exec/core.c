@@ -1,20 +1,8 @@
-#define export __attribute__((visibility("default")))
+#include "rarsjs/core.h"
+
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
 
-#define TEXT_BASE 0x00400000
-#define TEXT_END 0x10000000
-#define DATA_BASE 0x10000000
-#define DATA_END 0x80000000
-
-typedef uint32_t u32;
-typedef uint16_t u16;
-typedef uint8_t u8;
-typedef uint64_t u64;
-typedef int64_t i64;
-typedef int32_t i32;
-
+Section g_section = SECTION_TEXT;
 export u32 *g_text_by_linenum = NULL;
 export size_t g_text_by_linenum_len = 0, g_text_by_linenum_cap = 0;
 
@@ -41,64 +29,10 @@ typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERRO
 export u32 g_runtime_error_addr = 0;
 export Error g_runtime_error_type = 0;
 
-typedef struct Parser {
-    const char *input;
-    size_t pos;
-    size_t size;
-    int lineidx;
-    int startline;
-} Parser;
-
-typedef struct LabelData {
-    const char *txt;
-    size_t len;
-    u32 addr;
-} LabelData;
-
-typedef enum Section {
-    SECTION_TEXT,
-    SECTION_DATA,
-} Section;
-Section g_section = SECTION_TEXT;
-
-typedef const char *DeferredInsnCb(Parser *p, const char *opcode, size_t opcode_len);
-typedef struct DeferredInsn {
-    Parser p;
-    Section section;
-    DeferredInsnCb *cb;
-    const char *opcode;
-    size_t opcode_len;
-    size_t emit_idx;
-} DeferredInsn;
-
 LabelData *g_labels = NULL;
 size_t g_labels_len = 0, g_labels_cap = 0;
 DeferredInsn *g_deferred_insns = NULL;
 size_t g_deferred_insn_len = 0, g_deferred_insn_cap = 0;
-
-#ifdef __wasm__
-void *malloc(size_t size);
-void free(void *ptr);
-extern void panic();
-extern void emu_exit();
-extern void putchar(uint8_t);
-size_t strlen(const char *str);
-int memcmp(const void *s1, const void *s2, size_t n);
-void *memcpy(void *dest, const void *src, size_t n);
-void *memset(void *dest, int c, size_t n);
-
-#define assert(cond)          \
-    {                         \
-        if (!(cond)) panic(); \
-    }
-#else
-
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-void emu_exit() { exit(0); }
-#endif
 
 // clang-format off
 u32 DS1S2(u32 d, u32 s1, u32 s2) { return (d << 7) | (s1 << 15) | (s2 << 20); }
@@ -197,7 +131,6 @@ char peek_n(Parser *p, size_t n) {
     if (p->pos + n >= p->size) return '\0';
     return p->input[p->pos + n];
 }
-
 
 // the difference between the whitespace and trailing functions
 // is that whitespace also includes newlines
@@ -726,16 +659,8 @@ export void assemble(const char *txt, size_t s) {
         skip_whitespace(p);
         if (p->pos == p->size) break;
         p->startline = p->lineidx;
-        const char *alnum, *opcode;
-        size_t alnum_len, opcode_len;
-        parse_alnum(p, &alnum, &alnum_len);
-        skip_whitespace(p);
 
-        if (consume_if(p, ':')) {
-            u32 addr = g_section == SECTION_TEXT ? (g_text_emit_idx + TEXT_BASE) : (g_data_emit_idx + DATA_BASE);
-            *push(g_labels, g_labels_len, g_labels_cap) = (LabelData){.txt = alnum, .len = alnum_len, .addr = addr};
-            continue;
-        } else if (consume_if(p, '.')) {
+        if (consume_if(p, '.')) {
             const char *directive;
             size_t directive_len;
             parse_alnum(p, &directive, &directive_len);
@@ -784,6 +709,17 @@ export void assemble(const char *txt, size_t s) {
                 asm_emit(value, p->startline);
                 continue;
             }
+        }
+
+        const char *alnum, *opcode;
+        size_t alnum_len, opcode_len;
+        parse_alnum(p, &alnum, &alnum_len);
+        skip_whitespace(p);
+
+        if (consume_if(p, ':')) {
+            u32 addr = g_section == SECTION_TEXT ? (g_text_emit_idx + TEXT_BASE) : (g_data_emit_idx + DATA_BASE);
+            *push(g_labels, g_labels_len, g_labels_cap) = (LabelData){.txt = alnum, .len = alnum_len, .addr = addr};
+            continue;
         }
 
         opcode = alnum;
@@ -1103,49 +1039,3 @@ end:
 exit:
 	g_reg_written = rd;
 }
-
-#ifndef __wasm__
-
-// clang-format on
-
-void assemble_from_file(const char *src_path, bool dump) {
-    FILE *f = fopen(src_path, "r");
-    FILE *out = fopen("a.bin", "wb");
-
-    fseek(f, 0, SEEK_END);
-    size_t s = ftell(f);
-    rewind(f);
-    char *txt = malloc(s);
-    fread(txt, s, 1, f);
-    printf("about to assemble %zu\n", s);
-    assemble(txt, s);
-    if (dump) {
-        fwrite(g_text, g_text_len, 1, out);
-    }
-}
-
-#include <stdlib.h>
-int main(int argc, char **argv) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s {ssemble|run|emulate} <file>\n", argv[0]);
-        return -1;
-    }
-
-    if (str_eq("assemble", 8, argv[1])) {
-        assemble_from_file(argv[2], true);
-#ifdef _DEBUG
-        printf("assembled %zu\n", (g_text_len));
-#endif
-    } else if (str_eq("run", 3, argv[1])) {
-        fprintf(stderr, "ERROR: Not implemented yet\n");
-    } else if (str_eq("emulate", 7, argv[1])) {
-        assemble_from_file(argv[2], false);
-
-        while (g_pc < TEXT_BASE + g_text_len) {
-            emulate();
-        }
-    } else {
-        fprintf(stderr, "ERROR: Unknown command: %s\n", argv[1]);
-    }
-}
-#endif
