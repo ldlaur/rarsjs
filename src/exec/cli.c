@@ -33,6 +33,8 @@ static void c_emulate(command_t *self) {
     }
 }
 
+static void c_readelf(command_t *self) { elf_read(self->arg); }
+
 int main(int argc, char **argv) {
     command_t cmd;
     // TODO: place real version number
@@ -43,5 +45,6 @@ int main(int argc, char **argv) {
                    c_build);
     command_option(&cmd, "-r", "--run <file>", "run an ELF32 executable", c_run);
     command_option(&cmd, "-e", "--emulate <file>", "assemble and run an RV32 assembly file", c_emulate);
+    command_option(&cmd, "-i", "--readelf <file>", "show information about ELF file", c_readelf);
     command_parse(&cmd, argc, argv);
 }

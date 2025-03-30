@@ -52,4 +52,5 @@ typedef struct {
     u32 ent_sz;
 } __attribute__((packed)) ElfSectionHeader;
 
+bool elf_read(const char *elf_path);
 bool elf_emit_exec(const char *path);

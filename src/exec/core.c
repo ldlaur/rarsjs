@@ -14,9 +14,12 @@ export u8 *g_data = NULL;
 export size_t g_data_len = 0, g_data_cap = 0;
 size_t g_data_emit_idx = 0;
 
+export u8 *g_stack = NULL;
+export size_t g_stack_len = 0;
+
 export bool g_dryrun = false;
 export bool g_in_fixup = false;
-export u32 g_regs[32];
+export u32 g_regs[32] = {[2] = STACK_TOP - 4};
 export u32 g_pc = 0;
 export u32 g_mem_written_len = 0;
 export u32 g_mem_written_addr;
@@ -95,7 +98,7 @@ bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' ' || c == '\r'
 bool trailing(char c) { return c == '\t' || c == ' '; }
 
 bool digit(char c) { return (c >= '0' && c <= '9'); }
-bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'); }
 
 #define push(arr, len, cap) \
     ((len) >= (cap) ? grow((void **)&(arr), &(cap), sizeof(*(arr))), (arr) + (len)++ : (arr) + (len)++)
@@ -266,6 +269,7 @@ int parse_reg(Parser *p) {
     for (int i = 0; i < 32; i++) {
         if (str_eq(str, len, names[i])) return i;
     }
+    if (str_eq(str, len, "s0")) return 8;  // s0 = fp
     return -1;
 }
 
@@ -689,6 +693,10 @@ OpcodeHandling opcode_types[] = {
 };
 
 export void assemble(const char *txt, size_t s) {
+    // TODO: dynamically growing stacks?
+    g_stack_len = 4096;
+    g_stack = malloc(g_stack_len);
+
     Parser parser = {0};
     parser.input = txt;
     parser.size = s;
@@ -756,7 +764,7 @@ export void assemble(const char *txt, size_t s) {
         const char *alnum, *opcode;
         size_t alnum_len, opcode_len;
         parse_alnum(p, &alnum, &alnum_len);
-        skip_whitespace(p);
+        skip_trailing(p);
 
         if (consume_if(p, ':')) {
             u32 addr = g_section == SECTION_TEXT ? (g_text_emit_idx + TEXT_BASE) : (g_data_emit_idx + DATA_BASE);
@@ -855,6 +863,7 @@ static inline u32 remu32(u32 a, u32 b) {
 bool check_addr_range(u32 A, u32 size) {
     if (A >= TEXT_BASE && A + size <= TEXT_BASE + g_text_len) return true;
     else if (A >= DATA_BASE && A + size <= DATA_BASE + g_data_len) return true;
+    if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) return true;
     return false;
 }
 
@@ -863,6 +872,9 @@ u32 LOAD(u32 A, int pow) {
     if (A >= TEXT_BASE && A < TEXT_BASE + g_text_len) {
         memspace = (u8 *)g_text;
         A -= TEXT_BASE;
+    } else if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) {
+        memspace = (u8 *)g_stack;
+        A -= STACK_TOP - g_stack_len;
     } else if (A >= DATA_BASE && A < DATA_BASE + g_data_len) {
         memspace = (u8 *)g_data;
         A -= DATA_BASE;
@@ -888,6 +900,9 @@ void STORE(u32 A, u32 B, int pow) {
     if (A >= TEXT_BASE && A < TEXT_END) {
         memspace = (u8 *)g_text;
         A -= TEXT_BASE;
+    } else if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) {
+        memspace = (u8 *)g_stack;
+        A -= STACK_TOP - g_stack_len;
     } else if (A >= DATA_BASE && A < DATA_END) {
         memspace = (u8 *)g_data;
         A -= DATA_BASE;

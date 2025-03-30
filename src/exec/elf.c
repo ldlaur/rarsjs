@@ -14,7 +14,6 @@ static LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
 
     for (size_t i = 0; i < g_labels_len; i++) {
         LabelData *l = &g_labels[i];
-        printf("Label: %s\n", l->txt);
 
         if (0 == strncmp(sym, l->txt, sym_len)) {
             ret = l;
@@ -23,6 +22,102 @@ static LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
     }
 
     return ret;
+}
+
+bool elf_read(const char *elf_path) {
+    FILE *elf = fopen(elf_path, "rb");
+
+    if (NULL == elf) {
+        fprintf(stderr, "readelf: could not open file '%s'\n", elf_path);
+        return false;
+    }
+
+    fseek(elf, 0, SEEK_END);
+    size_t elf_sz = ftell(elf);
+    rewind(elf);
+
+    if (elf_sz < sizeof(ElfHeader)) {
+        fprintf(stderr, "readelf: corrupt or invalid elf header\n");
+        return false;
+    }
+
+    ElfHeader e_header = {0};
+    fread(&e_header, sizeof(ElfHeader), 1, elf);
+
+    if (0x7F != e_header.magic[0] || 'E' != e_header.magic[1] || 'L' != e_header.magic[2] || 'F' != e_header.magic[3]) {
+        fprintf(stderr, "readelf: not an elf file\n");
+        return false;
+    }
+
+    // Print magic bytes
+    u8 *raw_header = (u8 *)&e_header;
+    printf("Magic:");
+    for (size_t i = 0; i < 8; i++) {
+        printf(" %02x", raw_header[i]);
+    }
+    printf("\n");
+
+    // Print file class
+    printf("Class: ");
+    if (1 == e_header.bits) {
+        puts("ELF32");
+    } else if (2 == e_header.bits) {
+        puts("ELF64");
+    } else {
+        puts("Unknown");
+    }
+
+    // Print file endianness
+    printf("Endianness: ");
+    if (1 == e_header.endianness) {
+        puts("Little endian");
+    } else if (2 == e_header.endianness) {
+        puts("Big endian");
+    } else {
+        puts("Unknown");
+    }
+
+    // Print ELF version
+    printf("ELF version: %u\n", e_header.ehdr_ver);
+
+    // Print OS/ABI
+    printf("OS/ABI: ");
+    if (0 == e_header.abi) {
+        puts("UNIX - System V");
+    } else {
+        puts("Unknown");
+    }
+
+    // Print ELF type
+    printf("ELF type: ");
+    if (1 == e_header.type) {
+        puts("Relocatable");
+    } else if (2 == e_header.type) {
+        puts("Executable");
+    } else if (3 == e_header.type) {
+        puts("Shared");
+    } else if (4 == e_header.type) {
+        puts("Core");
+    } else {
+        puts("Unknown");
+    }
+
+    // Print architecture
+    printf("Architecture: ");
+    if (0xF3 == e_header.isa) {
+        puts("RISC-V");
+    } else if (0x3E == e_header.isa) {
+        puts("x86-64");
+    } else if (0xB7 == e_header.isa) {
+        puts("AArch64");
+    } else {
+        puts("Unknown");
+    }
+
+    // Print entry point address
+    printf("Entry point virtual address: 0x%08x\n", e_header.entry);
+
+    return true;
 }
 
 bool elf_emit_exec(const char *path) {

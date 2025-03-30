@@ -16,6 +16,7 @@ extern void putchar(uint8_t);
 size_t strlen(const char *str);
 int memcmp(const void *s1, const void *s2, size_t n);
 void *memcpy(void *dest, const void *src, size_t n);
+void *memset(void *dest, int c, size_t n);
 
 #define assert(cond)          \
     {                         \
@@ -34,6 +35,7 @@ void *memcpy(void *dest, const void *src, size_t n);
 #define TEXT_BASE 0x00400000
 #define TEXT_END 0x10000000
 #define DATA_BASE 0x10000000
+#define STACK_TOP 0x7FFFF000
 #define DATA_END 0x80000000
 
 typedef struct Parser {
