@@ -1112,3 +1112,18 @@ end:
 exit:
     g_reg_written = rd;
 }
+
+LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
+    LabelData *ret = NULL;
+
+    for (size_t i = 0; i < g_labels_len; i++) {
+        LabelData *l = &g_labels[i];
+
+        if (0 == strncmp(sym, l->txt, sym_len)) {
+            ret = l;
+            break;
+        }
+    }
+
+    return ret;
+}

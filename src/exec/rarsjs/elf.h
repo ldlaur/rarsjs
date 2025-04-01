@@ -2089,3 +2089,4 @@ typedef struct {
 
 bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, char **error);
 bool elf_emit_exec(void **out, size_t *len, char **error);
+bool elf_load(u8 *elf_contents, size_t elf_len, char **error);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -33,7 +34,7 @@ void *memset(void *dest, int c, size_t n);
 #endif
 
 #define TEXT_BASE 0x00400000
-#define TEXT_END  0x10000000
+#define TEXT_END 0x10000000
 #define DATA_BASE 0x10000000
 #define STACK_TOP 0x7FFFF000
 #define DATA_END 0x80000000
@@ -91,3 +92,4 @@ extern export Error g_runtime_error_type;
 
 void assemble(const char *, size_t);
 void emulate();
+LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global);

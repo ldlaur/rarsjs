@@ -29,19 +29,15 @@
     memcpy((dst) + *(off), (src), (src_sz)); \
     *(off) += (src_sz)
 
-static LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
-    LabelData *ret = NULL;
-
-    for (size_t i = 0; i < g_labels_len; i++) {
-        LabelData *l = &g_labels[i];
-
-        if (0 == strncmp(sym, l->txt, sym_len)) {
-            ret = l;
-            break;
+static bool find_section(u32 *out_idx, char *str_tab, u32 str_tab_len, const char *section) {
+    for (u32 i = 0; i < str_tab_len; i++) {
+        if (0 == strcmp(&str_tab[i], section)) {
+            *out_idx = i;
+            return true;
         }
     }
 
-    return ret;
+    return false;
 }
 
 bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, char **error) {
@@ -169,12 +165,6 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
     CHK_OOM(readable_shdrs, error);
 
     ElfSectionHeader *strtab = &shdrs[e_header->shdr_str_idx];
-
-    if (!(SHF_STRINGS & strtab->flags)) {
-        *error = "invalid strtab";
-        goto fail;
-    }
-
     char *strings = (char *)(elf_contents + strtab->off);
 
     for (u32 i = 0; i < e_header->shent_num; i++) {
@@ -240,10 +230,10 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
     // NULL section header
     // .text section header
     // .data section header
-    // RARSJS_STRINGS (string table)
+    // RARSJS_STRINGS section header
     // .text segment
     // .data segment
-    // RARSJS_STRINGS section header
+    // RARSJS_STRINGS (string table)
 
     const char str_tab[] = "\0.text\0.data\0RARSJS_STRINGS\0";
     u32 segments_count = (0 != g_text_len) + (0 != g_data_len);
@@ -373,4 +363,87 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
 fail:
     CLEANUP(elf_contents);
     return false;
+}
+
+bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
+    if (elf_len < sizeof(ElfHeader)) {
+        *error = "corrupt or invalid elf header";
+        return false;
+    }
+
+    ElfHeader *e_header = (ElfHeader *)elf_contents;
+
+    if (0x7F != e_header->magic[0] || 'E' != e_header->magic[1] || 'L' != e_header->magic[2] ||
+        'F' != e_header->magic[3]) {
+        *error = "not an elf file";
+        return false;
+    }
+
+    if (1 != e_header->bits) {
+        *error = "unsupported elf variant (only elf32 is supported)";
+        return false;
+    }
+
+    if (0xF3 != e_header->isa) {
+        *error = "unsupported architecture (only risc-v is supported)";
+        return false;
+    }
+
+    if (2 != e_header->type) {
+        *error = "not an elf executable";
+        return false;
+    }
+
+    ElfProgramHeader *phdrs = (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
+    ElfSectionHeader *shdrs = (ElfSectionHeader *)(elf_contents + e_header->shdrs_off);
+
+    ElfSectionHeader *str_tab_shdr = &shdrs[e_header->shdr_str_idx];
+    char *str_tab = (char *)(elf_contents + str_tab_shdr->off);
+    u32 str_tab_len = str_tab_shdr->mem_sz;
+    u32 text_section_name_off = 0;
+    u32 data_section_name_off = 0;
+
+    if (!find_section(&text_section_name_off, str_tab, str_tab_len, ".text")) {
+        *error = "executable has no .text section in string table";
+        return false;
+    }
+
+    if (!find_section(&data_section_name_off, str_tab, str_tab_len, ".data")) {
+        *error = "executable has no .data section in string table";
+        return false;
+    }
+
+    if (text_section_name_off == data_section_name_off) {
+        *error = ".text and .data string table entries overlap";
+        return false;
+    }
+
+    ElfSectionHeader *text_section = NULL;
+    ElfSectionHeader *data_section = NULL;
+
+    for (u32 i = 0; i < e_header->shent_num; i++) {
+        ElfSectionHeader *sec = &shdrs[i];
+
+        if (sec->name_off == text_section_name_off) {
+            text_section = sec;
+        } else if (sec->name_off == data_section_name_off) {
+            data_section = sec;
+        }
+    }
+
+    // TODO: overlap checks
+
+    g_pc = e_header->entry;
+
+    if (NULL != text_section) {
+        g_text = elf_contents + text_section->off;
+        g_text_len = text_section->mem_sz;
+    }
+
+    if (NULL != data_section) {
+        g_data = elf_contents + data_section->off;
+        g_data_len = data_section->mem_sz;
+    }
+
+    return true;
 }
