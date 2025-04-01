@@ -115,15 +115,15 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
 
         readable->phdr = phdr;
 
-        if (0b100 & phdrs->flags) {
+        if (0b100 & phdr->flags) {
             readable->flags[flags_idx++] = 'R';
         }
 
-        if (0b010 & phdrs->flags) {
+        if (0b010 & phdr->flags) {
             readable->flags[flags_idx++] = 'W';
         }
 
-        if (0b001 & phdrs->flags) {
+        if (0b001 & phdr->flags) {
             readable->flags[flags_idx++] = 'X';
         }
 
