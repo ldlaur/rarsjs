@@ -33,7 +33,85 @@ static void c_emulate(command_t *self) {
     }
 }
 
-static void c_readelf(command_t *self) { elf_read(self->arg); }
+static void c_readelf(command_t *self) {
+    FILE *elf = fopen(self->arg, "rb");
+
+    if (NULL == elf) {
+        fprintf(stderr, "readelf: could not open file\n");
+        return;
+    }
+
+    fseek(elf, 0, SEEK_END);
+    size_t sz = ftell(elf);
+    rewind(elf);
+
+    u8 *elf_contents = malloc(sz);
+
+    if (NULL == elf_contents) {
+        fprintf(stderr, "out of memory\n");
+        return;
+    }
+
+    fread(elf_contents, sz, 1, elf);
+    ReadElfResult readelf = {0};
+    char *error = NULL;
+
+    if (!elf_read(elf_contents, sz, &readelf, &error)) {
+        fprintf(stderr, "%s\n", error);
+        return;
+    }
+
+    printf(" %-35s:", "Magic");
+    for (size_t i = 0; i < 8; i++) {
+        printf(" %02x", readelf.magic8[i]);
+    }
+    printf("\n");
+
+    printf(" %-35s: %s\n", "Class", readelf.class);
+    printf(" %-35s: %s\n", "Endianness", readelf.endianness);
+    printf(" %-35s: %u\n", "Version", readelf.ehdr->ehdr_ver);
+    printf(" %-35s: %s\n", "OS/ABI", readelf.abi);
+    printf(" %-35s: %s\n", "Type", readelf.type);
+    printf(" %-35s: %s\n", "Architecture", readelf.architecture);
+    printf(" %-35s: 0x%08x\n", "Entry point", readelf.ehdr->entry);
+    printf(" %-35s: %u (bytes into file)\n", "Start of program headers", readelf.ehdr->phdrs_off);
+    printf(" %-35s: %u (bytes into file)\n", "Start of section headers", readelf.ehdr->shdrs_off);
+    printf(" %-35s: 0x%x\n", "Flags", readelf.ehdr->flags);
+    printf(" %-35s: %u (bytes)\n", "Size of ELF header", readelf.ehdr->ehdr_sz);
+    printf(" %-35s: %u (bytes)\n", "Size of each program header", readelf.ehdr->phent_sz);
+    printf(" %-35s: %u\n", "Number of program headers", readelf.ehdr->phent_num);
+    printf(" %-35s: %u (bytes)\n", "Size of each section header", readelf.ehdr->shent_sz);
+    printf(" %-35s: %u\n", "Number of section headers", readelf.ehdr->shent_num);
+    printf(" %-35s: %u\n", "Section header string table index", readelf.ehdr->shdr_str_idx);
+    printf("\n");
+
+    printf("Section headers:\n");
+    printf(" [Nr] %-17s %-15s %-10s %-10s %-10s %-5s %-5s\n", "Name", "Type", "Address", "Offset", "Size", "Flags",
+           "Align");
+
+    for (u32 i = 0; i < readelf.ehdr->shent_num; i++) {
+        ReadElfSection *sec = &readelf.shdrs[i];
+        // clang-format off
+        printf(" [%2u] %-17s %-15s 0x%08x 0x%08x 0x%08x %5s %5u\n",
+                i, sec->name, sec->type, sec->shdr->virt_addr,
+               sec->shdr->off, sec->shdr->mem_sz, sec->flags, sec->shdr->align);
+        // clang-format on
+    }
+    printf("\n");
+
+    printf("Program headers:\n");
+    printf(" %-14s %-10s %-15s %-16s %-10s %-5s %-5s\n", "Type", "Offset", "Virtual Address", "Physical Address",
+           "Size", "Flags", "Align");
+    for (u32 i = 0; i < readelf.ehdr->phent_num; i++) {
+        ReadElfSegment *seg = &readelf.phdrs[i];
+        // clang-format off
+        printf(" %-14s 0x%08x 0x%08x      0x%08x       0x%08x %5s %5u\n",
+                seg->type, seg->phdr->off, seg->phdr->virt_addr, seg->phdr->phys_addr,
+                seg->phdr->mem_sz, seg->flags, seg->phdr->align);
+        // clang-format on
+    }
+    printf("\n");
+}
 
 int main(int argc, char **argv) {
     command_t cmd;

@@ -1,5 +1,6 @@
 #include "rarsjs/elf.h"
 
+#include <bits/posix2_lim.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -7,6 +8,18 @@
 #include <string.h>
 
 #include "rarsjs/core.h"
+
+#define UNKNOWN(prop) (prop) = "Unknown"
+#define CHK_OOM(ptr, err)       \
+    if (!(ptr)) {               \
+        *err = "out of memory"; \
+        goto fail;              \
+    }
+
+#define CLEANUP(ptr) \
+    if ((ptr)) {     \
+        free(ptr);   \
+    }
 
 static LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
     LabelData *ret = NULL;
@@ -23,100 +36,192 @@ static LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
     return ret;
 }
 
-bool elf_read(const char *elf_path) {
-    FILE *elf = fopen(elf_path, "rb");
-
-    if (NULL == elf) {
-        fprintf(stderr, "readelf: could not open file '%s'\n", elf_path);
+bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, char **error) {
+    if (elf_contents_len < sizeof(ElfHeader)) {
+        *error = "corrupt or invalid elf header";
         return false;
     }
 
-    fseek(elf, 0, SEEK_END);
-    size_t elf_sz = ftell(elf);
-    rewind(elf);
+    ReadElfSegment *readable_phdrs = NULL;
+    ElfHeader *e_header = (ElfHeader *)elf_contents;
+    ReadElfSection *readable_shdrs = NULL;
 
-    if (elf_sz < sizeof(ElfHeader)) {
-        fprintf(stderr, "readelf: corrupt or invalid elf header\n");
+    if (0x7F != e_header->magic[0] || 'E' != e_header->magic[1] || 'L' != e_header->magic[2] ||
+        'F' != e_header->magic[3]) {
+        *error = "not an elf file";
         return false;
     }
 
-    ElfHeader e_header = {0};
-    fread(&e_header, sizeof(ElfHeader), 1, elf);
-
-    if (0x7F != e_header.magic[0] || 'E' != e_header.magic[1] || 'L' != e_header.magic[2] || 'F' != e_header.magic[3]) {
-        fprintf(stderr, "readelf: not an elf file\n");
-        return false;
-    }
-
-    // Print magic bytes
-    u8 *raw_header = (u8 *)&e_header;
-    printf("Magic:");
-    for (size_t i = 0; i < 8; i++) {
-        printf(" %02x", raw_header[i]);
-    }
-    printf("\n");
+    out->ehdr = e_header;
+    out->magic8 = elf_contents;
 
     // Print file class
-    printf("Class: ");
-    if (1 == e_header.bits) {
-        puts("ELF32");
-    } else if (2 == e_header.bits) {
-        puts("ELF64");
+    if (1 == e_header->bits) {
+        out->class = "ELF32";
+    } else if (2 == e_header->bits) {
+        out->class = "ELF64 (WARNING: Corrupt content ahead, format not supported)";
     } else {
-        puts("Unknown");
+        UNKNOWN(out->class);
     }
 
     // Print file endianness
-    printf("Endianness: ");
-    if (1 == e_header.endianness) {
-        puts("Little endian");
-    } else if (2 == e_header.endianness) {
-        puts("Big endian");
+    if (1 == e_header->endianness) {
+        out->endianness = "Little endian";
+    } else if (2 == e_header->endianness) {
+        out->endianness = "Big endian";
     } else {
-        puts("Unknown");
+        UNKNOWN(out->class);
     }
 
-    // Print ELF version
-    printf("ELF version: %u\n", e_header.ehdr_ver);
-
     // Print OS/ABI
-    printf("OS/ABI: ");
-    if (0 == e_header.abi) {
-        puts("UNIX - System V");
+    if (0 == e_header->abi) {
+        out->abi = "UNIX - System V";
     } else {
-        puts("Unknown");
+        UNKNOWN(out->abi);
     }
 
     // Print ELF type
-    printf("ELF type: ");
-    if (1 == e_header.type) {
-        puts("Relocatable");
-    } else if (2 == e_header.type) {
-        puts("Executable");
-    } else if (3 == e_header.type) {
-        puts("Shared");
-    } else if (4 == e_header.type) {
-        puts("Core");
+    if (1 == e_header->type) {
+        out->type = "Relocatable";
+    } else if (2 == e_header->type) {
+        out->type = "Executable";
+    } else if (3 == e_header->type) {
+        out->type = "Shared";
+    } else if (4 == e_header->type) {
+        out->type = "Core";
     } else {
-        puts("Unknown");
+        UNKNOWN(out->type);
     }
 
     // Print architecture
-    printf("Architecture: ");
-    if (0xF3 == e_header.isa) {
-        puts("RISC-V");
-    } else if (0x3E == e_header.isa) {
-        puts("x86-64");
-    } else if (0xB7 == e_header.isa) {
-        puts("AArch64");
+    if (0xF3 == e_header->isa) {
+        out->architecture = "RISC-V";
+    } else if (0x3E == e_header->isa) {
+        out->architecture = "x86-64 (x64, AMD/Intel 64 bit)";
+    } else if (0xB7 == e_header->isa) {
+        out->architecture = "AArch64 (ARM64)";
     } else {
-        puts("Unknown");
+        UNKNOWN(out->architecture);
     }
 
-    // Print entry point address
-    printf("Entry point virtual address: 0x%08x\n", e_header.entry);
+    ElfProgramHeader *phdrs = (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
+    readable_phdrs = malloc(sizeof(ReadElfSegment) * e_header->phent_num);
+    CHK_OOM(readable_phdrs, error);
 
+    for (u32 i = 0; i < e_header->phent_num; i++) {
+        ElfProgramHeader *phdr = &phdrs[i];
+        ReadElfSegment *readable = &readable_phdrs[i];
+        size_t flags_idx = 0;
+
+        readable->phdr = phdr;
+
+        if (0b100 & phdrs->flags) {
+            readable->flags[flags_idx++] = 'R';
+        }
+
+        if (0b010 & phdrs->flags) {
+            readable->flags[flags_idx++] = 'W';
+        }
+
+        if (0b001 & phdrs->flags) {
+            readable->flags[flags_idx++] = 'X';
+        }
+
+        readable->flags[flags_idx] = 0;
+
+        switch (phdr->type) {
+            case PT_LOAD:
+                readable->type = "LOAD";
+                break;
+
+            case PT_NULL:
+                readable->type = "NULL";
+                break;
+
+            case PT_DYNAMIC:
+                readable->type = "DYNAMIC";
+                break;
+
+            case PT_INTERP:
+                readable->type = "INTERP";
+                break;
+
+            case PT_NOTE:
+                readable->type = "NOTE";
+                break;
+
+            default:
+                UNKNOWN(readable->type);
+                break;
+        }
+    }
+
+    ElfSectionHeader *shdrs = (ElfSectionHeader *)(elf_contents + e_header->shdrs_off);
+    readable_shdrs = malloc(sizeof(ReadElfSection) * e_header->shent_num);
+    CHK_OOM(readable_shdrs, error);
+
+    ElfSectionHeader *strtab = &shdrs[e_header->shdr_str_idx];
+
+    if (!(SHF_STRINGS & strtab->flags)) {
+        *error = "readelf: invalid strtab";
+        goto fail;
+    }
+
+    char *strings = (char *)(elf_contents + strtab->off);
+
+    for (u32 i = 0; i < e_header->shent_num; i++) {
+        ElfSectionHeader *shdr = &shdrs[i];
+        ReadElfSection *readable = &readable_shdrs[i];
+        size_t flags_idx = 0;
+
+        readable->shdr = shdr;
+
+        if (SHF_WRITE & shdr->flags) {
+            readable->flags[flags_idx++] = 'W';
+        }
+
+        if (SHF_ALLOC & shdr->flags) {
+            readable->flags[flags_idx++] = 'A';
+        }
+
+        if (SHF_STRINGS & shdr->flags) {
+            readable->flags[flags_idx++] = 'S';
+        }
+
+        readable->flags[flags_idx] = 0;
+        readable->name = &strings[shdr->name_off];
+
+        switch (shdr->type) {
+            case SHT_NULL:
+                readable->type = "NULL";
+                break;
+
+            case SHT_PROGBITS:
+                readable->type = "PROGBITS";
+                break;
+
+            case SHT_SYMTAB:
+                readable->type = "SYMTAB";
+                break;
+
+            case SHT_STRTAB:
+                readable->type = "STRTAB";
+                break;
+
+            default:
+                UNKNOWN(readable->type);
+                break;
+        }
+    }
+
+    out->phdrs = readable_phdrs;
+    out->shdrs = readable_shdrs;
     return true;
+
+fail:
+    CLEANUP(readable_phdrs);
+    CLEANUP(readable_shdrs);
+    return false;
 }
 
 bool elf_emit_exec(const char *path) {
@@ -135,7 +240,7 @@ bool elf_emit_exec(const char *path) {
     // Data PH
     // String table
 
-    const char str_tab[] = "\0.text\0.data\0str_tab\0";
+    const char str_tab[] = "\0.text\0.data\0RARSJS_STRINGS\0";
     u32 segments_count = (0 != g_text_len) + (0 != g_data_len);
     u32 sections_count = 1 + segments_count;
     u32 phdrs_sz = sizeof(ElfProgramHeader) * segments_count;

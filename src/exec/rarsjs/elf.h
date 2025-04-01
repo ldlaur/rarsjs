@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "types.h"
 
@@ -2060,5 +2062,30 @@ typedef struct {
     u32 ent_sz;
 } __attribute__((packed)) ElfSectionHeader;
 
-bool elf_read(const char *elf_path);
+typedef struct {
+    ElfProgramHeader *phdr;
+    const char *type;
+    char flags[4];
+} ReadElfSegment;
+
+typedef struct {
+    ElfSectionHeader *shdr;
+    const char *name;
+    const char *type;
+    char flags[4];
+} ReadElfSection;
+
+typedef struct {
+    ElfHeader *ehdr;
+    const u8 *magic8;
+    const char *class;
+    const char *endianness;
+    const char *abi;
+    const char *type;
+    const char *architecture;
+    ReadElfSegment *phdrs;
+    ReadElfSection *shdrs;
+} ReadElfResult;
+
+bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, char **error);
 bool elf_emit_exec(const char *path);
