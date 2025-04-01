@@ -242,7 +242,7 @@ bool elf_emit_exec(const char *path) {
 
     const char str_tab[] = "\0.text\0.data\0RARSJS_STRINGS\0";
     u32 segments_count = (0 != g_text_len) + (0 != g_data_len);
-    u32 sections_count = 1 + segments_count;
+    u32 sections_count = 2 + segments_count;
     u32 phdrs_sz = sizeof(ElfProgramHeader) * segments_count;
     u32 shdrs_off = sizeof(ElfHeader) + phdrs_sz;
     u32 shdrs_sz = sizeof(ElfSectionHeader) * sections_count;
@@ -303,6 +303,11 @@ bool elf_emit_exec(const char *path) {
                                         .align = 1};
         fwrite(&data_header, sizeof(data_header), 1, out);
     }
+
+    // Write NULL section
+    ElfSectionHeader null = {0};
+    null.type = SHT_NULL;
+    fwrite(&null, sizeof(null), 1, out);
 
     // Write text SH
     if (0 != g_text_len) {
