@@ -714,7 +714,7 @@ export void assemble(const char *txt, size_t s) {
             const char *directive;
             size_t directive_len;
             parse_alnum(p, &directive, &directive_len);
-            skip_whitespace(p);
+            skip_trailing(p);
             if (str_eq(directive, directive_len, "data")) {
                 g_section = SECTION_DATA;
                 continue;
@@ -722,41 +722,61 @@ export void assemble(const char *txt, size_t s) {
                 g_section = SECTION_TEXT;
                 continue;
             } else if (str_eq(directive, directive_len, "byte")) {
-                skip_whitespace(p);
                 i32 value;
-                if (!parse_numeric(p, &value)) {
-                    err = "Invalid byte";
-                    break;
+                bool first = true;
+                while (true) {
+                    skip_trailing(p);
+                    if (first || consume_if(p, ',')) {
+                        skip_trailing(p);
+                        if (!parse_numeric(p, &value)) {
+                            err = "Invalid byte";
+                            break;
+                        }
+                        if (value < -128 || value > 255) {
+                            err = "Out of bounds byte";
+                            break;
+                        }
+                        asm_emit_byte(value, p->startline);
+                    } else break;
+                    first = false;
                 }
-                if (value < -128 || value > 255) {
-                    err = "Out of bounds byte";
-                    break;
-                }
-                asm_emit_byte(value, p->startline);
                 continue;
             } else if (str_eq(directive, directive_len, "half")) {
-                skip_whitespace(p);
                 i32 value;
-                if (!parse_numeric(p, &value)) {
-                    err = "Invalid half";
-                    break;
+                bool first = true;
+                while (true) {
+                    skip_trailing(p);
+                    if (first || consume_if(p, ',')) {
+                        skip_trailing(p);
+                        if (!parse_numeric(p, &value)) {
+                            err = "Invalid half";
+                            break;
+                        }
+                        if (value < -32768 || value > 65535) {
+                            err = "Out of bounds half";
+                            break;
+                        }
+                        asm_emit_byte(value, p->startline);
+                        asm_emit_byte(value >> 8, p->startline);
+                    } else break;
+                    first = false;
                 }
-                if (value < -32768 || value > 65535) {
-                    err = "Out of bounds half";
-                    break;
-                }
-                // TODO: check range
-                asm_emit_byte(value, p->startline);
-                asm_emit_byte(value >> 8, p->startline);
                 continue;
             } else if (str_eq(directive, directive_len, "word")) {
-                skip_whitespace(p);
                 i32 value;
-                if (!parse_numeric(p, &value)) {
-                    err = "Invalid word";
-                    break;
+                bool first = true;
+                while (true) {
+                    skip_trailing(p);
+                    if (first || consume_if(p, ',')) {
+                        skip_trailing(p);
+                        if (!parse_numeric(p, &value)) {
+                            err = "Invalid word";
+                            break;
+                        }
+                        asm_emit(value, p->startline);
+                    } else break;
+                    first = false;
                 }
-                asm_emit(value, p->startline);
                 continue;
             }
         }
@@ -1022,7 +1042,7 @@ void emulate() {
         if ((opcode>>5) == 3) T = S1 < S2;
         if ((opcode>>4) & 1) T = !T;
         g_pc += T ? btype_imm : 4;
-		rd = 0;	
+        rd = 0; 
         goto exit;
     }
 
@@ -1040,7 +1060,7 @@ void emulate() {
     }
     
     if ((opcode & 0b1111) == 0b0100) {
-		rd = 0;
+        rd = 0;
         int pow = (opcode >> 4) & 3;
         if (!check_addr_range(S1 + store_imm, 1<<pow)) {
             g_runtime_error_addr = S1 + store_imm;
@@ -1095,5 +1115,5 @@ end:
     g_pc += 4;
 
 exit:
-	g_reg_written = rd;
+    g_reg_written = rd;
 }
