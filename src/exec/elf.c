@@ -1,6 +1,5 @@
 #include "rarsjs/elf.h"
 
-#include <elf.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
