@@ -19,15 +19,13 @@ export size_t g_stack_len = 0;
 
 export bool g_dryrun = false;
 export bool g_in_fixup = false;
-export u32 g_regs[32] = { [2] = STACK_TOP - 4 };
+export u32 g_regs[32] = {[2] = STACK_TOP - 4};
 export u32 g_pc = 0;
 export u32 g_mem_written_len = 0;
 export u32 g_mem_written_addr;
 export u32 g_reg_written = 0;
-export u32 g_error_line;
-export const char *g_error;
-
-typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERROR_STORE = 3 } Error;
+export u32 g_error_line = 0;
+export const char *g_error = NULL;
 
 export u32 g_runtime_error_addr = 0;
 export Error g_runtime_error_type = 0;
@@ -269,7 +267,7 @@ int parse_reg(Parser *p) {
     for (int i = 0; i < 32; i++) {
         if (str_eq(str, len, names[i])) return i;
     }
-    if (str_eq(str, len, "s0")) return 8; // s0 = fp
+    if (str_eq(str, len, "s0")) return 8;  // s0 = fp
     return -1;
 }
 
@@ -833,9 +831,6 @@ export void assemble(const char *txt, size_t s) {
     if (err) {
         g_error = err;
         g_error_line = p->startline;
-#ifndef __wasm__
-        printf("line %d: %s\n", p->startline, err);
-#endif
         return;
     }
 }
@@ -883,7 +878,7 @@ static inline u32 remu32(u32 a, u32 b) {
 bool check_addr_range(u32 A, u32 size) {
     if (A >= TEXT_BASE && A + size <= TEXT_BASE + g_text_len) return true;
     else if (A >= DATA_BASE && A + size <= DATA_BASE + g_data_len) return true;
-    if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) return true; 
+    if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) return true;
     return false;
 }
 
