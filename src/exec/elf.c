@@ -21,6 +21,14 @@
         free(ptr);   \
     }
 
+#define WRITE(dst, ptr, off)                       \
+    memcpy((dst) + *(off), (ptr), sizeof(*(ptr))); \
+    *(off) += sizeof(*(ptr))
+
+#define WRITE_BUF(dst, src, src_sz, off)     \
+    memcpy((dst) + *(off), (src), (src_sz)); \
+    *(off) += (src_sz)
+
 static LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
     LabelData *ret = NULL;
 
@@ -163,7 +171,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
     ElfSectionHeader *strtab = &shdrs[e_header->shdr_str_idx];
 
     if (!(SHF_STRINGS & strtab->flags)) {
-        *error = "readelf: invalid strtab";
+        *error = "invalid strtab";
         goto fail;
     }
 
@@ -224,21 +232,18 @@ fail:
     return false;
 }
 
-bool elf_emit_exec(const char *path) {
-    FILE *out = fopen(path, "wb");
-
-    if (NULL == out) {
-        fprintf(stderr, "ERROR: could not open file '%s'\n", path);
-        return false;
-    }
-
+bool elf_emit_exec(void **out, size_t *len, char **error) {
     // LAYOUT
     // ELF header
-    // Program headers (PHs)
-    // Section headers (SHs)
-    // Text PH
-    // Data PH
-    // String table
+    // .text program header
+    // .data program header
+    // NULL section header
+    // .text section header
+    // .data section header
+    // RARSJS_STRINGS (string table)
+    // .text segment
+    // .data segment
+    // RARSJS_STRINGS section header
 
     const char str_tab[] = "\0.text\0.data\0RARSJS_STRINGS\0";
     u32 segments_count = (0 != g_text_len) + (0 != g_data_len);
@@ -250,13 +255,17 @@ bool elf_emit_exec(const char *path) {
     u32 data_seg_off = text_seg_off + g_text_len;
     u32 str_tab_off = data_seg_off + g_data_len;
     LabelData *start = resolve_symbol("_start", strlen("_start"), true);
+    u8 *elf_contents = NULL;
+    u32 elf_off = 0;
 
     if (NULL == start) {
-        fprintf(stderr, "linker: could not find `_start`\n");
+        *error = "unresolved reference to `_start`";
         return false;
     }
 
-    // Write ELF header
+    elf_contents = malloc(g_text_len + g_data_len + sizeof(ElfHeader) + phdrs_sz + shdrs_sz + sizeof(str_tab));
+    CHK_OOM(elf_contents, error);
+
     ElfHeader e_hdr = {.magic = {0x7F, 'E', 'L', 'F'},        // ELF magic
                        .bits = 1,                             // 32 bits
                        .endianness = 1,                       // little endian
@@ -276,9 +285,8 @@ bool elf_emit_exec(const char *path) {
                        .flags = 0,                            // Flags
                        .shdr_str_idx = sections_count - 1};
 
-    fwrite(&e_hdr, sizeof(e_hdr), 1, out);
+    WRITE(elf_contents, &e_hdr, &elf_off);
 
-    // Write Text PH
     if (0 != g_text_len) {
         ElfProgramHeader text_header = {.type = PT_LOAD,
                                         .flags = 0b101,
@@ -288,7 +296,7 @@ bool elf_emit_exec(const char *path) {
                                         .file_sz = g_text_len,
                                         .mem_sz = g_text_len,
                                         .align = 4};
-        fwrite(&text_header, sizeof(text_header), 1, out);
+        WRITE(elf_contents, &text_header, &elf_off);
     }
 
     // Write data PH
@@ -301,13 +309,13 @@ bool elf_emit_exec(const char *path) {
                                         .file_sz = g_data_len,
                                         .mem_sz = g_data_len,
                                         .align = 1};
-        fwrite(&data_header, sizeof(data_header), 1, out);
+        WRITE(elf_contents, &data_header, &elf_off);
     }
 
-    // Write NULL section
+    // Write NULL SH
     ElfSectionHeader null = {0};
     null.type = SHT_NULL;
-    fwrite(&null, sizeof(null), 1, out);
+    WRITE(elf_contents, &null, &elf_off);
 
     // Write text SH
     if (0 != g_text_len) {
@@ -320,7 +328,7 @@ bool elf_emit_exec(const char *path) {
                                      .align = 4,
                                      .link = 0,
                                      .ent_sz = 0};
-        fwrite(&text_sec, sizeof(text_sec), 1, out);
+        WRITE(elf_contents, &text_sec, &elf_off);
     }
 
     // Write data SH
@@ -334,7 +342,7 @@ bool elf_emit_exec(const char *path) {
                                      .align = 1,
                                      .link = 0,
                                      .ent_sz = 0};
-        fwrite(&data_sec, sizeof(data_sec), 1, out);
+        WRITE(elf_contents, &data_sec, &elf_off);
     }
 
     // Write string table SH
@@ -347,21 +355,22 @@ bool elf_emit_exec(const char *path) {
                                     .align = 1,
                                     .link = 0,
                                     .ent_sz = 0};
-    fwrite(&str_tab_sec, sizeof(str_tab_sec), 1, out);
+    WRITE(elf_contents, &str_tab_sec, &elf_off);
 
-    // Write text segment
     if (0 != g_text_len) {
-        fwrite(g_text, g_text_len, 1, out);
+        WRITE_BUF(elf_contents, g_text, g_text_len, &elf_off);
     }
 
-    // Write data section
     if (0 != g_data_len) {
-        fwrite(g_data, g_data_len, 1, out);
+        WRITE_BUF(elf_contents, g_data, g_data_len, &elf_off);
     }
 
-    // Write string table
-    fwrite(str_tab, sizeof(str_tab), 1, out);
+    WRITE_BUF(elf_contents, str_tab, sizeof(str_tab), &elf_off);
 
-    fclose(out);
+    *out = elf_contents;
+    *len = elf_off;
     return true;
+fail:
+    CLEANUP(elf_contents);
+    return false;
 }

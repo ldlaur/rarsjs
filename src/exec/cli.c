@@ -7,6 +7,9 @@
 #include "rarsjs/elf.h"
 #include "vendor/commander.h"
 
+static const char *g_obj_out = "a.o";
+static const char *g_exec_out = "a.out";
+
 void assemble_from_file(const char *src_path) {
     FILE *f = fopen(src_path, "r");
 
@@ -16,20 +19,64 @@ void assemble_from_file(const char *src_path) {
     char *txt = malloc(s);
     fread(txt, s, 1, f);
     assemble(txt, s);
+
+    if (g_error) {
+        fprintf(stderr, "assembler: line %u %s\n", g_error_line, g_error);
+    }
 }
 
-// CLI commands
 static void c_build(command_t *self) {
     assemble_from_file(self->arg);
-    elf_emit_exec("a.elf");
+
+    if (g_error) {
+        return;
+    }
+
+    void *elf_contents = NULL;
+    size_t elf_sz = 0;
+    char *error = NULL;
+
+    if (!elf_emit_exec(&elf_contents, &elf_sz, &error)) {
+        fprintf(stderr, "linker: %s\n", error);
+        return;
+    }
+
+    FILE *out = fopen(g_exec_out, "wb");
+
+    if (NULL == out) {
+        fprintf(stderr, "linker: could not open output file\n");
+        return;
+    }
+
+    fwrite(elf_contents, elf_sz, 1, out);
 }
 
 static void c_run(command_t *self) { fprintf(stderr, "ERROR: Not implemented yet\n"); }
 static void c_emulate(command_t *self) {
     assemble_from_file(self->arg);
+    if (g_error) {
+        return;
+    }
 
     while (g_pc < TEXT_BASE + g_text_len) {
         emulate();
+
+        switch (g_runtime_error_type) {
+            case ERROR_FETCH:
+                fprintf(stderr, "emulator: fetch error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
+                return;
+
+            case ERROR_LOAD:
+                fprintf(stderr, "emulator: load error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
+                return;
+
+            case ERROR_STORE:
+                fprintf(stderr, "emulator: store error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
+                return;
+
+            default:
+                break;
+        }
     }
 }
 
@@ -37,7 +84,7 @@ static void c_readelf(command_t *self) {
     FILE *elf = fopen(self->arg, "rb");
 
     if (NULL == elf) {
-        fprintf(stderr, "readelf: could not open file\n");
+        fprintf(stderr, "readelf: could not open input file\n");
         return;
     }
 
@@ -48,7 +95,7 @@ static void c_readelf(command_t *self) {
     u8 *elf_contents = malloc(sz);
 
     if (NULL == elf_contents) {
-        fprintf(stderr, "out of memory\n");
+        fprintf(stderr, "readelf: out of memory\n");
         return;
     }
 
@@ -57,7 +104,7 @@ static void c_readelf(command_t *self) {
     char *error = NULL;
 
     if (!elf_read(elf_contents, sz, &readelf, &error)) {
-        fprintf(stderr, "%s\n", error);
+        fprintf(stderr, "readelf: %s\n", error);
         return;
     }
 
@@ -113,6 +160,11 @@ static void c_readelf(command_t *self) {
     printf("\n");
 }
 
+static void c_output(command_t *self) {
+    g_obj_out = self->arg;
+    g_exec_out = self->arg;
+}
+
 int main(int argc, char **argv) {
     command_t cmd;
     // TODO: place real version number
@@ -124,6 +176,7 @@ int main(int argc, char **argv) {
     command_option(&cmd, "-r", "--run <file>", "run an ELF32 executable", c_run);
     command_option(&cmd, "-e", "--emulate <file>", "assemble and run an RV32 assembly file", c_emulate);
     command_option(&cmd, "-i", "--readelf <file>", "show information about ELF file", c_readelf);
+    command_option(&cmd, "-o", "--output <file>", "choose output file name", c_output);
     command_parse(&cmd, argc, argv);
 
     if (1 == argc) {

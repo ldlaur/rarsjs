@@ -24,10 +24,8 @@ export u32 g_pc = 0;
 export u32 g_mem_written_len = 0;
 export u32 g_mem_written_addr;
 export u32 g_reg_written = 0;
-export u32 g_error_line;
-export const char *g_error;
-
-typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERROR_STORE = 3 } Error;
+export u32 g_error_line = 0;
+export const char *g_error = NULL;
 
 export u32 g_runtime_error_addr = 0;
 export Error g_runtime_error_type = 0;
@@ -813,9 +811,6 @@ export void assemble(const char *txt, size_t s) {
     if (err) {
         g_error = err;
         g_error_line = p->startline;
-#ifndef __wasm__
-        printf("line %d: %s\n", p->startline, err);
-#endif
         return;
     }
 }
