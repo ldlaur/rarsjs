@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "rarsjs/core.h"
 #include "rarsjs/elf.h"
@@ -10,8 +11,37 @@
 static const char *g_obj_out = "a.o";
 static const char *g_exec_out = "a.out";
 
-void assemble_from_file(const char *src_path) {
+static void emulate_safe(void) {
+    while (!g_exited) {
+        emulate();
+
+        switch (g_runtime_error_type) {
+            case ERROR_FETCH:
+                fprintf(stderr, "emulator: fetch error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
+                return;
+
+            case ERROR_LOAD:
+                fprintf(stderr, "emulator: load error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
+                return;
+
+            case ERROR_STORE:
+                fprintf(stderr, "emulator: store error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
+                return;
+
+            default:
+                break;
+        }
+    }
+}
+
+static void assemble_from_file(const char *src_path) {
     FILE *f = fopen(src_path, "r");
+
+    if (NULL == f) {
+        g_error = "assembler: could not open input file";
+        fprintf(stderr, "%s\n", g_error);
+        return;
+    }
 
     fseek(f, 0, SEEK_END);
     size_t s = ftell(f);
@@ -51,33 +81,50 @@ static void c_build(command_t *self) {
     fwrite(elf_contents, elf_sz, 1, out);
 }
 
-static void c_run(command_t *self) { fprintf(stderr, "ERROR: Not implemented yet\n"); }
+static void c_run(command_t *self) {
+    FILE *elf = fopen(self->arg, "rb");
+
+    if (NULL == elf) {
+        fprintf(stderr, "loader: could not open input file\n");
+        return;
+    }
+
+    fseek(elf, 0, SEEK_END);
+    size_t sz = ftell(elf);
+    rewind(elf);
+
+    u8 *elf_contents = malloc(sz);
+
+    if (NULL == elf_contents) {
+        fprintf(stderr, "loader: out of memory\n");
+        return;
+    }
+
+    fread(elf_contents, sz, 1, elf);
+
+    char *error = NULL;
+    if (!elf_load(elf_contents, sz, &error)) {
+        fprintf(stderr, "loader: %s\n", error);
+        return;
+    }
+
+    emulate_safe();
+}
+
 static void c_emulate(command_t *self) {
     assemble_from_file(self->arg);
     if (g_error) {
         return;
     }
 
-    while (g_pc < TEXT_BASE + g_text_len) {
-        emulate();
+    g_pc = TEXT_BASE;
+    LabelData *start = resolve_symbol("_start", strlen("_start"), true);
 
-        switch (g_runtime_error_type) {
-            case ERROR_FETCH:
-                fprintf(stderr, "emulator: fetch error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
-                return;
-
-            case ERROR_LOAD:
-                fprintf(stderr, "emulator: load error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
-                return;
-
-            case ERROR_STORE:
-                fprintf(stderr, "emulator: store error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
-                return;
-
-            default:
-                break;
-        }
+    if (NULL != start) {
+        g_pc = start->addr;
     }
+
+    emulate_safe();
 }
 
 static void c_readelf(command_t *self) {
