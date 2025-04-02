@@ -314,10 +314,6 @@ int parse_reg(Parser *p) {
 
 void asm_emit_byte(u8 byte, int linenum) {
     if (!g_in_fixup) {
-        if (g_section == &g_text && g_section->emit_idx % g_section->align == 0) {
-            *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) = linenum;
-        }
-
         *push(g_section->buf, g_section->len, g_section->capacity) = byte;
     } else {
         g_section->buf[g_section->emit_idx] = byte;
@@ -326,6 +322,9 @@ void asm_emit_byte(u8 byte, int linenum) {
 }
 
 void asm_emit(u32 inst, int linenum) {
+    if (g_section == &g_text) {
+        *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) = linenum;
+    }
     asm_emit_byte(inst >> 0, linenum);
     asm_emit_byte(inst >> 8, linenum);
     asm_emit_byte(inst >> 16, linenum);
