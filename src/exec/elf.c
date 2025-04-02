@@ -441,44 +441,49 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
     ElfSectionHeader *str_tab_shdr = &shdrs[e_header->shdr_str_idx];
     char *str_tab = (char *)(elf_contents + str_tab_shdr->off);
     u32 str_tab_len = str_tab_shdr->mem_sz;
-    u32 text_section_name_off = 0;
-    u32 data_section_name_off = 0;
-
-    find_section(&text_section_name_off, str_tab, str_tab_len, ".text");
-    find_section(&data_section_name_off, str_tab, str_tab_len, ".data");
-
-    if (text_section_name_off == data_section_name_off) {
-        *error = ".text and .data string table entries overlap";
-        return false;
-    }
-
-    ElfSectionHeader *text_section = NULL;
-    ElfSectionHeader *data_section = NULL;
 
     for (u32 i = 0; i < e_header->shent_num; i++) {
-        ElfSectionHeader *sec = &shdrs[i];
-
-        if (sec->name_off == text_section_name_off) {
-            text_section = sec;
-        } else if (sec->name_off == data_section_name_off) {
-            data_section = sec;
+        ElfSectionHeader *s_hdr = &shdrs[i];
+        if (!(SHF_ALLOC & s_hdr->flags)) {
+            continue;
         }
-    }
 
-    // TODO: overlap checks
+        Section *s = malloc(sizeof(Section));
+        CHK_OOM(s, error);
+        s->read = true;
+        s->align = s_hdr->align;
+        s->base = s_hdr->virt_addr;
+        s->len = s_hdr->mem_sz;
+        s->limit = s->base + s->len;
+        s->buf = elf_contents + s_hdr->off;
+
+        if (s_hdr->name_off >= str_tab_len) {
+            *error = "section header name offset out of range";
+            goto fail;
+        }
+
+        s->name = str_tab + s_hdr->name_off;
+
+        if (SHF_WRITE & s_hdr->flags) {
+            s->write = true;
+        }
+
+        if (SHF_EXECINSTR & s_hdr->flags) {
+            s->execute = true;
+        }
+
+        *push(g_sections, g_sections_len, g_sections_cap) = s;
+    }
 
     g_pc = e_header->entry;
-
-    if (NULL != text_section) {
-        g_text.buf = elf_contents + text_section->off;
-        g_text.len = text_section->mem_sz;
-    }
-
-    if (NULL != data_section) {
-        g_data.buf = elf_contents + data_section->off;
-        g_data.len = data_section->mem_sz;
-    }
-
-    prepare_runtime_sections();
     return true;
+
+fail:
+    for (size_t i = 0; i < g_sections_len; i++) {
+        CLEANUP(g_sections[i]);
+    }
+    g_sections_len = 0;
+    g_sections_cap = 0;
+    CLEANUP(g_sections);
+    return false;
 }

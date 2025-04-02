@@ -105,7 +105,7 @@ extern export Section g_data;
 extern export Section g_stack;
 
 extern export Section **g_sections;
-extern export size_t g_sections_len;
+extern export size_t g_sections_len, g_sections_cap;
 
 extern export u32 g_regs[32];
 extern export u32 g_pc;
