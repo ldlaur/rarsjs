@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@babel/runtime": "^7.27.0",
+    "@codemirror/commands": "^6.8.1",
     "@codemirror/lint": "^6.8.5",
     "@lezer/generator": "^1.7.2",
     "@lezer/highlight": "^1.2.1",

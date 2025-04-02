@@ -8,6 +8,7 @@ import {
   type Component,
 } from "solid-js";
 import { basicSetup, EditorView } from "codemirror";
+import { keymap } from "@codemirror/view";
 import { Compartment, EditorState } from "@codemirror/state";
 import {
   defaultSettingsGruvboxDark,
@@ -21,6 +22,7 @@ import { createVirtualizer } from "@tanstack/solid-virtual";
 import { breakpointGutter, breakpointState } from "./Breakpoint";
 import { createAsmLinter } from "./AssemblerErrors";
 import { forceLinting } from "@codemirror/lint";
+import { indentWithTab } from "@codemirror/commands"
 
 import { WasmInterface } from "./RiscV";
 import { Settings } from "@uiw/codemirror-themes";
@@ -666,6 +668,7 @@ const App: Component = () => {
         theme,
         cmTheme.of(gruvboxLight),
         [lineHighlightState],
+        keymap.of([indentWithTab]),
       ],
     });
     view = new EditorView({ state, parent: editor });
