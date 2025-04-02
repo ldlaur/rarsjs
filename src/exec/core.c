@@ -248,6 +248,50 @@ bool parse_numeric(Parser *p, i32 *out) {
     return true;
 }
 
+bool parse_quoted_str(Parser* p, char **out_str, size_t *out_len) {
+    char* buf = NULL;
+    size_t buf_len = 0, buf_cap = 0;
+
+    bool escape = false;
+    if (!consume_if(p, '"')) return false;
+    while (true) {
+        char c = peek(p);
+        if (c == 0) return false; // unquoted string
+        if (escape) {
+            if (c == 'n') c = '\n';
+            else if (c == 't') c = '\t';
+            else if (c == 'r') c = '\r';
+            else if (c == 'b') c = '\b';
+            else if (c == 'f') c = '\f';
+            else if (c == 'a') c = '\a';
+            else if (c == 'b') c = '\b';
+            else if (c == '\\') c = '\\';
+            else if (c == '\'') c = '\'';
+            else if (c == '"') c = '"';
+            else if (c == '0') c = 0;
+            else return false;
+            *push(buf, buf_len, buf_cap) = c;
+            escape = false;
+            advance(p);
+            continue;
+        }
+        if (c == '\\') {
+            escape = true;
+            advance(p);
+            continue;
+        }
+        if (c == '"') {
+            advance(p);
+            break;
+        }
+        *push(buf, buf_len, buf_cap) = c;
+        advance(p);
+    }
+    *out_str = buf;
+    *out_len = buf_len;
+    return true;
+}
+
 int parse_reg(Parser *p) {
     const char *str;
     size_t len;
@@ -704,6 +748,8 @@ export void assemble(const char *txt, size_t s) {
     const char *err = NULL;
 
     while (1) {
+        if (err) break;
+
         skip_whitespace(p);
         if (p->pos == p->size) break;
         p->startline = p->lineidx;
@@ -776,8 +822,46 @@ export void assemble(const char *txt, size_t s) {
                     first = false;
                 }
                 continue;
+            } else if (str_eq(directive, directive_len, "ascii")) {
+                char* out;
+                size_t out_len;
+                bool first = true;
+                while (true) {
+                    skip_trailing(p);
+                    if (first || consume_if(p, ',')) {
+                        skip_trailing(p);
+                        if (!parse_quoted_str(p, &out, &out_len)) {
+                            err = "Invalid string";
+                            break;
+                        }
+                        for (size_t i = 0; i < out_len; i++) asm_emit_byte(out[i], p->startline);
+                        free(out);
+                    } else break;
+                    first = false;
+                }
+                continue;
+            } else if (str_eq(directive, directive_len, "asciz") || str_eq(directive, directive_len, "string")) {
+                char* out;
+                size_t out_len;
+                bool first = true;
+                while (true) {
+                    skip_trailing(p);
+                    if (first || consume_if(p, ',')) {
+                        skip_trailing(p);
+                        if (!parse_quoted_str(p, &out, &out_len)) {
+                            err = "Invalid string";
+                            break;
+                        }
+                        for (size_t i = 0; i < out_len; i++) asm_emit_byte(out[i], p->startline);
+                        asm_emit_byte(0, p->startline);
+                        free(out);
+                    } else break;
+                    first = false;
+                }
+                continue;
             }
         }
+
 
         const char *alnum, *opcode;
         size_t alnum_len, opcode_len;
