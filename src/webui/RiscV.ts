@@ -104,7 +104,6 @@ export class WasmInterface {
     this.regsArr = createU32(this.exports.g_regs + 4);
     this.runtimeErrorAddr = createU32(this.exports.g_runtime_error_addr);
     this.runtimeErrorType = createU32(this.exports.g_runtime_error_type);
-    this.pc[0] = 0x00400000; // TODO: get address of _start symbol
     if (offset + strLen > this.memory.buffer.byteLength) {
       const pages = Math.ceil(
         (offset + strLen - this.memory.buffer.byteLength) / 65536,
@@ -127,6 +126,8 @@ export class WasmInterface {
       const errorStr = new TextDecoder("utf8").decode(error.slice(0, errorLen));
       return { line: errorLine, message: errorStr };
     }
+    
+    this.pc[0] = 0x00400000; // TODO: get address of _start symbol
 
     return null;
   }

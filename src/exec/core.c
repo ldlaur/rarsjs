@@ -3,72 +3,34 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-export Section g_text = {.name = ".text",
-                         .base = TEXT_BASE,
-                         .limit = TEXT_END,
-                         .len = 0,
-                         .capacity = 0,
-                         .buf = NULL,
-                         .emit_idx = 0,
-                         .align = 4,
-                         .read = true,
-                         .write = false,
-                         .execute = true,
-                         .physical = true};
+export Section g_text, g_data, g_stack;
 
-export Section g_data = {.name = ".data",
-                         .base = DATA_BASE,
-                         .limit = DATA_END,
-                         .len = 0,
-                         .capacity = 0,
-                         .buf = NULL,
-                         .emit_idx = 0,
-                         .align = 1,
-                         .read = true,
-                         .write = true,
-                         .execute = false,
-                         .physical = true};
+Section **g_sections;
+size_t g_sections_len, g_sections_cap;
 
-export Section g_stack = {.name = "RARSJS_STACK",
-                          .base = STACK_TOP - STACK_LEN,
-                          .limit = STACK_TOP,
-                          .len = STACK_LEN,
-                          .capacity = 0,
-                          .buf = NULL,
-                          .emit_idx = 0,
-                          .align = 1,
-                          .read = true,
-                          .write = true,
-                          .execute = false,
-                          .physical = false};
+Section *g_section;
+export u32 *g_text_by_linenum;
+export size_t g_text_by_linenum_len, g_text_by_linenum_cap;
 
-Section **g_sections = NULL;
-size_t g_sections_len = 0, g_sections_cap = 0;
+export bool g_exited;
+export int g_exit_code;
 
-Section *g_section = &g_text;
-export u32 *g_text_by_linenum = NULL;
-export size_t g_text_by_linenum_len = 0, g_text_by_linenum_cap = 0;
-
-export bool g_exited = false;
-export int g_exit_code = 0;
-
-export bool g_dryrun = false;
-export bool g_in_fixup = false;
-export u32 g_regs[32] = {[2] = STACK_TOP - 4};
-export u32 g_pc = 0;
-export u32 g_mem_written_len = 0;
+export bool g_in_fixup;
+export u32 g_regs[32];
+export u32 g_pc;
+export u32 g_mem_written_len;
 export u32 g_mem_written_addr;
-export u32 g_reg_written = 0;
-export u32 g_error_line = 0;
-export const char *g_error = NULL;
+export u32 g_reg_written;
+export u32 g_error_line;
+export const char *g_error;
 
-export u32 g_runtime_error_addr = 0;
-export Error g_runtime_error_type = 0;
+export u32 g_runtime_error_addr;
+export Error g_runtime_error_type;
 
-LabelData *g_labels = NULL;
-size_t g_labels_len = 0, g_labels_cap = 0;
-DeferredInsn *g_deferred_insns = NULL;
-size_t g_deferred_insn_len = 0, g_deferred_insn_cap = 0;
+LabelData *g_labels;
+size_t g_labels_len, g_labels_cap;
+DeferredInsn *g_deferred_insns;
+size_t g_deferred_insn_len, g_deferred_insn_cap;
 
 // clang-format off
 u32 DS1S2(u32 d, u32 s1, u32 s2) { return (d << 7) | (s1 << 15) | (s2 << 20); }
@@ -104,27 +66,27 @@ InstA(REM,   0b01100, 0b110, 0, 1)
 InstA(AND,   0b01100, 0b111, 0, 0)
 InstA(REMU,  0b01100, 0b111, 0, 1)
 
-u32 Store(int src, int base, int off, int width) { return 0b0100011 | ((off & 31) << 7) | (width << 12) | (base << 15) | (src << 20) | ((off >> 5) << 25); }
-u32 Load(int rd, int rs, int off, int width) { return 0b0000011 | (rd << 7) | (width << 12) | (rs << 15) | (off << 20); }
-u32 LB(int rd, int rs, int off) { return Load(rd, rs, off, 0); }
-u32 LH(int rd, int rs, int off) { return Load(rd, rs, off, 1); }
-u32 LW(int rd, int rs, int off) { return Load(rd, rs, off, 2); }
-u32 LBU(int rd, int rs, int off) { return Load(rd, rs, off, 4); }
-u32 LHU(int rd, int rs, int off) { return Load(rd, rs, off, 5); }
-u32 SB(int src, int base, int off) { return Store(src, base, off, 0); }
-u32 SH(int src, int base, int off) { return Store(src, base, off, 1); }
-u32 SW(int src, int base, int off) { return Store(src, base, off, 2); }
-u32 Branch(int rs1, int rs2, int off, int func) { return 0b1100011 | (((off >> 11) & 1) << 7) | (((off >> 1) & 15) << 8) | (func << 12) | (rs1 << 15) | (rs2 << 20) | (((off >> 5) & 63) << 25) | (((off >> 12) & 1) << 31); }
-u32 BEQ(int rs1, int rs2, int off)  { return Branch(rs1, rs2, off, 0); }
-u32 BNE(int rs1, int rs2, int off)  { return Branch(rs1, rs2, off, 1); }
-u32 BLT(int rs1, int rs2, int off)  { return Branch(rs1, rs2, off, 4); }
-u32 BGE(int rs1, int rs2, int off)  { return Branch(rs1, rs2, off, 5); }
-u32 BLTU(int rs1, int rs2, int off) { return Branch(rs1, rs2, off, 6); }
-u32 BGEU(int rs1, int rs2, int off) { return Branch(rs1, rs2, off, 7); }
-u32 LUI(int rd, int off) { return 0b0110111 | (rd << 7) | (off << 12); }
-u32 AUIPC(int rd, int off) { return 0b0010111 | (rd << 7) | (off << 12); }
-u32 JAL(int rd, int off) { return 0b1101111 | (rd << 7) | (((off >> 12) & 255) << 12) | (((off >> 11) & 1) << 20) | (((off >> 1) & 1023) << 21) | ((off >> 20) << 31); }
-u32 JALR(int rd, int rs1, int off) { return 0b1100111 | (rd << 7) | (rs1 << 15) | (off << 20); }
+u32 Store(u32 src, u32 base, u32 off, u32 width) { return 0b0100011 | ((off & 31) << 7) | (width << 12) | (base << 15) | (src << 20) | ((off >> 5) << 25); }
+u32 Load(u32 rd, u32 rs, u32 off, u32 width) { return 0b0000011 | (rd << 7) | (width << 12) | (rs << 15) | (off << 20); }
+u32 LB(u32 rd, u32 rs, u32 off) { return Load(rd, rs, off, 0); }
+u32 LH(u32 rd, u32 rs, u32 off) { return Load(rd, rs, off, 1); }
+u32 LW(u32 rd, u32 rs, u32 off) { return Load(rd, rs, off, 2); }
+u32 LBU(u32 rd, u32 rs, u32 off) { return Load(rd, rs, off, 4); }
+u32 LHU(u32 rd, u32 rs, u32 off) { return Load(rd, rs, off, 5); }
+u32 SB(u32 src, u32 base, u32 off) { return Store(src, base, off, 0); }
+u32 SH(u32 src, u32 base, u32 off) { return Store(src, base, off, 1); }
+u32 SW(u32 src, u32 base, u32 off) { return Store(src, base, off, 2); }
+u32 Branch(u32 rs1, u32 rs2, u32 off, u32 func) { return 0b1100011 | (((off >> 11) & 1) << 7) | (((off >> 1) & 15) << 8) | (func << 12) | (rs1 << 15) | (rs2 << 20) | (((off >> 5) & 63) << 25) | (((off >> 12) & 1) << 31); }
+u32 BEQ(u32 rs1, u32 rs2, u32 off)  { return Branch(rs1, rs2, off, 0); }
+u32 BNE(u32 rs1, u32 rs2, u32 off)  { return Branch(rs1, rs2, off, 1); }
+u32 BLT(u32 rs1, u32 rs2, u32 off)  { return Branch(rs1, rs2, off, 4); }
+u32 BGE(u32 rs1, u32 rs2, u32 off)  { return Branch(rs1, rs2, off, 5); }
+u32 BLTU(u32 rs1, u32 rs2, u32 off) { return Branch(rs1, rs2, off, 6); }
+u32 BGEU(u32 rs1, u32 rs2, u32 off) { return Branch(rs1, rs2, off, 7); }
+u32 LUI(u32 rd, u32 off) { return 0b0110111 | (rd << 7) | (off << 12); }
+u32 AUIPC(u32 rd, u32 off) { return 0b0010111 | (rd << 7) | (off << 12); }
+u32 JAL(u32 rd, u32 off) { return 0b1101111 | (rd << 7) | (((off >> 12) & 255) << 12) | (((off >> 11) & 1) << 20) | (((off >> 1) & 1023) << 21) | ((off >> 20) << 31); }
+u32 JALR(u32 rd, u32 rs1, u32 off) { return 0b1100111 | (rd << 7) | (rs1 << 15) | (off << 20); }
 // clang-format on
 
 bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' ' || c == '\r'; }
@@ -134,6 +96,7 @@ bool digit(char c) { return (c >= '0' && c <= '9'); }
 bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'); }
 
 void advance(Parser *p) {
+    if (p->pos >= p->size) return;
     if (p->input[p->pos] == '\n') p->lineidx++;
     p->pos++;
 }
@@ -168,12 +131,15 @@ bool skip_comment(Parser *p) {
     if (peek(p) == '/') {
         if (peek_n(p, 1) == '/') {
             while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
+            return true;
         } else if (peek_n(p, 1) == '*') {
             advance_n(p, 2);
             while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/')) advance(p);
             advance_n(p, 2);
+            return true;
+        } else {
+            return false;
         }
-        return true;
     }
     return false;
 }
@@ -193,13 +159,12 @@ void skip_trailing(Parser *p) {
             if (peek_n(p, 1) == '/') {
                 while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
                 continue;
-            }
-            if (peek_n(p, 1) == '*') {
+            } else if (peek_n(p, 1) == '*') {
                 advance_n(p, 2);
                 while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/')) advance(p);
                 advance_n(p, 2);
                 continue;
-            }
+            } else break;
         } else break;
     }
 }
@@ -230,6 +195,11 @@ void parse_alnum(Parser *p, const char **str, size_t *len) {
 bool str_eq(const char *txt, size_t len, const char *c) {
     if (len != strlen(c)) return false;
     return memcmp(txt, c, len) == 0;
+}
+
+bool str_eq_2(const char *s1, size_t s1len, const char *s2, size_t s2len) {
+    if (s1len != s2len) return false;
+    return memcmp(s1, s2, s1len) == 0;
 }
 
 bool parse_numeric(Parser *p, i32 *out) {
@@ -269,15 +239,18 @@ bool parse_numeric(Parser *p, i32 *out) {
     return true;
 }
 
-bool parse_quoted_str(Parser* p, char **out_str, size_t *out_len) {
-    char* buf = NULL;
+bool parse_quoted_str(Parser *p, char **out_str, size_t *out_len) {
+    char *buf = NULL;
     size_t buf_len = 0, buf_cap = 0;
 
     bool escape = false;
     if (!consume_if(p, '"')) return false;
     while (true) {
         char c = peek(p);
-        if (c == 0) return false; // unquoted string
+        if (c == 0) {
+            free(buf);
+            return false;  // unquoted string
+        }
         if (escape) {
             if (c == 'n') c = '\n';
             else if (c == 't') c = '\t';
@@ -290,7 +263,10 @@ bool parse_quoted_str(Parser* p, char **out_str, size_t *out_len) {
             else if (c == '\'') c = '\'';
             else if (c == '"') c = '"';
             else if (c == '0') c = 0;
-            else return false;
+            else {
+                free(buf);
+                return false;
+            }
             *push(buf, buf_len, buf_cap) = c;
             escape = false;
             advance(p);
@@ -337,23 +313,6 @@ int parse_reg(Parser *p) {
 }
 
 void asm_emit_byte(u8 byte, int linenum) {
-    if (g_dryrun) return;
-
-    /*if (g_section == SECTION_TEXT) {
-        if (!g_in_fixup) {
-            if (g_text_emit_idx % 4 == 0) {
-                *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) = linenum;
-            }
-            *push(g_text, g_text_len, g_text_cap) = byte;
-        } else g_text[g_text_emit_idx] = byte;
-        g_text_emit_idx++;
-    } else {
-        if (!g_in_fixup) {
-            *push(g_data, g_data_len, g_data_cap) = byte;
-        } else g_data[g_data_emit_idx] = byte;
-        g_data_emit_idx++;
-    }*/
-
     if (!g_in_fixup) {
         if (g_section == &g_text && g_section->emit_idx % g_section->align == 0) {
             *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) = linenum;
@@ -482,7 +441,9 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
-const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcode, size_t opcode_len, u32 *out_addr) {
+const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcode, size_t opcode_len, u32 *out_addr,
+                  bool *later) {
+    *later = false;
     const char *target;
     size_t target_len;
 
@@ -503,6 +464,7 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcod
     insn->opcode = opcode;
     insn->opcode_len = opcode_len;
     insn->section = g_section;
+    *later = true;
     return NULL;
 }
 
@@ -510,6 +472,7 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     Parser orig = *p;
     u32 addr;
     int s1, s2;
+    bool later;
 
     skip_whitespace(p);
     if ((s1 = parse_reg(p)) == -1) return "Invalid rs1";
@@ -522,8 +485,12 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_branch, opcode, opcode_len, &addr);
+    const char *err = label(p, &orig, handle_branch, opcode, opcode_len, &addr, &later);
     if (err) return err;
+    if (later) {
+        asm_emit(0, p->startline);
+        return NULL;
+    }
     i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
 
     u32 inst = 0;
@@ -545,6 +512,7 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     Parser orig = *p;
     u32 addr;
     int s;
+    bool later;
 
     skip_whitespace(p);
     if ((s = parse_reg(p)) == -1) return "Invalid rs";
@@ -552,8 +520,12 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_branch_zero, opcode, opcode_len, &addr);
+    const char *err = label(p, &orig, handle_branch_zero, opcode, opcode_len, &addr, &later);
     if (err) return err;
+    if (later) {
+        asm_emit(0, p->startline);
+        return NULL;
+    }
     i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
 
     u32 inst = 0;
@@ -597,6 +569,7 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
     int d;
     Parser orig = *p;
     const char *err = NULL;
+    bool later;
 
     skip_whitespace(p);
     // jal optionally takes a register argument
@@ -615,8 +588,12 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     u32 addr;
-    err = label(p, &orig, handle_jump, opcode, opcode_len, &addr);
+    err = label(p, &orig, handle_jump, opcode, opcode_len, &addr, &later);
     if (err) return err;
+    if (later) {
+        asm_emit(0, p->startline);
+        return NULL;
+    }
     i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
     asm_emit(JAL(d, simm), p->startline);
     return NULL;
@@ -705,9 +682,9 @@ const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
     if (simm >= -2048 && simm <= 2047) {
         asm_emit(ADDI(d, 0, simm), p->startline);
     } else {
-        int lo = simm & 0xFFF;
+        u32 lo = simm & 0xFFF;
         if (lo >= 0x800) lo -= 0x1000;
-        int hi = (simm - lo) >> 12;
+        u32 hi = (u32)(simm - lo) >> 12;
         asm_emit(LUI(d, hi), p->startline);
         asm_emit(ADDI(d, d, lo), p->startline);
     }
@@ -717,6 +694,7 @@ const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
 const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
     Parser orig = *p;
     int d;
+    bool later;
 
     skip_whitespace(p);
     if ((d = parse_reg(p)) == -1) return "Invalid rd";
@@ -725,13 +703,18 @@ const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
 
     u32 addr;
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_la, opcode, opcode_len, &addr);
+    const char *err = label(p, &orig, handle_la, opcode, opcode_len, &addr, &later);
+    if (later) {
+        asm_emit(0, p->startline);
+        asm_emit(0, p->startline);
+        return NULL;
+    }
     if (err) return err;
     i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
 
-    int lo = simm & 0xFFF;
+    u32 lo = simm & 0xFFF;
     if (lo >= 0x800) lo -= 0x1000;
-    int hi = (simm - lo) >> 12;
+    u32 hi = (u32)(simm - lo) >> 12;
     asm_emit(AUIPC(d, hi), p->startline);
     asm_emit(ADDI(d, d, lo), p->startline);
     return NULL;
@@ -768,6 +751,73 @@ OpcodeHandling opcode_types[] = {
 };
 
 export void assemble(const char *txt, size_t s) {
+    g_text = (Section){.name = ".text",
+                       .base = TEXT_BASE,
+                       .limit = TEXT_END,
+                       .len = 0,
+                       .capacity = 0,
+                       .buf = NULL,
+                       .emit_idx = 0,
+                       .align = 4,
+                       .read = true,
+                       .write = false,
+                       .execute = true,
+                       .physical = true};
+
+    g_data = (Section){.name = ".data",
+                       .base = DATA_BASE,
+                       .limit = DATA_END,
+                       .len = 0,
+                       .capacity = 0,
+                       .buf = NULL,
+                       .emit_idx = 0,
+                       .align = 1,
+                       .read = true,
+                       .write = true,
+                       .execute = false,
+                       .physical = true};
+
+    g_stack = (Section){.name = "RARSJS_STACK",
+                        .base = STACK_TOP - STACK_LEN,
+                        .limit = STACK_TOP,
+                        .len = STACK_LEN,
+                        .capacity = 0,
+                        .buf = NULL,
+                        .emit_idx = 0,
+                        .align = 1,
+                        .read = true,
+                        .write = true,
+                        .execute = false,
+                        .physical = false};
+
+    g_sections = NULL;
+    g_sections_len = 0, g_sections_cap = 0;
+
+    g_section = &g_text;
+    g_text_by_linenum = NULL;
+    g_text_by_linenum_len = 0, g_text_by_linenum_cap = 0;
+
+    g_exited = false;
+    g_exit_code = 0;
+
+    g_in_fixup = false;
+    memset(g_regs, 0, sizeof(g_regs));
+    g_regs[2] = STACK_TOP - 4;
+    g_pc = 0;
+    g_mem_written_len = 0;
+    g_mem_written_addr = 0;
+    g_reg_written = 0;
+    g_error_line = 0;
+    g_error = NULL;
+
+    g_runtime_error_addr = 0;
+    g_runtime_error_type = 0;
+
+    g_labels = NULL;
+    g_labels_len = 0, g_labels_cap = 0;
+    g_deferred_insns = NULL;
+    g_deferred_insn_len = 0, g_deferred_insn_cap = 0;
+
     prepare_runtime_sections();
 
     Parser parser = {0};
@@ -854,7 +904,7 @@ export void assemble(const char *txt, size_t s) {
                 }
                 continue;
             } else if (str_eq(directive, directive_len, "ascii")) {
-                char* out;
+                char *out;
                 size_t out_len;
                 bool first = true;
                 while (true) {
@@ -872,7 +922,7 @@ export void assemble(const char *txt, size_t s) {
                 }
                 continue;
             } else if (str_eq(directive, directive_len, "asciz") || str_eq(directive, directive_len, "string")) {
-                char* out;
+                char *out;
                 size_t out_len;
                 bool first = true;
                 while (true) {
@@ -893,14 +943,12 @@ export void assemble(const char *txt, size_t s) {
             }
         }
 
-
         const char *alnum, *opcode;
         size_t alnum_len, opcode_len;
         parse_alnum(p, &alnum, &alnum_len);
         skip_trailing(p);
 
         if (consume_if(p, ':')) {
-            // u32 addr = g_section == &g_text ? (g_text_emit_idx + TEXT_BASE) : (g_data_emit_idx + DATA_BASE);
             u32 addr = g_section->emit_idx + g_section->base;
             *push(g_labels, g_labels_len, g_labels_cap) = (LabelData){.txt = alnum, .len = alnum_len, .addr = addr};
             continue;
@@ -910,8 +958,8 @@ export void assemble(const char *txt, size_t s) {
         opcode_len = alnum_len;
 
         bool found = false;
-        for (int i = 0; !found && i < sizeof(opcode_types) / sizeof(OpcodeHandling); i++) {
-            for (int j = 0; !found && opcode_types[i].opcodes[j]; j++) {
+        for (size_t i = 0; !found && i < sizeof(opcode_types) / sizeof(OpcodeHandling); i++) {
+            for (size_t j = 0; !found && opcode_types[i].opcodes[j]; j++) {
                 if (str_eq(opcode, opcode_len, opcode_types[i].opcodes[j])) {
                     found = true;
                     err = opcode_types[i].cb(p, opcode, opcode_len);
@@ -947,8 +995,15 @@ export void assemble(const char *txt, size_t s) {
     if (err) {
         g_error = err;
         g_error_line = p->startline;
-        return;
     }
+
+    free(g_text.buf);
+    free(g_data.buf);
+    free(g_stack.buf);
+    free(g_sections);
+    free(g_text_by_linenum);
+    free(g_labels);
+    free(g_deferred_insns);
 }
 
 static inline i32 SIGN(int bits, u32 x) {
@@ -1246,7 +1301,7 @@ LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
 
     for (size_t i = 0; i < g_labels_len; i++) {
         LabelData *l = &g_labels[i];
-        if (str_eq(sym, l->len, l->txt)) {
+        if (str_eq_2(sym, sym_len, l->txt, l->len)) {
             ret = l;
             break;
         }
