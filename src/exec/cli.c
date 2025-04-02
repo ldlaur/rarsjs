@@ -12,7 +12,8 @@ static const char *g_obj_out = "a.o";
 static const char *g_exec_out = "a.out";
 
 static void emulate_safe(void) {
-    while (g_pc < TEXT_BASE + g_text_len) {
+    // TODO: make this generic
+    while (!g_exited) {
         emulate();
 
         switch (g_runtime_error_type) {

@@ -1,21 +1,57 @@
 #include "rarsjs/core.h"
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
 
-Section g_section = SECTION_TEXT;
+export Section g_text = {.name = ".text",
+                         .base = TEXT_BASE,
+                         .limit = TEXT_END,
+                         .len = 0,
+                         .capacity = 0,
+                         .buf = NULL,
+                         .emit_idx = 0,
+                         .align = 4,
+                         .read = true,
+                         .write = false,
+                         .execute = true,
+                         .physical = true};
+
+export Section g_data = {.name = ".data",
+                         .base = DATA_BASE,
+                         .limit = DATA_END,
+                         .len = 0,
+                         .capacity = 0,
+                         .buf = NULL,
+                         .emit_idx = 0,
+                         .align = 1,
+                         .read = true,
+                         .write = true,
+                         .execute = false,
+                         .physical = true};
+
+export Section g_stack = {.name = "RARSJS_STACK",
+                          .base = STACK_TOP - STACK_LEN,
+                          .limit = STACK_TOP,
+                          .len = STACK_LEN,
+                          .capacity = 0,
+                          .buf = NULL,
+                          .emit_idx = 0,
+                          .align = 1,
+                          .read = true,
+                          .write = true,
+                          .execute = false,
+                          .physical = false};
+
+Section **g_sections = NULL;
+size_t g_sections_len = 0, g_sections_cap = 0;
+
+Section *g_section = &g_text;
 export u32 *g_text_by_linenum = NULL;
 export size_t g_text_by_linenum_len = 0, g_text_by_linenum_cap = 0;
 
-export u8 *g_text = NULL;
-export size_t g_text_len = 0, g_text_cap = 0;
-size_t g_text_emit_idx = 0;
-
-export u8 *g_data = NULL;
-export size_t g_data_len = 0, g_data_cap = 0;
-size_t g_data_emit_idx = 0;
-
-export u8 *g_stack = NULL;
-export size_t g_stack_len = 0;
+export bool g_exited = false;
+export int g_exit_code = 0;
 
 export bool g_dryrun = false;
 export bool g_in_fixup = false;
@@ -97,20 +133,6 @@ bool trailing(char c) { return c == '\t' || c == ' '; }
 
 bool digit(char c) { return (c >= '0' && c <= '9'); }
 bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'); }
-
-#define push(arr, len, cap) \
-    ((len) >= (cap) ? grow((void **)&(arr), &(cap), sizeof(*(arr))), (arr) + (len)++ : (arr) + (len)++)
-
-static void grow(void **arr, size_t *cap, size_t size) {
-    size_t oldcap = *cap;
-    if (oldcap) *cap = oldcap * 2;
-    else *cap = 4;
-    void *newarr = malloc(*cap * size);
-    memset(newarr, 0, *cap * size);
-    if (arr) memcpy(newarr, *arr, oldcap * size);
-    free(*arr);
-    *arr = newarr;
-}
 
 void advance(Parser *p) {
     if (p->input[p->pos] == '\n') p->lineidx++;
@@ -273,7 +295,8 @@ int parse_reg(Parser *p) {
 
 void asm_emit_byte(u8 byte, int linenum) {
     if (g_dryrun) return;
-    if (g_section == SECTION_TEXT) {
+
+    /*if (g_section == SECTION_TEXT) {
         if (!g_in_fixup) {
             if (g_text_emit_idx % 4 == 0) {
                 *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) = linenum;
@@ -286,6 +309,17 @@ void asm_emit_byte(u8 byte, int linenum) {
             *push(g_data, g_data_len, g_data_cap) = byte;
         } else g_data[g_data_emit_idx] = byte;
         g_data_emit_idx++;
+    }*/
+
+    if (!g_in_fixup) {
+        if (g_section == &g_text && g_section->emit_idx % g_section->align == 0) {
+            *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) = linenum;
+        }
+
+        *push(g_section->buf, g_section->len, g_section->capacity) = byte;
+    } else {
+        g_section->buf[g_section->emit_idx] = byte;
+        g_section->emit_idx++;
     }
 }
 
@@ -420,7 +454,7 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcod
     }
     if (g_in_fixup) return "Invalid label";
     DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
-    insn->emit_idx = g_text_emit_idx;
+    insn->emit_idx = g_text.emit_idx;
     insn->p = *orig;
     insn->cb = cb;
     insn->opcode = opcode;
@@ -447,7 +481,7 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     skip_whitespace(p);
     const char *err = label(p, &orig, handle_branch, opcode, opcode_len, &addr);
     if (err) return err;
-    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "beq")) inst = BEQ(s1, s2, simm);
@@ -477,7 +511,7 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     skip_whitespace(p);
     const char *err = label(p, &orig, handle_branch_zero, opcode, opcode_len, &addr);
     if (err) return err;
-    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "beqz")) inst = BEQ(s, 0, simm);
@@ -540,7 +574,7 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
     u32 addr;
     err = label(p, &orig, handle_jump, opcode, opcode_len, &addr);
     if (err) return err;
-    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
     asm_emit(JAL(d, simm), p->startline);
     return NULL;
 }
@@ -650,7 +684,7 @@ const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
     skip_whitespace(p);
     const char *err = label(p, &orig, handle_la, opcode, opcode_len, &addr);
     if (err) return err;
-    i32 simm = addr - (g_text_emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
 
     int lo = simm & 0xFFF;
     if (lo >= 0x800) lo -= 0x1000;
@@ -691,9 +725,7 @@ OpcodeHandling opcode_types[] = {
 };
 
 export void assemble(const char *txt, size_t s) {
-    // TODO: dynamically growing stacks?
-    g_stack_len = 4096;
-    g_stack = malloc(g_stack_len);
+    prepare_runtime_sections();
 
     Parser parser = {0};
     parser.input = txt;
@@ -714,10 +746,10 @@ export void assemble(const char *txt, size_t s) {
             parse_alnum(p, &directive, &directive_len);
             skip_trailing(p);
             if (str_eq(directive, directive_len, "data")) {
-                g_section = SECTION_DATA;
+                g_section = &g_data;
                 continue;
             } else if (str_eq(directive, directive_len, "text")) {
-                g_section = SECTION_TEXT;
+                g_section = &g_text;
                 continue;
             } else if (str_eq(directive, directive_len, "byte")) {
                 i32 value;
@@ -785,7 +817,8 @@ export void assemble(const char *txt, size_t s) {
         skip_trailing(p);
 
         if (consume_if(p, ':')) {
-            u32 addr = g_section == SECTION_TEXT ? (g_text_emit_idx + TEXT_BASE) : (g_data_emit_idx + DATA_BASE);
+            // u32 addr = g_section == &g_text ? (g_text_emit_idx + TEXT_BASE) : (g_data_emit_idx + DATA_BASE);
+            u32 addr = g_section->emit_idx + g_section->base;
             *push(g_labels, g_labels_len, g_labels_cap) = (LabelData){.txt = alnum, .len = alnum_len, .addr = addr};
             continue;
         }
@@ -820,7 +853,7 @@ export void assemble(const char *txt, size_t s) {
         g_in_fixup = true;
         for (size_t i = 0; i < g_deferred_insn_len; i++) {
             struct DeferredInsn *insn = &g_deferred_insns[i];
-            g_text_emit_idx = insn->emit_idx;
+            g_text.emit_idx = insn->emit_idx;
             g_section = insn->section;
             p = &insn->p;
             err = insn->cb(&insn->p, insn->opcode, insn->opcode_len);
@@ -876,24 +909,32 @@ static inline u32 remu32(u32 a, u32 b) {
 #define ERR (__builtin_unreachable(), 1)
 
 bool check_addr_range(u32 A, u32 size) {
-    if (A >= TEXT_BASE && A + size <= TEXT_BASE + g_text_len) return true;
-    else if (A >= DATA_BASE && A + size <= DATA_BASE + g_data_len) return true;
-    if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) return true;
+    for (size_t i = 0; i < g_sections_len; i++) {
+        Section *sec = g_sections[i];
+
+        if (A >= sec->base && A < sec->limit) {
+            return true;
+        }
+    }
+
     return false;
 }
 
 u32 LOAD(u32 A, int pow) {
-    u8 *memspace;
-    if (A >= TEXT_BASE && A < TEXT_BASE + g_text_len) {
-        memspace = (u8 *)g_text;
-        A -= TEXT_BASE;
-    } else if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) {
-        memspace = (u8 *)g_stack;
-        A -= STACK_TOP - g_stack_len;
-    } else if (A >= DATA_BASE && A < DATA_BASE + g_data_len) {
-        memspace = (u8 *)g_data;
-        A -= DATA_BASE;
-    } else {
+    u8 *memspace = NULL;
+    for (size_t i = 0; i < g_sections_len; i++) {
+        Section *sec = g_sections[i];
+
+        // TODO: check read permission?
+        if (A >= sec->base && A < sec->limit) {
+            memspace = sec->buf;
+            A -= sec->base;
+            break;
+        }
+    }
+
+    // TODO: flag error?
+    if (NULL == memspace) {
         return 0;
     }
 
@@ -914,19 +955,23 @@ void STORE(u32 A, u32 B, int pow) {
     g_mem_written_len = 1 << pow;
     g_mem_written_addr = A;
 
-    u8 *memspace;
-    if (A >= TEXT_BASE && A < TEXT_END) {
-        memspace = (u8 *)g_text;
-        A -= TEXT_BASE;
-    } else if (A >= STACK_TOP - g_stack_len && A < STACK_TOP) {
-        memspace = (u8 *)g_stack;
-        A -= STACK_TOP - g_stack_len;
-    } else if (A >= DATA_BASE && A < DATA_END) {
-        memspace = (u8 *)g_data;
-        A -= DATA_BASE;
-    } else {
+    u8 *memspace = NULL;
+    for (size_t i = 0; i < g_sections_len; i++) {
+        Section *sec = g_sections[i];
+
+        // TODO: check read permission?
+        if (A >= sec->base && A < sec->limit) {
+            memspace = sec->buf;
+            A -= sec->base;
+            break;
+        }
+    }
+
+    // TODO: flag error?
+    if (NULL == memspace) {
         return;
     }
+
     if (pow == 0) memspace[A] = B;
     else if (pow == 1) {
         memcpy(memspace + A, &B, 2);
@@ -1126,4 +1171,15 @@ LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
     }
 
     return ret;
+}
+
+void prepare_runtime_sections() {
+    // TODO: dynamically growing stacks?
+    // TODO: handle OOM
+    g_stack.buf = malloc(g_stack.len);
+    g_stack.capacity = STACK_LEN;
+
+    *push(g_sections, g_sections_len, g_sections_cap) = &g_text;
+    *push(g_sections, g_sections_len, g_sections_cap) = &g_data;
+    *push(g_sections, g_sections_len, g_sections_cap) = &g_stack;
 }

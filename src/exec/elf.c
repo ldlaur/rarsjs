@@ -225,25 +225,48 @@ fail:
 bool elf_emit_exec(void **out, size_t *len, char **error) {
     // LAYOUT
     // ELF header
-    // .text program header
-    // .data program header
+    // Program headers
     // NULL section header
-    // .text section header
-    // .data section header
+    // Sections headers
     // RARSJS_STRINGS section header
-    // .text segment
-    // .data segment
+    // Segments
     // RARSJS_STRINGS (string table)
 
-    const char str_tab[] = "\0.text\0.data\0RARSJS_STRINGS\0";
-    u32 segments_count = (0 != g_text_len) + (0 != g_data_len);
+    u32 segments_count = 0;
+    size_t segments_sz = 0;
+    size_t str_tab_sz = 1 + strlen("RARSJS_STRINGS") + 1;
+    size_t str_tab_idx = 1;
+
+    for (size_t i = 0; i < g_sections_len; i++) {
+        Section *s = g_sections[i];
+        if (s->physical && 0 != s->len) {
+            segments_count++;
+            segments_sz += s->len;
+            str_tab_sz += strlen(s->name) + 1;
+        }
+    }
+
+    // Generate string table
+    char *str_tab = malloc(str_tab_sz);
+    CHK_OOM(str_tab, error);
+    memset(str_tab, 0, str_tab_sz);
+    for (size_t i = 0; i < g_sections_len; i++) {
+        Section *s = g_sections[i];
+        if (s->physical && 0 != s->len) {
+            WRITE_BUF(str_tab, s->name, strlen(s->name), &str_tab_idx);
+            char zero = '\0';
+            WRITE(str_tab, &zero, &str_tab_idx);
+        }
+    }
+    WRITE_BUF(str_tab, "RARSJS_STRINGS", strlen("RARSJS_STRINGS"), &str_tab_idx);
+    str_tab[str_tab_idx] = '\0';
+
     u32 sections_count = 2 + segments_count;
     u32 phdrs_sz = sizeof(ElfProgramHeader) * segments_count;
     u32 shdrs_off = sizeof(ElfHeader) + phdrs_sz;
     u32 shdrs_sz = sizeof(ElfSectionHeader) * sections_count;
-    u32 text_seg_off = shdrs_off + shdrs_sz;
-    u32 data_seg_off = text_seg_off + g_text_len;
-    u32 str_tab_off = data_seg_off + g_data_len;
+    u32 segments_off = shdrs_off + shdrs_sz;
+    u32 str_tab_off = segments_off + segments_sz;
     LabelData *start = resolve_symbol("_start", strlen("_start"), true);
     u8 *elf_contents = NULL;
     u32 elf_off = 0;
@@ -253,7 +276,7 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
         return false;
     }
 
-    elf_contents = malloc(g_text_len + g_data_len + sizeof(ElfHeader) + phdrs_sz + shdrs_sz + sizeof(str_tab));
+    elf_contents = malloc(segments_sz + sizeof(ElfHeader) + phdrs_sz + shdrs_sz + str_tab_sz);
     CHK_OOM(elf_contents, error);
 
     ElfHeader e_hdr = {.magic = {0x7F, 'E', 'L', 'F'},        // ELF magic
@@ -277,29 +300,37 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
 
     WRITE(elf_contents, &e_hdr, &elf_off);
 
-    if (0 != g_text_len) {
-        ElfProgramHeader text_header = {.type = PT_LOAD,
-                                        .flags = 0b101,
-                                        .off = text_seg_off,
-                                        .virt_addr = TEXT_BASE,
-                                        .phys_addr = TEXT_BASE,
-                                        .file_sz = g_text_len,
-                                        .mem_sz = g_text_len,
-                                        .align = 4};
-        WRITE(elf_contents, &text_header, &elf_off);
-    }
+    // Offset where the i-th segment will be palced
+    // starting at `segments_off` (start of segments)
+    u32 segment_off = segments_off;
 
-    // Write data PH
-    if (0 != g_data_len) {
-        ElfProgramHeader data_header = {.type = PT_LOAD,
-                                        .flags = 0b110,
-                                        .off = data_seg_off,
-                                        .virt_addr = DATA_BASE,
-                                        .phys_addr = DATA_BASE,
-                                        .file_sz = g_data_len,
-                                        .mem_sz = g_data_len,
-                                        .align = 1};
-        WRITE(elf_contents, &data_header, &elf_off);
+    // Write program headers
+    for (size_t i = 0; i < g_sections_len; i++) {
+        Section *s = g_sections[i];
+        if (s->physical && 0 != s->len) {
+            // Ugly but avoids UB
+            u32 flags = 0;
+            if (s->read) {
+                flags |= 0b100;
+            }
+            if (s->write) {
+                flags |= 0b010;
+            }
+            if (s->execute) {
+                flags |= 0b001;
+            }
+
+            ElfProgramHeader prog_header = {.type = PT_LOAD,
+                                            .flags = flags,
+                                            .off = segment_off,
+                                            .virt_addr = s->base,
+                                            .phys_addr = s->base,
+                                            .file_sz = s->len,
+                                            .mem_sz = s->len,
+                                            .align = s->align};
+            WRITE(elf_contents, &prog_header, &elf_off);
+            segment_off += s->len;
+        }
     }
 
     // Write NULL SH
@@ -307,61 +338,71 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
     null.type = SHT_NULL;
     WRITE(elf_contents, &null, &elf_off);
 
-    // Write text SH
-    if (0 != g_text_len) {
-        ElfSectionHeader text_sec = {.name_off = 1,
-                                     .type = SHT_PROGBITS,
-                                     .flags = SHF_EXECINSTR | SHF_ALLOC,
-                                     .off = text_seg_off,
-                                     .virt_addr = TEXT_BASE,
-                                     .mem_sz = g_text_len,
-                                     .align = 4,
-                                     .link = 0,
-                                     .ent_sz = 0};
-        WRITE(elf_contents, &text_sec, &elf_off);
-    }
+    // Reset the segment offset to the base
+    // This is done to set the stage for writing section headers
+    // in the same order in which they appear in the program headers
+    segment_off = segments_off;
 
-    // Write data SH
-    if (0 != g_data_len) {
-        ElfSectionHeader data_sec = {.name_off = 7,
-                                     .type = SHT_PROGBITS,
-                                     .flags = SHF_WRITE | SHF_ALLOC,
-                                     .off = data_seg_off,
-                                     .virt_addr = DATA_BASE,
-                                     .mem_sz = g_data_len,
-                                     .align = 1,
-                                     .link = 0,
-                                     .ent_sz = 0};
-        WRITE(elf_contents, &data_sec, &elf_off);
+    // Offset into the string table where the section name can be found
+    size_t sec_name_off = 1;
+
+    // Write section headers
+    for (size_t i = 0; i < g_sections_len; i++) {
+        Section *s = g_sections[i];
+        if (s->physical && 0 != s->len) {
+            // Ugly but avoids UB
+            u32 flags = SHF_ALLOC;
+            if (s->write) {
+                flags |= SHF_WRITE;
+            }
+            if (s->execute) {
+                flags |= SHF_EXECINSTR;
+            }
+
+            ElfSectionHeader sec_header = {.name_off = sec_name_off,
+                                           .type = SHT_PROGBITS,
+                                           .flags = flags,
+                                           .off = segment_off,
+                                           .virt_addr = s->base,
+                                           .mem_sz = s->len,
+                                           .align = s->align,
+                                           .link = 0,
+                                           .ent_sz = 0};
+            WRITE(elf_contents, &sec_header, &elf_off);
+            segment_off += s->len;
+            sec_name_off += strlen(s->name) + 1;
+        }
     }
 
     // Write string table SH
-    ElfSectionHeader str_tab_sec = {.name_off = 13,
+    ElfSectionHeader str_tab_sec = {.name_off = sec_name_off,  // Should point to RARSJS_STRINGS\0
                                     .type = SHT_STRTAB,
                                     .flags = SHF_STRINGS,
                                     .off = str_tab_off,
                                     .virt_addr = 0,
-                                    .mem_sz = sizeof(str_tab),
+                                    .mem_sz = str_tab_sz,
                                     .align = 1,
                                     .link = 0,
                                     .ent_sz = 0};
     WRITE(elf_contents, &str_tab_sec, &elf_off);
 
-    if (0 != g_text_len) {
-        WRITE_BUF(elf_contents, g_text, g_text_len, &elf_off);
+    // Write the segments themselves
+    for (size_t i = 0; i < g_sections_len; i++) {
+        Section *s = g_sections[i];
+        if (s->physical && 0 != s->len) {
+            WRITE_BUF(elf_contents, s->buf, s->len, &elf_off);
+        }
     }
 
-    if (0 != g_data_len) {
-        WRITE_BUF(elf_contents, g_data, g_data_len, &elf_off);
-    }
-
-    WRITE_BUF(elf_contents, str_tab, sizeof(str_tab), &elf_off);
+    // Write the string table
+    WRITE_BUF(elf_contents, str_tab, str_tab_sz, &elf_off);
 
     *out = elf_contents;
     *len = elf_off;
     return true;
 fail:
     CLEANUP(elf_contents);
+    CLEANUP(str_tab);
     return false;
 }
 
@@ -403,15 +444,8 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
     u32 text_section_name_off = 0;
     u32 data_section_name_off = 0;
 
-    if (!find_section(&text_section_name_off, str_tab, str_tab_len, ".text")) {
-        *error = "executable has no .text section in string table";
-        return false;
-    }
-
-    if (!find_section(&data_section_name_off, str_tab, str_tab_len, ".data")) {
-        *error = "executable has no .data section in string table";
-        return false;
-    }
+    find_section(&text_section_name_off, str_tab, str_tab_len, ".text");
+    find_section(&data_section_name_off, str_tab, str_tab_len, ".data");
 
     if (text_section_name_off == data_section_name_off) {
         *error = ".text and .data string table entries overlap";
@@ -436,14 +470,15 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
     g_pc = e_header->entry;
 
     if (NULL != text_section) {
-        g_text = elf_contents + text_section->off;
-        g_text_len = text_section->mem_sz;
+        g_text.buf = elf_contents + text_section->off;
+        g_text.len = text_section->mem_sz;
     }
 
     if (NULL != data_section) {
-        g_data = elf_contents + data_section->off;
-        g_data_len = data_section->mem_sz;
+        g_data.buf = elf_contents + data_section->off;
+        g_data.len = data_section->mem_sz;
     }
 
+    prepare_runtime_sections();
     return true;
 }
