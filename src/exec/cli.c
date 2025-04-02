@@ -12,7 +12,6 @@ static const char *g_obj_out = "a.o";
 static const char *g_exec_out = "a.out";
 
 static void emulate_safe(void) {
-    // TODO: make this generic
     while (!g_exited) {
         emulate();
 
@@ -35,8 +34,14 @@ static void emulate_safe(void) {
     }
 }
 
-void assemble_from_file(const char *src_path) {
+static void assemble_from_file(const char *src_path) {
     FILE *f = fopen(src_path, "r");
+
+    if (NULL == f) {
+        g_error = "assembler: could not open input file";
+        fprintf(stderr, "%s\n", g_error);
+        return;
+    }
 
     fseek(f, 0, SEEK_END);
     size_t s = ftell(f);

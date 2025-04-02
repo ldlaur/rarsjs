@@ -29,26 +29,20 @@
     memcpy((dst) + *(off), (src), (src_sz)); \
     *(off) += (src_sz)
 
-static bool find_section(u32 *out_idx, char *str_tab, u32 str_tab_len, const char *section) {
-    for (u32 i = 0; i < str_tab_len; i++) {
-        if (0 == strcmp(&str_tab[i], section)) {
-            *out_idx = i;
-            return true;
-        }
+bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, char **error) {
+    if (NULL == elf_contents) {
+        *error = "null buffer";
+        return false;
     }
 
-    return false;
-}
-
-bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, char **error) {
     if (elf_contents_len < sizeof(ElfHeader)) {
         *error = "corrupt or invalid elf header";
         return false;
     }
 
     ReadElfSegment *readable_phdrs = NULL;
-    ElfHeader *e_header = (ElfHeader *)elf_contents;
     ReadElfSection *readable_shdrs = NULL;
+    ElfHeader *e_header = (ElfHeader *)elf_contents;
 
     if (0x7F != e_header->magic[0] || 'E' != e_header->magic[1] || 'L' != e_header->magic[2] ||
         'F' != e_header->magic[3]) {
@@ -108,6 +102,12 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
         UNKNOWN(out->architecture);
     }
 
+    if (e_header->phdrs_off >= elf_contents_len ||
+        e_header->phdrs_off + (e_header->phent_sz * e_header->phent_num) >= elf_contents_len) {
+        *error = "program headers offset exceeds buffer size";
+        goto fail;
+    }
+
     ElfProgramHeader *phdrs = (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
     readable_phdrs = malloc(sizeof(ReadElfSegment) * e_header->phent_num);
     CHK_OOM(readable_phdrs, error);
@@ -160,17 +160,29 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
         }
     }
 
+    if (e_header->shdrs_off >= elf_contents_len ||
+        e_header->shdrs_off + (e_header->shent_sz * e_header->shent_num) >= elf_contents_len) {
+        *error = "section headers offset exceeds buffer size";
+        goto fail;
+    }
+
     ElfSectionHeader *shdrs = (ElfSectionHeader *)(elf_contents + e_header->shdrs_off);
     readable_shdrs = malloc(sizeof(ReadElfSection) * e_header->shent_num);
     CHK_OOM(readable_shdrs, error);
 
-    ElfSectionHeader *strtab = &shdrs[e_header->shdr_str_idx];
-    char *strings = (char *)(elf_contents + strtab->off);
+    ElfSectionHeader *str_sh = &shdrs[e_header->shdr_str_idx];
+    char *str_tab = (char *)(elf_contents + str_sh->off);
+    u32 str_tab_sz = str_sh->mem_sz;
 
     for (u32 i = 0; i < e_header->shent_num; i++) {
         ElfSectionHeader *shdr = &shdrs[i];
         ReadElfSection *readable = &readable_shdrs[i];
         size_t flags_idx = 0;
+
+        if (shdr->name_off >= str_tab_sz) {
+            *error = "section name out of bounds of string table section";
+            goto fail;
+        }
 
         readable->shdr = shdr;
 
@@ -187,7 +199,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
         }
 
         readable->flags[flags_idx] = 0;
-        readable->name = &strings[shdr->name_off];
+        readable->name = &str_tab[shdr->name_off];
 
         switch (shdr->type) {
             case SHT_NULL:
@@ -407,6 +419,11 @@ fail:
 }
 
 bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
+    if (NULL == elf_contents) {
+        *error = "null buffer";
+        return false;
+    }
+
     if (elf_len < sizeof(ElfHeader)) {
         *error = "corrupt or invalid elf header";
         return false;
