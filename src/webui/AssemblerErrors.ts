@@ -1,6 +1,6 @@
 import { linter } from "@codemirror/lint";
 import { WasmInterface } from "./RiscV";
-import { setDummy, dummy, debugMode } from "./App";
+import { setDummy, setWasmPc, dummy, debugMode } from "./App";
 
 export const createAsmLinter = (wasmInterface: WasmInterface) => {
   let delay: number = 750;
@@ -10,6 +10,7 @@ export const createAsmLinter = (wasmInterface: WasmInterface) => {
         const code = ev.state.doc.toString();
         let err = await wasmInterface.build(code);
         setDummy(dummy() + 1);
+        setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
         if (err !== null)
           return [
             {

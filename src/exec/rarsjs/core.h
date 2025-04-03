@@ -98,6 +98,11 @@ typedef struct DeferredInsn {
     size_t emit_idx;
 } DeferredInsn;
 
+typedef struct Global {
+    const char *str;
+    size_t len;
+} Global;
+
 typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERROR_STORE = 3 } Error;
 
 extern export Section g_text;
@@ -124,5 +129,5 @@ extern export int g_exit_code;
 
 void assemble(const char *, size_t);
 void emulate();
-LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global);
+bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr); 
 void prepare_runtime_sections();

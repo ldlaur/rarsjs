@@ -1,6 +1,5 @@
 #include "rarsjs/elf.h"
 
-#include <bits/posix2_lim.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -279,14 +278,14 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
     u32 shdrs_sz = sizeof(ElfSectionHeader) * sections_count;
     u32 segments_off = shdrs_off + shdrs_sz;
     u32 str_tab_off = segments_off + segments_sz;
-    LabelData *start = resolve_symbol("_start", strlen("_start"), true);
-    u8 *elf_contents = NULL;
-    u32 elf_off = 0;
-
-    if (NULL == start) {
+    u32 entrypoint;
+    if (!resolve_symbol("_start", strlen("_start"), true, &entrypoint)) {
         *error = "unresolved reference to `_start`";
         return false;
     }
+
+    u8 *elf_contents = NULL;
+    u32 elf_off = 0;
 
     elf_contents = malloc(segments_sz + sizeof(ElfHeader) + phdrs_sz + shdrs_sz + str_tab_sz);
     CHK_OOM(elf_contents, error);
@@ -299,7 +298,7 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
                        .type = 2,                             // Executable
                        .isa = 0xF3,                           // Arch = RISC-V
                        .elf_ver = 1,                          // ELF version 1
-                       .entry = start->addr,                  // Program entrypoint
+                       .entry = entrypoint,                   // Program entrypoint
                        .phdrs_off = sizeof(ElfHeader),        // Start offset of program header tabe
                        .phent_num = segments_count,           // 2 program headers
                        .phent_sz = sizeof(ElfProgramHeader),  // Size of each program header table entry

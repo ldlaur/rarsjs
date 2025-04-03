@@ -116,12 +116,11 @@ static void c_emulate(command_t *self) {
     if (g_error) {
         return;
     }
-
+    
+    uint32_t addr;
     g_pc = TEXT_BASE;
-    LabelData *start = resolve_symbol("_start", strlen("_start"), true);
-
-    if (NULL != start) {
-        g_pc = start->addr;
+    if (resolve_symbol("_start", strlen("_start"), true, &addr)) {
+        g_pc = addr;
     }
 
     emulate_safe();

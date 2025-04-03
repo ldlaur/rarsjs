@@ -42,7 +42,7 @@ const wasmInterface = new WasmInterface();
 
 export const [dummy, setDummy] = createSignal<number>(0);
 const [regsArray, setRegsArray] = createSignal<number[]>(new Array(31).fill(0));
-const [wasmPc, setWasmPc] = createSignal<string>("0x00000000");
+export const [wasmPc, setWasmPc] = createSignal<string>("0x00000000");
 export const [debugMode, setDebugMode] = createSignal<boolean>(false);
 const [consoleText, setConsoleText] = createSignal<string>("");
 
@@ -618,6 +618,7 @@ async function startStepRiscV(): Promise<void> {
   setDebugMode(true);
   setBreakpoints();
   setDummy(dummy() + 1);
+  setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
   updateLineNumber();
 }
 

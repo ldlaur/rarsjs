@@ -32,6 +32,9 @@ size_t g_labels_len, g_labels_cap;
 DeferredInsn *g_deferred_insns;
 size_t g_deferred_insn_len, g_deferred_insn_cap;
 
+Global *g_globals;
+size_t g_globals_len, g_globals_cap;
+
 // clang-format off
 u32 DS1S2(u32 d, u32 s1, u32 s2) { return (d << 7) | (s1 << 15) | (s2 << 20); }
 #define InstA(Name, op2, op12, one, mul) u32 Name(u32 d, u32 s1, u32 s2)  { return 0b11 | (op2 << 2) | (op12 << 12) | DS1S2(d, s1, s2) | ((one*0b01000) << 27) | (mul << 25); }
@@ -317,8 +320,8 @@ void asm_emit_byte(u8 byte, int linenum) {
         *push(g_section->buf, g_section->len, g_section->capacity) = byte;
     } else {
         g_section->buf[g_section->emit_idx] = byte;
-        g_section->emit_idx++;
     }
+    g_section->emit_idx++;
 }
 
 void asm_emit(u32 inst, int linenum) {
@@ -802,7 +805,7 @@ export void assemble(const char *txt, size_t s) {
     g_in_fixup = false;
     memset(g_regs, 0, sizeof(g_regs));
     g_regs[2] = STACK_TOP - 4;
-    g_pc = 0;
+    g_pc = TEXT_BASE;
     g_mem_written_len = 0;
     g_mem_written_addr = 0;
     g_reg_written = 0;
@@ -816,6 +819,9 @@ export void assemble(const char *txt, size_t s) {
     g_labels_len = 0, g_labels_cap = 0;
     g_deferred_insns = NULL;
     g_deferred_insn_len = 0, g_deferred_insn_cap = 0;
+
+    g_globals = NULL;
+    g_globals_len = 0, g_globals_cap = 0;
 
     prepare_runtime_sections();
 
@@ -844,6 +850,13 @@ export void assemble(const char *txt, size_t s) {
                 continue;
             } else if (str_eq(directive, directive_len, "text")) {
                 g_section = &g_text;
+                continue;
+            } else if (str_eq(directive, directive_len, "globl")) {
+                skip_trailing(p);
+                const char* alnum;
+                size_t alnum_len;
+                parse_alnum(p, &alnum, &alnum_len);
+                *push(g_globals, g_globals_len, g_globals_cap) = (Global) { .str = alnum, .len = alnum_len };
                 continue;
             } else if (str_eq(directive, directive_len, "byte")) {
                 i32 value;
@@ -994,7 +1007,11 @@ export void assemble(const char *txt, size_t s) {
     if (err) {
         g_error = err;
         g_error_line = p->startline;
-    }
+    } 
+
+    // FIXME: should i return a warning if _start is not present
+    // or quietly continue?
+    resolve_symbol("_start", strlen("_start"), true, &g_pc);
 
     free(g_text.buf);
     free(g_data.buf);
@@ -1003,6 +1020,7 @@ export void assemble(const char *txt, size_t s) {
     free(g_text_by_linenum);
     free(g_labels);
     free(g_deferred_insns);
+    free(g_globals);
 }
 
 static inline i32 SIGN(int bits, u32 x) {
@@ -1295,9 +1313,8 @@ exit:
     g_reg_written = rd;
 }
 
-LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
+bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr) {
     LabelData *ret = NULL;
-
     for (size_t i = 0; i < g_labels_len; i++) {
         LabelData *l = &g_labels[i];
         if (str_eq_2(sym, sym_len, l->txt, l->len)) {
@@ -1305,8 +1322,19 @@ LabelData *resolve_symbol(const char *sym, size_t sym_len, bool global) {
             break;
         }
     }
-
-    return ret;
+    if (ret && global) {
+        for (size_t i = 0; i < g_globals_len; i++)
+            if (str_eq_2(sym, sym_len, g_globals[i].str, g_globals[i].len)) {
+                *addr = ret->addr;
+                return true;
+            }
+        return false;
+    }
+    if (ret) {
+        *addr = ret->addr;
+        return true;
+    }
+    return false;
 }
 
 void prepare_runtime_sections() {

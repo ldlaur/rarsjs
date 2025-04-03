@@ -126,9 +126,9 @@ export class WasmInterface {
       const errorStr = new TextDecoder("utf8").decode(error.slice(0, errorLen));
       return { line: errorLine, message: errorStr };
     }
-    
-    this.pc[0] = 0x00400000; // TODO: get address of _start symbol
 
+    for (let i = 0; i < 31; i++) this.regArr[i] = this.regsArr[i];
+    
     return null;
   }
 
