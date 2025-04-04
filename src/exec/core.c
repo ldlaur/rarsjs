@@ -9,6 +9,9 @@ export Section g_text, g_data, g_stack;
 Section **g_sections;
 size_t g_sections_len, g_sections_cap;
 
+Extern *g_externs;
+size_t g_externs_len, g_externs_cap;
+
 Section *g_section;
 export u32 *g_text_by_linenum;
 export size_t g_text_by_linenum_len, g_text_by_linenum_cap;
@@ -32,6 +35,9 @@ LabelData *g_labels;
 size_t g_labels_len, g_labels_cap;
 DeferredInsn *g_deferred_insns;
 size_t g_deferred_insn_len, g_deferred_insn_cap;
+
+extern Extern *g_externs;
+extern size_t g_externs_len, g_externs_cap;
 
 Global *g_globals;
 size_t g_globals_len, g_globals_cap;
@@ -762,6 +768,7 @@ export void assemble(const char *txt, size_t s) {
                        .buf = NULL,
                        .emit_idx = 0,
                        .align = 4,
+                       .relocations = {.buf = NULL, .len = 0, .cap = 0},
                        .read = true,
                        .write = false,
                        .execute = true,
@@ -775,23 +782,11 @@ export void assemble(const char *txt, size_t s) {
                        .buf = NULL,
                        .emit_idx = 0,
                        .align = 1,
+                       .relocations = {.buf = NULL, .len = 0, .cap = 0},
                        .read = true,
                        .write = true,
                        .execute = false,
                        .physical = true};
-
-    g_stack = (Section){.name = "RARSJS_STACK",
-                        .base = STACK_TOP - STACK_LEN,
-                        .limit = STACK_TOP,
-                        .len = STACK_LEN,
-                        .capacity = 0,
-                        .buf = NULL,
-                        .emit_idx = 0,
-                        .align = 1,
-                        .read = true,
-                        .write = true,
-                        .execute = false,
-                        .physical = false};
 
     g_sections = NULL;
     g_sections_len = 0, g_sections_cap = 0;
@@ -1329,21 +1324,41 @@ bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr) {
     return false;
 }
 
-void prepare_runtime_sections() {
-    // TODO: dynamically growing stacks?
-    // TODO: handle OOM
+void prepare_stack() {
+    g_stack = (Section){.name = "RARSJS_STACK",
+                        .base = STACK_TOP - STACK_LEN,
+                        .limit = STACK_TOP,
+                        .len = STACK_LEN,
+                        .capacity = 0,
+                        .buf = NULL,
+                        .emit_idx = 0,
+                        .align = 1,
+                        .relocations = {.buf = NULL, .len = 0, .cap = 0},
+                        .read = true,
+                        .write = true,
+                        .execute = false,
+                        .physical = false};
+
     g_stack.buf = malloc(g_stack.len);
     g_stack.capacity = STACK_LEN;
-
-    *push(g_sections, g_sections_len, g_sections_cap) = &g_text;
-    *push(g_sections, g_sections_len, g_sections_cap) = &g_data;
     *push(g_sections, g_sections_len, g_sections_cap) = &g_stack;
 }
 
+void prepare_runtime_sections() {
+    // TODO: dynamically growing stacks?
+    // TODO: handle OOM
+
+    *push(g_sections, g_sections_len, g_sections_cap) = &g_text;
+    *push(g_sections, g_sections_len, g_sections_cap) = &g_data;
+    prepare_stack();
+}
+
 void free_runtime() {
-    for (size_t i = 0; i < g_sections_len; i++) {
+    // THIS IS COMMENTED BECAUSE SOME SECTION BUFFERS ARE NOT
+    // HEAP ALLOCATED (E.G., THOSE FROM ELF FILES)
+    /*for (size_t i = 0; i < g_sections_len; i++) {
         free(g_sections[i]->buf);
-    }
+    }*/
     free(g_sections);
     free(g_text_by_linenum);
     free(g_labels);
