@@ -800,7 +800,6 @@ export void assemble(const char *txt, size_t s) {
 
     g_in_fixup = false;
     memset(g_regs, 0, sizeof(g_regs));
-    g_regs[2] = STACK_TOP - 4;
     g_pc = TEXT_BASE;
     g_mem_written_len = 0;
     g_mem_written_addr = 0;
@@ -1341,6 +1340,7 @@ void prepare_stack() {
 
     g_stack.buf = malloc(g_stack.len);
     g_stack.capacity = STACK_LEN;
+    g_regs[2] = STACK_TOP - 4;
     *push(g_sections, g_sections_len, g_sections_cap) = &g_stack;
 }
 

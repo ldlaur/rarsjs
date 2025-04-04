@@ -72,6 +72,7 @@ static void c_build(command_t *self) {
     }
 
     FILE *out = fopen(g_exec_out, "wb");
+    FILE *out2 = fopen("dump", "wb");
 
     if (NULL == out) {
         fprintf(stderr, "linker: could not open output file\n");
@@ -79,6 +80,7 @@ static void c_build(command_t *self) {
     }
 
     fwrite(elf_contents, elf_sz, 1, out);
+    fwrite(g_text.buf, g_text.len, 1, out2);
 }
 
 static void c_run(command_t *self) {

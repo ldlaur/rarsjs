@@ -263,8 +263,8 @@ fail:
 // This functions also assumes that the names of relocation sections follow those of the relative section
 // withing the string table. E.g., .rela.text comes immediately after .text
 static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_start, size_t *shdrs_start,
-                      size_t *phnum, size_t *shnum, size_t *reloc_idx, size_t *reloc_num, size_t rsv_shdrs,
-                      size_t symtab_idx, bool use_phdrs, bool use_shdrs, char **error) {
+                      size_t *phnum, size_t *shnum, size_t *reloc_idx, size_t *reloc_num, size_t file_off,
+                      size_t rsv_shdrs, size_t symtab_idx, bool use_phdrs, bool use_shdrs, char **error) {
     size_t segments_count = 0;
     size_t segments_sz = 0;
     size_t reloc_shdrs_num = 0;
@@ -355,7 +355,7 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_
 
         ElfProgramHeader prog_header = {.type = PT_LOAD,
                                         .flags = phdr_flags,
-                                        .off = segment_off,
+                                        .off = segment_off + file_off,
                                         .virt_addr = s->base,
                                         .phys_addr = s->base,
                                         .file_sz = s->len,
@@ -374,7 +374,7 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_
         ElfSectionHeader sec_header = {.name_off = *name_off,
                                        .type = SHT_PROGBITS,
                                        .flags = shdr_flags,
-                                       .off = segment_off,
+                                       .off = segment_off + file_off,
                                        .virt_addr = s->base,
                                        .mem_sz = s->len,
                                        .align = s->align,
@@ -512,8 +512,8 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
     }
 
     CHK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error));
-    CHK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start, &phnum, &shnum, NULL, NULL, 1, 0, true,
-                       true, error));
+    CHK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start, &phnum, &shnum, NULL, NULL,
+                       sizeof(ElfHeader), 1, 0, true, true, error));
 
     ElfHeader e_hdr = {.magic = {0x7F, 'E', 'L', 'F'},                // ELF magic
                        .bits = 1,                                     // 32 bits
