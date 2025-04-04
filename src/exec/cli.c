@@ -80,6 +80,7 @@ static void c_build(command_t *self) {
 
     fwrite(elf_contents, elf_sz, 1, out);
     fclose(out);
+
 }
 
 static void c_run(command_t *self) {
@@ -117,7 +118,7 @@ static void c_emulate(command_t *self) {
     if (g_error) {
         return;
     }
-    
+
     uint32_t addr;
     g_pc = TEXT_BASE;
     if (resolve_symbol("_start", strlen("_start"), true, &addr)) {
@@ -213,6 +214,7 @@ static void c_output(command_t *self) {
 }
 
 int main(int argc, char **argv) {
+    atexit(free_runtime);
     command_t cmd;
     // TODO: place real version number
     command_init(&cmd, argv[0], "0.0.1");

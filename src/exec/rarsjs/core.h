@@ -72,6 +72,17 @@ typedef struct LabelData {
     u32 addr;
 } LabelData;
 
+typedef struct {
+    const char *symbol;
+    size_t len;
+} Extern;
+
+typedef struct {
+    size_t offset;
+    size_t size;
+    Extern *symbol;
+} Relocation;
+
 typedef struct Section {
     const char *name;
     u32 base;
@@ -81,6 +92,11 @@ typedef struct Section {
     u8 *buf;
     size_t emit_idx;
     u32 align;
+    struct {
+        Relocation *buf;
+        size_t len;
+        size_t cap;
+    } relocations;
     bool read;
     bool write;
     bool execute;
@@ -118,6 +134,12 @@ extern export u32 g_pc;
 extern LabelData *g_labels;
 extern size_t g_labels_len, g_labels_cap;
 
+extern Global *g_globals;
+extern size_t g_globals_len, g_globals_cap;
+
+extern Extern *g_externs;
+extern size_t g_externs_len, g_externs_cap;
+
 extern export u32 g_error_line;
 extern export const char *g_error;
 
@@ -129,6 +151,7 @@ extern export int g_exit_code;
 
 void assemble(const char *, size_t);
 void emulate();
-bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr); 
+bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr);
 void prepare_runtime_sections();
+void prepare_stack();
 void free_runtime();
