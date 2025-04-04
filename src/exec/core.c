@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 
 export Section g_text, g_data, g_stack;
 
@@ -853,10 +854,10 @@ export void assemble(const char *txt, size_t s) {
                 continue;
             } else if (str_eq(directive, directive_len, "globl")) {
                 skip_trailing(p);
-                const char* alnum;
+                const char *alnum;
                 size_t alnum_len;
                 parse_alnum(p, &alnum, &alnum_len);
-                *push(g_globals, g_globals_len, g_globals_cap) = (Global) { .str = alnum, .len = alnum_len };
+                *push(g_globals, g_globals_len, g_globals_cap) = (Global){.str = alnum, .len = alnum_len};
                 continue;
             } else if (str_eq(directive, directive_len, "byte")) {
                 i32 value;
@@ -1007,20 +1008,11 @@ export void assemble(const char *txt, size_t s) {
     if (err) {
         g_error = err;
         g_error_line = p->startline;
-    } 
+    }
 
     // FIXME: should i return a warning if _start is not present
     // or quietly continue?
     resolve_symbol("_start", strlen("_start"), true, &g_pc);
-
-    free(g_text.buf);
-    free(g_data.buf);
-    free(g_stack.buf);
-    free(g_sections);
-    free(g_text_by_linenum);
-    free(g_labels);
-    free(g_deferred_insns);
-    free(g_globals);
 }
 
 static inline i32 SIGN(int bits, u32 x) {
@@ -1347,3 +1339,15 @@ void prepare_runtime_sections() {
     *push(g_sections, g_sections_len, g_sections_cap) = &g_data;
     *push(g_sections, g_sections_len, g_sections_cap) = &g_stack;
 }
+
+void free_runtime() {
+    for (size_t i = 0; i < g_sections_len; i++) {
+        free(g_sections[i]->buf);
+    }
+    free(g_sections);
+    free(g_text_by_linenum);
+    free(g_labels);
+    free(g_deferred_insns);
+    free(g_globals);
+}
+

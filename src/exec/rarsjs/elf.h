@@ -2063,6 +2063,26 @@ typedef struct {
 } __attribute__((packed)) ElfSectionHeader;
 
 typedef struct {
+    u32 name_off;
+    u32 value;
+    u32 size;
+    u8 info;
+    u8 other;
+    u16 shent_idx;
+} ElfSymtabEntry;
+
+typedef struct {
+    u32 offset;
+    u32 info;
+} ElfRelEntry;
+
+typedef struct {
+    u32 offset;
+    u32 ifno;
+    u32 addend;
+} ElfRelaEntry;
+
+typedef struct {
     ElfProgramHeader *phdr;
     const char *type;
     char flags[4];
@@ -2072,7 +2092,7 @@ typedef struct {
     ElfSectionHeader *shdr;
     const char *name;
     const char *type;
-    char flags[4];
+    char flags[5];
 } ReadElfSection;
 
 typedef struct {

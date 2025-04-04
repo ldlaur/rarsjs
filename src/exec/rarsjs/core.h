@@ -38,7 +38,7 @@ void *memset(void *dest, int c, size_t n);
 #define DATA_BASE 0x10000000
 #define STACK_TOP 0x7FFFF000
 #define STACK_LEN 4096
-#define DATA_END 0x80000000
+#define DATA_END 0x70000000
 
 #define push(arr, len, cap) \
     ((len) >= (cap) ? grow((void **)&(arr), &(cap), sizeof(*(arr))), (arr) + (len)++ : (arr) + (len)++)
@@ -129,5 +129,6 @@ extern export int g_exit_code;
 
 void assemble(const char *, size_t);
 void emulate();
-bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr); 
+bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr);
 void prepare_runtime_sections();
+void free_runtime();

@@ -197,6 +197,10 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
             readable->flags[flags_idx++] = 'S';
         }
 
+        if (SHF_EXECINSTR & shdr->flags) {
+            readable->flags[flags_idx++] = 'X';
+        }
+
         readable->flags[flags_idx] = 0;
         readable->name = &str_tab[shdr->name_off];
 
