@@ -580,10 +580,14 @@ function setBreakpoints(): void {
 
 function updateLineNumber() {
   let linenoIdx = (wasmInterface.pc[0] - 0x00400000) / 4;
-  if (linenoIdx < wasmInterface.textByLinenumLen[0]) {
+  if (linenoIdx < wasmInterface.textByLinenumLen[0] && debugMode()) {
     let lineno = wasmInterface.textByLinenum[linenoIdx];
     view.dispatch({
       effects: lineHighlightEffect.of(lineno),
+    });
+  } else {
+    view.dispatch({
+      effects: lineHighlightEffect.of(0),
     });
   }
 }
@@ -597,6 +601,8 @@ async function runRiscV(): Promise<void> {
     forceLinting(view);
     return;
   }
+
+  setConsoleText("");
 
   while (!wasmInterface.stopExecution) {
     wasmInterface.run(setConsoleText);
@@ -616,6 +622,7 @@ async function startStepRiscV(): Promise<void> {
   else forceLinting(view);
 
   setDebugMode(true);
+  setConsoleText("");
   setBreakpoints();
   setDummy(dummy() + 1);
   setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
@@ -642,10 +649,10 @@ function continueStepRiscV(): void {
     setDummy(dummy() + 1);
     setRegsArray([...wasmInterface.regArr]);
     setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
+    setDebugMode(wasmInterface.stopExecution);
     updateLineNumber();
     if (breakpointSet.has(wasmInterface.pc[0])) break;
     if (wasmInterface.stopExecution) {
-      setDebugMode(false);
       break;
     }
   }

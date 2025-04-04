@@ -96,7 +96,7 @@ bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' ' || c == '\r'
 bool trailing(char c) { return c == '\t' || c == ' '; }
 
 bool digit(char c) { return (c >= '0' && c <= '9'); }
-bool alnum(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'); }
+bool ident(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_') || (c == '.'); }
 
 void advance(Parser *p) {
     if (p->pos >= p->size) return;
@@ -144,12 +144,16 @@ bool skip_comment(Parser *p) {
             return false;
         }
     }
+    if (peek(p) == '#') {
+        while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
+        return true;
+    }
     return false;
 }
 
 void skip_whitespace(Parser *p) {
     while (p->pos < p->size) {
-        while (p->pos < p->size && whitespace(p->input[p->pos])) advance(p);
+        while (whitespace(peek(p))) advance(p);
         if (!skip_comment(p)) break;
     }
 }
@@ -168,6 +172,9 @@ void skip_trailing(Parser *p) {
                 advance_n(p, 2);
                 continue;
             } else break;
+        } else if (peek(p) == '#') {
+            while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
+            continue;
         } else break;
     }
 }
@@ -186,10 +193,9 @@ bool consume(Parser *p, char *c) {
     return true;
 }
 
-void parse_alnum(Parser *p, const char **str, size_t *len) {
+void parse_ident(Parser *p, const char **str, size_t *len) {
     size_t start = p->pos;
-    if (p->pos < p->size && p->input[p->pos] == '-') advance(p);
-    while (p->pos < p->size && alnum(p->input[p->pos])) advance(p);
+    while (p->pos < p->size && ident(p->input[p->pos])) advance(p);
     size_t end = p->pos;
     *str = p->input + start;
     *len = end - start;
@@ -295,7 +301,7 @@ bool parse_quoted_str(Parser *p, char **out_str, size_t *out_len) {
 int parse_reg(Parser *p) {
     const char *str;
     size_t len;
-    parse_alnum(p, &str, &len);
+    parse_ident(p, &str, &len);
 
     if ((len == 2 || len == 3) && str[0] == 'x') {
         if (len == 2) return str[1] - '0';
@@ -449,8 +455,8 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcod
     const char *target;
     size_t target_len;
 
-    parse_alnum(p, &target, &target_len);
-    if (target_len == 0) return "Invalid target";
+    parse_ident(p, &target, &target_len);
+    if (target_len == 0) return "No label";
 
     for (size_t i = 0; i < g_labels_len; i++) {
         if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
@@ -458,7 +464,7 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcod
             return NULL;
         }
     }
-    if (g_in_fixup) return "Invalid label";
+    if (g_in_fixup) return "Label not found";
     DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
     insn->emit_idx = g_text.emit_idx;
     insn->p = *orig;
@@ -840,10 +846,14 @@ export void assemble(const char *txt, size_t s) {
         if (p->pos == p->size) break;
         p->startline = p->lineidx;
 
+        // i can fail parsing sections
+        // if so, the identifier starting with . is a temp label
+        // yes, this sucks
+        Parser old = *p;
         if (consume_if(p, '.')) {
             const char *directive;
             size_t directive_len;
-            parse_alnum(p, &directive, &directive_len);
+            parse_ident(p, &directive, &directive_len);
             skip_trailing(p);
             if (str_eq(directive, directive_len, "data")) {
                 g_section = &g_data;
@@ -853,10 +863,10 @@ export void assemble(const char *txt, size_t s) {
                 continue;
             } else if (str_eq(directive, directive_len, "globl")) {
                 skip_trailing(p);
-                const char* alnum;
-                size_t alnum_len;
-                parse_alnum(p, &alnum, &alnum_len);
-                *push(g_globals, g_globals_len, g_globals_cap) = (Global) { .str = alnum, .len = alnum_len };
+                const char* ident;
+                size_t ident_len;
+                parse_ident(p, &ident, &ident_len);
+                *push(g_globals, g_globals_len, g_globals_cap) = (Global) { .str = ident, .len = ident_len };
                 continue;
             } else if (str_eq(directive, directive_len, "byte")) {
                 i32 value;
@@ -952,22 +962,27 @@ export void assemble(const char *txt, size_t s) {
                     first = false;
                 }
                 continue;
+            } else {
+                // backtrack if not a valid directive
+                // it means that it's a label
+                // so stuff like .inner_label: is valid
+                *p = old;
             }
         }
 
-        const char *alnum, *opcode;
-        size_t alnum_len, opcode_len;
-        parse_alnum(p, &alnum, &alnum_len);
+        const char *ident, *opcode;
+        size_t ident_len, opcode_len;
+        parse_ident(p, &ident, &ident_len); 
         skip_trailing(p);
 
         if (consume_if(p, ':')) {
             u32 addr = g_section->emit_idx + g_section->base;
-            *push(g_labels, g_labels_len, g_labels_cap) = (LabelData){.txt = alnum, .len = alnum_len, .addr = addr};
+            *push(g_labels, g_labels_len, g_labels_cap) = (LabelData){.txt = ident, .len = ident_len, .addr = addr};
             continue;
         }
 
-        opcode = alnum;
-        opcode_len = alnum_len;
+        opcode = ident;
+        opcode_len = ident_len;
 
         bool found = false;
         for (size_t i = 0; !found && i < sizeof(opcode_types) / sizeof(OpcodeHandling); i++) {
@@ -1346,4 +1361,15 @@ void prepare_runtime_sections() {
     *push(g_sections, g_sections_len, g_sections_cap) = &g_text;
     *push(g_sections, g_sections_len, g_sections_cap) = &g_data;
     *push(g_sections, g_sections_len, g_sections_cap) = &g_stack;
+}
+
+void free_runtime() {
+    for (size_t i = 0; i < g_sections_len; i++) {
+        free(g_sections[i]->buf);
+    }
+    free(g_sections);
+    free(g_text_by_linenum);
+    free(g_labels);
+    free(g_deferred_insns);
+    free(g_globals);
 }
