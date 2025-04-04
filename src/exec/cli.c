@@ -79,6 +79,7 @@ static void c_build(command_t *self) {
     }
 
     fwrite(elf_contents, elf_sz, 1, out);
+    fclose(out);
 }
 
 static void c_run(command_t *self) {

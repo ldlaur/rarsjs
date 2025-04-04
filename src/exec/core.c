@@ -1027,15 +1027,6 @@ export void assemble(const char *txt, size_t s) {
     // FIXME: should i return a warning if _start is not present
     // or quietly continue?
     resolve_symbol("_start", strlen("_start"), true, &g_pc);
-
-    free(g_text.buf);
-    free(g_data.buf);
-    free(g_stack.buf);
-    free(g_sections);
-    free(g_text_by_linenum);
-    free(g_labels);
-    free(g_deferred_insns);
-    free(g_globals);
 }
 
 static inline i32 SIGN(int bits, u32 x) {
