@@ -2623,7 +2623,7 @@ typedef struct {
 
 typedef struct {
     u32 offset;
-    u32 ifno;
+    u32 info;
     u32 addend;
 } ElfRelaEntry;
 

@@ -214,6 +214,10 @@ static void c_output(command_t *self) {
 
 static void c_assemble(command_t *self) {
     assemble_from_file(self->arg);
+    /*Extern *e = push(g_externs, g_externs_len, g_externs_cap);
+    *e = (Extern){.symbol = "_test_ext", .len = strlen("_test_ext")};
+    *push(g_text.relocations.buf, g_text.relocations.len, g_text.relocations.cap) =
+        (Relocation){.type = R_RISCV_32, .symbol = e};*/
 
     if (g_error) {
         return;

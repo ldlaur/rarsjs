@@ -69,11 +69,15 @@ typedef struct Parser {
 typedef struct {
     const char *symbol;
     size_t len;
+    struct {
+        size_t stidx;
+    } elf;
 } Extern;
 
 typedef struct {
     size_t offset;
     size_t size;
+    size_t addend;
     Extern *symbol;
     size_t type;
 } Relocation;
@@ -122,6 +126,9 @@ typedef struct DeferredInsn {
 typedef struct Global {
     const char *str;
     size_t len;
+    struct {
+        size_t stidx;
+    } elf;
 } Global;
 
 typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERROR_STORE = 3 } Error;
