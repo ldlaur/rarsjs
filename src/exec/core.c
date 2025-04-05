@@ -1352,7 +1352,7 @@ void prepare_stack() {
 
     g_stack.buf = malloc(g_stack.len);
     g_stack.capacity = STACK_LEN;
-    g_regs[2] = STACK_TOP - 4;
+    g_regs[2] = STACK_TOP; // FIXME: now i am diverging from RARS, which does STACK_TOP - 4
     *push(g_sections, g_sections_len, g_sections_cap) = &g_stack;
 }
 

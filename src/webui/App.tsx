@@ -1,8 +1,5 @@
 import {
-  createEffect,
   createSignal,
-  JSX,
-  onCleanup,
   onMount,
   Show,
   type Component,
@@ -17,8 +14,6 @@ import {
   gruvboxLight,
 } from "@uiw/codemirror-theme-gruvbox-dark";
 import { lineHighlightEffect, lineHighlightState } from "./LineHighlight";
-import { For } from "solid-js";
-import { createVirtualizer } from "@tanstack/solid-virtual";
 import { breakpointGutter, breakpointState } from "./Breakpoint";
 import { createAsmLinter } from "./AssemblerErrors";
 import { forceLinting } from "@codemirror/lint";
@@ -30,6 +25,9 @@ import { Settings } from "@uiw/codemirror-themes";
 import { parser } from "./riscv.grammar";
 import { highlighting } from "./GrammarHighlight";
 import { LRLanguage, LanguageSupport } from "@codemirror/language"
+import { RegisterTable } from "./RegisterTable";
+import { MemoryView } from "./MemoryView";
+import { PaneResize } from "./PaneResize";
 
 let parserWithMetadata = parser.configure({
   props: [highlighting]
@@ -38,7 +36,7 @@ export const riscvLanguage = LRLanguage.define({
   parser: parserWithMetadata,
 })
 
-const wasmInterface = new WasmInterface();
+export const wasmInterface = new WasmInterface();
 
 export const [dummy, setDummy] = createSignal<number>(0);
 const [regsArray, setRegsArray] = createSignal<number[]>(new Array(31).fill(0));
@@ -46,7 +44,6 @@ export const [wasmPc, setWasmPc] = createSignal<string>("0x00000000");
 export const [debugMode, setDebugMode] = createSignal<boolean>(false);
 const [consoleText, setConsoleText] = createSignal<string>("");
 
-const ROW_HEIGHT: number = 24;
 
 let breakpointSet: Set<number> = new Set();
 let view: EditorView;
@@ -72,91 +69,80 @@ function interpolate(color1: string, color2: string, percent: number): string {
 
 function updateCss(): void {
   themeStyle.innerHTML = `
-    .theme-bg {
-      background-color: ${cssTheme.background};
-    }
-    .cm-debugging {
-      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#603000" : "#f8c080"
-    };
-    }
-    .cm-tooltip-lint {
-      color: ${cssTheme.foreground};
-      background-color: ${cssTheme.background};
-      font-family: monospace;
-    }
-    .cm-breakpoint-marker {
-      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#e04010" : "#ff5030"
-    };
-    }
-    .theme-bg-hover:hover {
-      background-color: ${interpolate(
+.theme-bg {
+  background-color: ${cssTheme.background};
+}
+.cm-debugging {
+  background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#603000" : "#f8c080"};
+}
+.cm-tooltip-lint {
+  color: ${cssTheme.foreground};
+  background-color: ${cssTheme.background};
+  font-family: monospace;
+}
+.cm-breakpoint-marker {
+  background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#e04010" : "#ff5030"};
+}
+.theme-bg-hover:hover {
+  background-color: ${interpolate(
+    cssTheme.background,
+    cssTheme.foreground,
+    0.1)};
+}
+.theme-bg-active:active {
+  background-color: ${interpolate(
       cssTheme.background,
       cssTheme.foreground,
-      0.1,
-    )};
-    }
-    .theme-bg-active:active {
-      background-color: ${interpolate(
-      cssTheme.background,
-      cssTheme.foreground,
-      0.2,
-    )};
-    }
-    .theme-gutter {
-      background-color: ${cssTheme.gutterBackground};
-    }
-    .theme-separator {
-      background-color: ${cssTheme.gutterBackground != cssTheme.background
+      0.2)};
+}
+.theme-gutter {
+  background-color: ${cssTheme.gutterBackground};
+}
+.theme-separator {
+  background-color: ${cssTheme.gutterBackground != cssTheme.background
       ? cssTheme.gutterBackground
-      : interpolate(cssTheme.background, cssTheme.foreground, 0.1)
-    };
-    }
-    .theme-fg {
-      color: ${cssTheme.foreground};
-    }
-    .theme-fg2 {
-      color: ${interpolate(cssTheme.background, cssTheme.foreground, 0.5)};
-    }
-    .theme-scrollbar-slim {
-    scrollbar-width: thin;
-      scrollbar-color: ${interpolate(
-      cssTheme.background,
-      cssTheme.foreground,
-      0.5,
-    )} ${cssTheme.background};
-    }
-    .theme-scrollbar {
-      scrollbar-color: ${interpolate(
-      cssTheme.background,
-      cssTheme.foreground,
-      0.5,
-    )} ${cssTheme.background};
-    }
-      
-    .theme-border {
-      border-color: ${interpolate(
-      cssTheme.foreground,
-      cssTheme.background,
-      0.8,
-    )};
-    }
-    .frame-highlight {
-      background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#307010" : "#90f080"};
-    }
-
-  @keyframes fadeHighlight {
+      : interpolate(cssTheme.background, cssTheme.foreground, 0.1)};
+}
+.theme-fg {
+  color: ${cssTheme.foreground};
+}
+.theme-fg2 {
+  color: ${interpolate(cssTheme.background, cssTheme.foreground, 0.5)};
+}
+.theme-scrollbar-slim {
+  scrollbar-width: thin;
+  scrollbar-color: ${interpolate(
+        cssTheme.background,
+        cssTheme.foreground,
+        0.5)} ${cssTheme.background};
+}
+.theme-scrollbar {
+  scrollbar-color: ${interpolate(
+          cssTheme.background,
+          cssTheme.foreground,
+          0.5)} ${cssTheme.background};
+}
+  
+.theme-border {
+  border-color: ${interpolate(
+            cssTheme.foreground,
+            cssTheme.background,
+            0.8)};
+}
+.frame-highlight {
+  background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#307010" : "#90f080"};
+}
+@keyframes fadeHighlight {
   from {
-    background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"
-    };
+    background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"};
   }
   to {
   }
 }
-
 .animate-fade-highlight {
   animation: fadeHighlight 1s forwards;
 }
-  `;
+`;
 }
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -189,12 +175,14 @@ const Navbar: Component = () => {
             <button
               on:click={singleStepRiscV}
               class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+              title="Singlestep"
             >
               arrow_downward_alt
             </button>
             <button
               on:click={continueStepRiscV}
               class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+              title="Continue"
             >
               resume
             </button>
@@ -203,18 +191,21 @@ const Navbar: Component = () => {
           <button
             on:click={doChangeTheme}
             class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+            title="Change theme"
           >
             dark_mode
           </button>
           <button
             on:click={runRiscV}
             class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+            title="Run"
           >
             play_circle
           </button>
           <button
             on:click={startStepRiscV}
             class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+            title="Start debug"
           >
             arrow_forward
           </button>
@@ -223,346 +214,6 @@ const Navbar: Component = () => {
     </nav>
   );
 };
-
-const RegisterTable: Component = () => {
-  const regnames = [
-    "ra",
-    "sp",
-    "gp",
-    "tp",
-    "t0",
-    "t1",
-    "t2",
-    "fp",
-    "s1",
-    "a0",
-    "a1",
-    "a2",
-    "a3",
-    "a4",
-    "a5",
-    "a6",
-    "a7",
-    "s2",
-    "s3",
-    "s4",
-    "s5",
-    "s6",
-    "s7",
-    "s8",
-    "s9",
-    "s10",
-    "s11",
-    "t3",
-    "t4",
-    "t5",
-    "t6",
-  ];
-  // all units being ch makes so that the precise sum is 1ch (left pad) + 7ch (x27/a10) + 10ch (0xdeadbeef) + 1ch (right pad)
-  // round to 20ch so it has some padding between regname and hex
-  // now i have the precise size in a font-independent format, as long as it's monospace
-  return (
-    <div class="overflow-auto flex-grow h-full self-start flex-shrink text-sm font-mono  theme-scrollbar-slim theme-border">
-      <div class="grid-cols-[repeat(auto-fit,minmax(20ch,1fr))] grid">
-        <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
-          <div class="self-center pl-[1ch] font-bold">pc</div>
-          <div class="self-center pr-[1ch]">{wasmPc()}</div>
-        </div>
-        <For each={regsArray()}>
-          {(reg, idx) => (
-            <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
-              <div class="self-center pl-[1ch] font-bold">
-                {regnames[idx()]}/x{idx() + 1}
-              </div>
-
-              <div
-                class={
-                  "self-center mr-[1ch] " +
-                  (wasmInterface.regWritten &&
-                    idx() + 1 == wasmInterface.regWritten[0]
-                    ? "animate-fade-highlight"
-                    : "")
-                }
-              >
-                {"0x" + reg.toString(16).padStart(8, "0")}
-              </div>
-            </div>
-          )}
-        </For>
-        {/* Dummy for the left border of the last element */}
-        <div class="theme-border border-l"></div>
-      </div>
-    </div>
-  );
-};
-
-const MemoryView: Component = () => {
-  let parentRef: HTMLDivElement | undefined;
-  let dummyChunk: HTMLDivElement | undefined;
-  const [containerWidth, setContainerWidth] = createSignal<number>(0);
-  const [chunkWidth, setChunkWidth] = createSignal<number>(0);
-  const [chunksPerLine, setChunksPerLine] = createSignal<number>(1);
-  const [lineCount, setLineCount] = createSignal<number>(10);
-
-  onMount(() => {
-    if (dummyChunk) {
-      setChunkWidth(dummyChunk.getBoundingClientRect().width);
-    }
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setContainerWidth(entry.contentRect.width);
-      }
-    });
-    if (parentRef) ro.observe(parentRef);
-    return () => ro.disconnect();
-  });
-
-  // Recompute how many chunks fit per line whenever container or chunk widths change.
-  createEffect(() => {
-    const cw = chunkWidth();
-    const cWidth = containerWidth();
-    if (cw > 0 && cWidth > 0) {
-      const count = Math.floor(cWidth / cw);
-      setChunksPerLine(count);
-      if (count < 2) setLineCount(65536 / 4 + 1);
-      else setLineCount(Math.ceil(65536 / 4 / (count - 1)));
-    }
-  });
-
-  const rowVirtualizer = createVirtualizer({
-    get count() {
-      return lineCount();
-    },
-    getScrollElement: () => parentRef ?? null,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 5,
-  });
-
-  const [activeTab, setActiveTab] = createSignal(".text");
-
-  // Scroll to last line on mount and when lineCount updates
-  createEffect(() => {
-    if (parentRef) {
-      if (activeTab() == "stack") {
-        const lastIndex = lineCount() - 1;
-        rowVirtualizer.scrollToIndex(lastIndex);
-      } else {
-        rowVirtualizer.scrollToIndex(0);
-      }
-    }
-  });
-
-  const getStartAddr = () => {
-    if (activeTab() == ".text") return 0x00400000;
-    else if (activeTab() == ".data") return 0x10000000;
-    else if (activeTab() == "stack") return 0x7FFFF000 - 65536; // TODO: runtime stack size detection
-    return 0;
-  }
-  return (
-    <div class="h-full flex flex-col">
-      <div class="w-full">
-        <div class="w-full flex flex-wrap justify-stretch theme-bg theme-fg">
-          {[".text", ".data", "stack"].map((tab) => (
-            <button
-              class={`grow text-center px-2 font-semibold ${activeTab() === tab ? "border-b-2 theme-bg theme-fg" : "border-b-1 theme-fg2"}`}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div ref={parentRef} class=" overflow-auto theme-scrollbar px-2">
-        <div ref={dummyChunk} class="invisible absolute font-mono">
-          {"000000000"}
-        </div>
-        <div
-          style={{
-            height: `${rowVirtualizer.getTotalSize()}px`,
-            width: "100%",
-            position: "relative",
-          }}
-        >
-          <For each={rowVirtualizer.getVirtualItems()}>
-            {(virtualItem) => (
-              <div
-                style={{
-                  position: "absolute",
-                  top: `${virtualItem.start}px`,
-                  width: "100%",
-                }}
-              >
-                <div class="font-mono">
-                  <Show when={chunksPerLine() > 1}>
-                    <a class="theme-fg2 pr-2">
-                      {(getStartAddr() + virtualItem.index * (chunksPerLine() - 1) * 4)
-                        .toString(16)
-                        .padStart(8, "0")}
-                    </a>
-                  </Show>
-                  {(() => {
-                    let start = getStartAddr();
-                    dummy();
-                    let components = [];
-                    let chunks = chunksPerLine() - 1;
-                    if (chunksPerLine() < 2) chunks = 1;
-                    for (let i = 0; i < chunks; i++) {
-                      for (let j = 0; j < 4; j++) {
-                        let text = "00";
-                        let style = "";
-                        if (wasmInterface.memWrittenAddr) {
-                          let ptr = start + (virtualItem.index * chunks + i) * 4 + j;
-                          let isAnimated =
-                            ptr >= wasmInterface.memWrittenAddr[0] &&
-                            ptr <
-                            wasmInterface.memWrittenAddr[0] +
-                            wasmInterface.memWrittenLen[0];
-                          let fp = wasmInterface.regsArr[8 - 1];
-                          let sp = wasmInterface.regsArr[2 - 1];
-                          let isFrame = ptr < fp && ptr >= sp;
-                          if (isAnimated) style += "animate-fade-highlight ";
-                          if (isFrame) style += "frame-highlight";
-                          text = wasmInterface.LOAD(ptr, 0)
-                            .toString(16)
-                            .padStart(2, "0");
-                        }
-                        components.push(<a class={style}>{text}</a>);
-                        if (j == 3) components.push(<a class="pr-1" />);
-                      }
-                    }
-                    return components;
-                  })()}
-                </div>
-              </div>
-            )}
-          </For>
-        </div>
-      </div>
-    </div>
-
-  );
-};
-
-function PaneResize(
-  firstSize: number,
-  direction: "vertical" | "horizontal",
-  a: JSX.Element,
-  b: JSX.Element,
-): JSX.Element {
-  let handle: HTMLDivElement | undefined;
-  let container: HTMLDivElement | undefined;
-
-  const [size, setSize] = createSignal<number>(0);
-  const [containerSize, setContainerSize] = createSignal<number>(0);
-
-  const [resizeState, setResizeState] = createSignal<{
-    origSize: number;
-    orig: number;
-  } | null>(null);
-
-  const resizeUp = (e: MouseEvent | TouchEvent) => {
-    setResizeState(null);
-    document.body.style.pointerEvents = "";
-    document.body.style.userSelect = "";
-    handle!.style.pointerEvents = "";
-  };
-
-  const resizeDown = (e: MouseEvent | TouchEvent) => {
-    e.preventDefault();
-    document.body.style.pointerEvents = "none";
-    document.body.style.userSelect = "none";
-    handle!.style.pointerEvents = "auto";
-    const client =
-      direction == "vertical"
-        ? (e as MouseEvent).clientY ?? (e as TouchEvent).touches[0]?.clientY
-        : (e as MouseEvent).clientX ?? (e as TouchEvent).touches[0]?.clientX;
-    setResizeState({ origSize: size(), orig: client });
-  };
-
-  const resizeMove = (e: MouseEvent | TouchEvent) => {
-    if (resizeState() === null) return;
-    const client =
-      direction == "vertical"
-        ? (e as MouseEvent).clientY ?? (e as TouchEvent).touches[0]?.clientY
-        : (e as MouseEvent).clientX ?? (e as TouchEvent).touches[0]?.clientX;
-    const calcSize = resizeState()!.origSize + (client - resizeState()!.orig);
-    const dim = direction == "vertical"
-      ? container!.clientHeight
-      : container!.clientWidth;
-    setSize(Math.max(0, Math.min(calcSize, dim - 4)));
-  };
-
-  const updateSize = () => {
-    const newSize =
-      direction == "vertical"
-        ? container!.clientHeight
-        : container!.clientWidth;
-    if (newSize === 0) return;
-    setSize((size() / containerSize()) * newSize);
-    setContainerSize(newSize);
-  };
-
-  onMount(() => {
-    const initialSize =
-      direction == "vertical"
-        ? container!.clientHeight
-        : container!.clientWidth;
-    setSize(initialSize * firstSize);
-    setContainerSize(initialSize);
-
-    const ro = new ResizeObserver(() => updateSize());
-    ro.observe(container!);
-
-    document.addEventListener("mousemove", resizeMove);
-    document.addEventListener("touchmove", resizeMove);
-    document.addEventListener("mouseup", resizeUp);
-    document.addEventListener("touchend", resizeUp);
-    onCleanup(() => {
-      ro.disconnect();
-      document.removeEventListener("mousemove", resizeMove);
-      document.removeEventListener("touchmove", resizeMove);
-      document.removeEventListener("mouseup", resizeUp);
-      document.removeEventListener("touchend", resizeUp);
-    });
-  });
-
-  return (
-    <div
-      class="flex w-full h-full max-h-full max-w-full theme-fg theme-bg"
-      ref={container}
-      classList={{
-        "flex-col": direction == "vertical",
-        "flex-row": direction == "horizontal",
-      }}
-    >
-      <div
-        class="theme-bg theme-fg flex-shrink overflow-hidden"
-        style={{
-          height: direction == "vertical" ? `${size()}px` : "auto",
-          "min-height": direction == "vertical" ? `${size()}px` : "auto",
-          width: direction == "horizontal" ? `${size()}px` : "auto",
-          "min-width": direction == "horizontal" ? `${size()}px` : "auto",
-        }}
-      >
-        {a}
-      </div>
-      <div
-        on:mousedown={resizeDown}
-        on:touchstart={resizeDown}
-        ref={handle}
-        style={{ "flex-shrink": 0 }}
-        class={
-          direction == "vertical"
-            ? "w-full h-[4px] theme-separator cursor-row-resize"
-            : "h-full w-[4px] theme-separator cursor-col-resize"
-        }
-      ></div>
-      <div class="theme-bg theme-fg flex-grow flex-shrink overflow-hidden">
-        {b}
-      </div>{" "}
-    </div>
-  );
-}
 
 function setBreakpoints(): void {
   breakpointSet = new Set();
@@ -697,7 +348,14 @@ const App: Component = () => {
           PaneResize(
             0.75,
             "vertical",
-            PaneResize(0.55, "horizontal", <RegisterTable />, <MemoryView />),
+            PaneResize(0.55, "horizontal",
+              <RegisterTable pc={wasmInterface.pc ? wasmInterface.pc[0] : 0} regs={wasmInterface.regArr} regWritten={wasmInterface.regWritten ? wasmInterface.regWritten[0] : 0} />,
+              <MemoryView dummy={dummy()}
+                writeAddr={wasmInterface.memWrittenAddr ? wasmInterface.memWrittenAddr[0] : 0}
+                writeLen={wasmInterface.memWrittenLen ? wasmInterface.memWrittenLen[0] : 0}
+                sp={wasmInterface.regArr ? wasmInterface.regArr[2-1] : 0}
+                load={wasmInterface.LOAD}
+              />),
             <div
               innerText={consoleText() ? consoleText() : "Console output will go here..."}
               class={"w-full h-full overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}

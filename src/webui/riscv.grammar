@@ -1,4 +1,4 @@
-@top File { (Instruction | Number | Register | Directive | String)* }
+@top File { (Instruction | Label | Number | Register | Directive | String)* }
 
 @skip { spaces | newline | LineComment | BlockComment }
 
@@ -10,6 +10,10 @@
   blockCommentEnd { "*/" }
   blockCommentNewline { "\n" }
   @else blockCommentContent
+}
+
+Label {
+  Identifier ":"  // only this pattern is treated as a label
 }
 
 @tokens {
@@ -34,6 +38,10 @@
       "ecall"
     ) (spaces | newline | @eof)
   }
+
+  Identifier { $[_a-zA-Z] $[_a-zA-Z0-9]* }
+  @precedence { Instruction, Register, Identifier, Number }
+
   Register {
     "x"$[0-9] | "x"$[1-2]$[0-9] | "x3"$[0-1] |
     "zero" | "ra" | "sp" | "gp" | "tp" | "fp" |

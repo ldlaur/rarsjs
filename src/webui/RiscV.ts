@@ -35,7 +35,7 @@ export class WasmInterface {
   public pc?: Uint32Array;
   public textByLinenum?: Uint32Array;
   public textByLinenumLen?: Uint32Array;
-  public regArr: Array<number> = new Array(31);
+  public regArr: Array<number> = new Array(31).fill(0);
   public runtimeErrorAddr?: Uint32Array;
   public runtimeErrorType?: Uint32Array;
   public LOAD: (addr: number, pow: number) => number;
