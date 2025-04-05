@@ -80,7 +80,6 @@ static void c_build(command_t *self) {
 
     fwrite(elf_contents, elf_sz, 1, out);
     fclose(out);
-
 }
 
 static void c_run(command_t *self) {
@@ -121,7 +120,7 @@ static void c_emulate(command_t *self) {
 
     uint32_t addr;
     g_pc = TEXT_BASE;
-    if (resolve_symbol("_start", strlen("_start"), true, &addr)) {
+    if (resolve_symbol("_start", strlen("_start"), true, &addr, NULL)) {
         g_pc = addr;
     }
 
@@ -213,11 +212,40 @@ static void c_output(command_t *self) {
     g_exec_out = self->arg;
 }
 
+static void c_assemble(command_t *self) {
+    assemble_from_file(self->arg);
+
+    if (g_error) {
+        return;
+    }
+
+    void *elf_contents = NULL;
+    size_t elf_sz = 0;
+    char *error = NULL;
+
+    if (!elf_emit_obj(&elf_contents, &elf_sz, &error)) {
+        fprintf(stderr, "assembler: %s\n", error);
+        return;
+    }
+
+    FILE *out = fopen(g_obj_out, "wb");
+
+    if (NULL == out) {
+        fprintf(stderr, "assembelr: could not open output file\n");
+        return;
+    }
+
+    fwrite(elf_contents, elf_sz, 1, out);
+    fclose(out);
+}
+
 int main(int argc, char **argv) {
     atexit(free_runtime);
     command_t cmd;
     // TODO: place real version number
     command_init(&cmd, argv[0], "0.0.1");
+    command_option(&cmd, "-a", "--assemble <file>",
+                   "assemble an RV32 assembly file and output an ELF32 relocatable object file", c_assemble);
     command_option(&cmd, "-b", "--build <file>",
                    "assemble an RV32 assembly file"
                    " and output an ELF32 executable",

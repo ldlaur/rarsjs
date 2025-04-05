@@ -66,12 +66,6 @@ typedef struct Parser {
     int startline;
 } Parser;
 
-typedef struct LabelData {
-    const char *txt;
-    size_t len;
-    u32 addr;
-} LabelData;
-
 typedef struct {
     const char *symbol;
     size_t len;
@@ -81,6 +75,7 @@ typedef struct {
     size_t offset;
     size_t size;
     Extern *symbol;
+    size_t type;
 } Relocation;
 
 typedef struct Section {
@@ -97,11 +92,21 @@ typedef struct Section {
         size_t len;
         size_t cap;
     } relocations;
+    struct {
+        size_t shidx;
+    } elf;
     bool read;
     bool write;
     bool execute;
     bool physical;
 } Section;
+
+typedef struct LabelData {
+    const char *txt;
+    size_t len;
+    u32 addr;
+    Section *section;
+} LabelData;
 
 typedef const char *DeferredInsnCb(Parser *p, const char *opcode, size_t opcode_len);
 
@@ -151,7 +156,7 @@ extern export int g_exit_code;
 
 void assemble(const char *, size_t);
 void emulate();
-bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr);
+bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr, Section **sec);
 void prepare_runtime_sections();
 void prepare_stack();
 void free_runtime();

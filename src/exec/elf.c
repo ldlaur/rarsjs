@@ -262,6 +262,7 @@ fail:
 // phdrs_start, shdrs_start, name_off are all byte offsets.
 // This functions also assumes that the names of relocation sections follow those of the relative section
 // withing the string table. E.g., .rela.text comes immediately after .text
+// NOTE: This function changes elf.shidx in each physical section in g_sections with len > 0
 static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_start, size_t *shdrs_start,
                       size_t *phnum, size_t *shnum, size_t *reloc_idx, size_t *reloc_num, size_t file_off,
                       size_t rsv_shdrs, size_t symtab_idx, bool use_phdrs, bool use_shdrs, char **error) {
@@ -329,7 +330,10 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_
     *out = region;
     *out_sz = region_sz;
     *phdrs_start = 0;
-    *shdrs_start = segments_count * sizeof(ElfProgramHeader) + segments_sz;
+    *shdrs_start = segments_sz;
+    if (use_phdrs) {
+        *shdrs_start += segments_count * sizeof(ElfProgramHeader);
+    }
     *phnum = segments_count;
     *shnum = sections_count;
 
@@ -386,6 +390,7 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_
         }
         WRITE_BUF(region, s->buf, s->len, &segment_off);
         if (use_shdrs) {
+            s->elf.shidx = shdrs_i;
             *(name_off) += strlen(s->name);
             WRITE(region, &sec_header, &shdrs_off);
         }
@@ -494,6 +499,66 @@ fail:
     return false;
 }
 
+static bool make_symtab(u8 **out, size_t *out_sz, size_t *ent_num, size_t name_off, char **error) {
+    size_t symtab_sz = sizeof(ElfSymtabEntry) * (1 + g_externs_len + g_globals_len);
+    ElfSymtabEntry *symtab = malloc(symtab_sz);
+    CHK_OOM(symtab, error);
+
+    *out = (u8 *)symtab;
+    *out_sz = symtab_sz;
+
+    ElfSymtabEntry null_e = {0};
+    null_e.shent_idx = SHN_UNDEF;
+    symtab[0] = null_e;
+
+    size_t symtab_i = 1;
+
+    for (size_t i = 0; i < g_externs_len; i++, symtab_i++) {
+        Extern *e = &g_externs[i];
+        ElfSymtabEntry *sym = &symtab[symtab_i];
+        sym->name_off = name_off;
+        sym->shent_idx = SHN_UNDEF;
+        sym->other = 0;
+        sym->size = 0;
+        sym->value = 0;
+        sym->info = ELF32_ST_INFO(STB_GLOBAL, STT_NOTYPE);
+        name_off += e->len;
+    }
+
+    for (size_t i = 0; i < g_globals_len; i++, symtab_i++) {
+        Global *g = &g_globals[i];
+        ElfSymtabEntry *sym = &symtab[symtab_i];
+        sym->name_off = name_off;
+        sym->other = 0;
+        sym->size = 0;
+
+        u32 addr = 0;
+        Section *sec = NULL;
+
+        if (!resolve_symbol(g->str, g->len, true, &addr, &sec)) {
+            *error = "symbol is declared global but never defined";
+            goto fail;
+        }
+
+        sym->shent_idx = sec->elf.shidx;
+        sym->value = addr - sec->base;
+        sym->info = ELF32_ST_INFO(STB_GLOBAL, STT_NOTYPE);
+        name_off += g->len;
+    }
+
+    *ent_num = symtab_i;
+    return true;
+
+fail:
+    free(symtab);
+    return false;
+}
+
+static bool make_rela(u8 **out, size_t *out_sz, char **error) {
+fail:
+    return false;
+}
+
 bool elf_emit_exec(void **out, size_t *len, char **error) {
     char *strtab = NULL;
     u8 *core = NULL;
@@ -506,7 +571,7 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
     size_t shnum = 0;
 
     u32 entrypoint;
-    if (!resolve_symbol("_start", strlen("_start"), true, &entrypoint)) {
+    if (!resolve_symbol("_start", strlen("_start"), true, &entrypoint, NULL)) {
         *error = "unresolved reference to `_start`";
         return false;
     }
@@ -537,7 +602,7 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
     ElfSectionHeader *shdrs = (ElfSectionHeader *)(core + shdrs_start);
     shdrs[1] = (ElfSectionHeader){.name_off = 1,
                                   .type = SHT_STRTAB,
-                                  .flags = SHF_STRINGS,
+                                  .flags = 0,
                                   .off = sizeof(ElfHeader) + core_sz,
                                   .virt_addr = 0,
                                   .mem_sz = strtab_sz,
@@ -562,6 +627,96 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
 fail:
     free(strtab);
     free(core);
+    free(elf_contents);
+    return false;
+}
+
+bool elf_emit_obj(void **out, size_t *len, char **error) {
+    char *strtab = NULL;
+    u8 *core = NULL;
+    u8 *symtab = NULL;
+    size_t strtab_sz = 0;
+    size_t core_sz = 0;
+    size_t name_off = 17;
+    size_t phdrs_start = 0;
+    size_t shdrs_start = 0;
+    size_t phnum = 0;
+    size_t shnum = 0;
+    size_t reloc_idx = 0;
+    size_t reloc_num = 0;
+    size_t symtab_sz = 0;
+    size_t symtab_entnum = 0;
+
+    CHK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error));
+    CHK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start, &phnum, &shnum, &reloc_idx, &reloc_num,
+                       sizeof(ElfHeader), 2, 0, false, true, error));
+    CHK_CALL(make_symtab(&symtab, &symtab_sz, &symtab_entnum, name_off + 1, error));
+
+    ElfHeader e_hdr = {.magic = {0x7F, 'E', 'L', 'F'},                // ELF magic
+                       .bits = 1,                                     // 32 bits
+                       .endianness = 1,                               // little endian
+                       .ehdr_ver = 1,                                 // ELF header version 1
+                       .abi = 0,                                      // System V ABI
+                       .type = 1,                                     // Executable
+                       .isa = 0xF3,                                   // Arch = RISC-V
+                       .elf_ver = 1,                                  // ELF version 1
+                       .entry = 0,                                    // Program entrypoint
+                       .phdrs_off = 0,                                // Start offset of program header tabe
+                       .phent_num = 0,                                // 2 program headers
+                       .phent_sz = 0,                                 // Size of each program header table entry
+                       .shdrs_off = sizeof(ElfHeader) + shdrs_start,  // Start offset of section header table
+                       .shent_num = shnum,                            // 2 sections (.text, .data)
+                       .shent_sz = sizeof(ElfSectionHeader),          // Size of each section header
+                       .ehdr_sz = sizeof(ElfHeader),                  // Size of the ELF ehader
+                       .flags = 0,                                    // Flags
+                       .shdr_str_idx = 1};
+
+    ElfSectionHeader *shdrs = (ElfSectionHeader *)(core + shdrs_start);
+    shdrs[1] = (ElfSectionHeader){.name_off = 1,
+                                  .type = SHT_STRTAB,
+                                  .flags = 0,
+                                  .off = sizeof(ElfHeader) + core_sz,
+                                  .virt_addr = 0,
+                                  .mem_sz = strtab_sz,
+                                  .align = 1,
+                                  .link = 0,
+                                  .ent_sz = 0};
+    shdrs[2] = (ElfSectionHeader){.name_off = 9,
+                                  .type = SHT_SYMTAB,
+                                  .flags = 0,
+                                  .info = symtab_entnum,
+                                  .off = sizeof(ElfHeader) + core_sz + strtab_sz,
+                                  .virt_addr = 0,
+                                  .mem_sz = symtab_sz,
+                                  .align = 1,
+                                  .link = 1,
+                                  .ent_sz = sizeof(ElfSymtabEntry)};
+
+    u8 *elf_contents = malloc(sizeof(ElfHeader) + core_sz + strtab_sz + symtab_sz);
+    CHK_OOM(elf_contents, error);
+    size_t elf_off = 0;
+
+    WRITE(elf_contents, &e_hdr, &elf_off);
+    WRITE_BUF(elf_contents, core, core_sz, &elf_off);
+    WRITE_BUF(elf_contents, strtab, strtab_sz, &elf_off);
+    WRITE_BUF(elf_contents, symtab, symtab_sz, &elf_off);
+
+    for (size_t i = reloc_idx; i < reloc_idx + reloc_num; i++) {
+        // TODO: Make rela sections
+    }
+
+    *out = elf_contents;
+    *len = elf_off;
+
+    free(core);
+    free(strtab);
+    free(symtab);
+    return true;
+
+fail:
+    free(strtab);
+    free(core);
+    free(symtab);
     free(elf_contents);
     return false;
 }

@@ -1,6 +1,5 @@
 #include "rarsjs/core.h"
 
-
 export Section g_text, g_data, g_stack;
 
 Section **g_sections;
@@ -100,7 +99,9 @@ bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' ' || c == '\r'
 bool trailing(char c) { return c == '\t' || c == ' '; }
 
 bool digit(char c) { return (c >= '0' && c <= '9'); }
-bool ident(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_') || (c == '.'); }
+bool ident(char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_') || (c == '.');
+}
 
 void advance(Parser *p) {
     if (p->pos >= p->size) return;
@@ -855,10 +856,10 @@ export void assemble(const char *txt, size_t s) {
                 continue;
             } else if (str_eq(directive, directive_len, "globl")) {
                 skip_trailing(p);
-                const char* ident;
+                const char *ident;
                 size_t ident_len;
                 parse_ident(p, &ident, &ident_len);
-                *push(g_globals, g_globals_len, g_globals_cap) = (Global) { .str = ident, .len = ident_len };
+                *push(g_globals, g_globals_len, g_globals_cap) = (Global){.str = ident, .len = ident_len};
                 continue;
             } else if (str_eq(directive, directive_len, "byte")) {
                 i32 value;
@@ -964,12 +965,13 @@ export void assemble(const char *txt, size_t s) {
 
         const char *ident, *opcode;
         size_t ident_len, opcode_len;
-        parse_ident(p, &ident, &ident_len); 
+        parse_ident(p, &ident, &ident_len);
         skip_trailing(p);
 
         if (consume_if(p, ':')) {
             u32 addr = g_section->emit_idx + g_section->base;
-            *push(g_labels, g_labels_len, g_labels_cap) = (LabelData){.txt = ident, .len = ident_len, .addr = addr};
+            *push(g_labels, g_labels_len, g_labels_cap) =
+                (LabelData){.txt = ident, .len = ident_len, .addr = addr, .section = g_section};
             continue;
         }
 
@@ -1018,7 +1020,7 @@ export void assemble(const char *txt, size_t s) {
 
     // FIXME: should i return a warning if _start is not present
     // or quietly continue?
-    resolve_symbol("_start", strlen("_start"), true, &g_pc);
+    resolve_symbol("_start", strlen("_start"), true, &g_pc, NULL);
 }
 
 static inline i32 SIGN(int bits, u32 x) {
@@ -1311,7 +1313,7 @@ exit:
     g_reg_written = rd;
 }
 
-bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr) {
+bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr, Section **sec) {
     LabelData *ret = NULL;
     for (size_t i = 0; i < g_labels_len; i++) {
         LabelData *l = &g_labels[i];
@@ -1324,12 +1326,14 @@ bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr) {
         for (size_t i = 0; i < g_globals_len; i++)
             if (str_eq_2(sym, sym_len, g_globals[i].str, g_globals[i].len)) {
                 *addr = ret->addr;
+                if (sec) { *sec = ret->section; }
                 return true;
             }
         return false;
     }
     if (ret) {
         *addr = ret->addr;
+        if (sec) { *sec = ret->section; }
         return true;
     }
     return false;
