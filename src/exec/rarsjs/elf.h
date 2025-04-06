@@ -2641,6 +2641,33 @@ typedef struct {
 } ReadElfSection;
 
 typedef struct {
+    const char *name;
+    const char *type;
+    const char *bind;
+    const char *visibility;
+    const char *section;
+    ElfSymtabEntry *entry;
+} ReadElfSymtabEntry;
+
+typedef struct {
+    const char *name;
+    ElfSectionHeader *shdr;
+    ReadElfSymtabEntry *entries;
+} ReadElfSymtab;
+
+typedef struct {
+    const char *type;
+    const char *symbol;
+    ElfRelaEntry *entry;
+} ReadElfRelaEntry;
+
+typedef struct {
+    const char *name;
+    size_t num_entries;
+    ReadElfRelaEntry *entries;
+} REadElfRelaSection;
+
+typedef struct {
     ElfHeader *ehdr;
     const u8 *magic8;
     const char *class;
@@ -2650,6 +2677,10 @@ typedef struct {
     const char *architecture;
     ReadElfSegment *phdrs;
     ReadElfSection *shdrs;
+    size_t num_symtabs;
+    ReadElfSymtab *symtab;
+    size_t num_relas;
+    REadElfRelaSection *relas;
 } ReadElfResult;
 
 bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, char **error);

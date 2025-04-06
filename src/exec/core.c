@@ -1,5 +1,9 @@
 #include "rarsjs/core.h"
 
+#include <stddef.h>
+
+#include "rarsjs/elf.h"
+
 export Section g_text, g_data, g_stack;
 
 Section **g_sections;
@@ -345,6 +349,108 @@ void asm_emit(u32 inst, int linenum) {
     asm_emit_byte(inst >> 24, linenum);
 }
 
+static Extern *get_extern(const char *sym, size_t sym_len) {
+    for (size_t i = 0; i < g_externs_len; i++) {
+        if (g_externs[i].len == sym_len && 0 == memcmp(sym, g_externs[i].symbol, sym_len)) {
+            return &g_externs[i];
+        }
+    }
+    Extern *e = push(g_externs, g_externs_len, g_externs_cap);
+    e->symbol = sym;
+    e->len = sym_len;
+    return e;
+}
+
+const char *reloc_branch(const char *sym, size_t sym_len) {
+    Extern *e = get_extern(sym, sym_len);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx;
+    r->type = R_RISCV_BRANCH;
+    return NULL;
+}
+
+const char *reloc_jal(const char *sym, size_t sym_len) {
+    Extern *e = get_extern(sym, sym_len);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx;
+    r->type = R_RISCV_JAL;
+    return NULL;
+}
+
+const char *reloc_hi20(const char *sym, size_t sym_len) {
+    Extern *e = get_extern(sym, sym_len);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx;
+    r->type = R_RISCV_HI20;
+    return NULL;
+}
+
+const char *reloc_lo12i(const char *sym, size_t sym_len) {
+    Extern *e = get_extern(sym, sym_len);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx;
+    r->type = R_RISCV_LO12_I;
+    return NULL;
+}
+
+const char *reloc_lo12s(const char *sym, size_t sym_len) {
+    Extern *e = get_extern(sym, sym_len);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx;
+    r->type = R_RISCV_LO12_S;
+    return NULL;
+}
+
+const char *reloc_hi20lo12i(const char *sym, size_t sym_len) {
+    Extern *e = get_extern(sym, sym_len);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx;
+    r->type = R_RISCV_HI20;
+    r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx + 4;
+    r->type = R_RISCV_LO12_I;
+    return NULL;
+}
+
+const char *reloc_hi20lo12s(const char *sym, size_t sym_len) {
+    Extern *e = get_extern(sym, sym_len);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx;
+    r->type = R_RISCV_HI20;
+    r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx + 4;
+    r->type = R_RISCV_LO12_S;
+    return NULL;
+}
+
+const char *reloc_abs32(const char *sym, size_t sym_len) {
+    Extern *e = get_extern(sym, sym_len);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r->symbol = e;
+    r->addend = 0;
+    r->offset = g_section->emit_idx;
+    r->type = R_RISCV_32;
+    return NULL;
+}
+
 const char *handle_alu_reg(Parser *p, const char *opcode, size_t opcode_len) {
     int d, s1, s2;
 
@@ -455,7 +561,7 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
 }
 
 const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcode, size_t opcode_len, u32 *out_addr,
-                  bool *later) {
+                  bool *later, DeferredInsnReloc *reloc) {
     *later = false;
     const char *target;
     size_t target_len;
@@ -469,11 +575,15 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcod
             return NULL;
         }
     }
-    if (g_in_fixup) return "Label not found";
+    if (g_in_fixup && !reloc) return "Label not found";
+    if (g_in_fixup) {
+        return reloc(target, target_len);
+    }
     DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
     insn->emit_idx = g_text.emit_idx;
     insn->p = *orig;
     insn->cb = cb;
+    insn->reloc = reloc;
     insn->opcode = opcode;
     insn->opcode_len = opcode_len;
     insn->section = g_section;
@@ -498,7 +608,7 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_branch, opcode, opcode_len, &addr, &later);
+    const char *err = label(p, &orig, handle_branch, opcode, opcode_len, &addr, &later, reloc_branch);
     if (err) return err;
     if (later) {
         asm_emit(0, p->startline);
@@ -533,7 +643,7 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_branch_zero, opcode, opcode_len, &addr, &later);
+    const char *err = label(p, &orig, handle_branch_zero, opcode, opcode_len, &addr, &later, reloc_branch);
     if (err) return err;
     if (later) {
         asm_emit(0, p->startline);
@@ -601,7 +711,7 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     u32 addr;
-    err = label(p, &orig, handle_jump, opcode, opcode_len, &addr, &later);
+    err = label(p, &orig, handle_jump, opcode, opcode_len, &addr, &later, reloc_jal);
     if (err) return err;
     if (later) {
         asm_emit(0, p->startline);
@@ -716,7 +826,7 @@ const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
 
     u32 addr;
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_la, opcode, opcode_len, &addr, &later);
+    const char *err = label(p, &orig, handle_la, opcode, opcode_len, &addr, &later, reloc_hi20lo12i);
     if (later) {
         asm_emit(0, p->startline);
         asm_emit(0, p->startline);

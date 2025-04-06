@@ -113,11 +113,13 @@ typedef struct LabelData {
 } LabelData;
 
 typedef const char *DeferredInsnCb(Parser *p, const char *opcode, size_t opcode_len);
+typedef const char *DeferredInsnReloc(const char *sym, size_t sym_len);
 
 typedef struct DeferredInsn {
     Parser p;
     Section *section;
     DeferredInsnCb *cb;
+    DeferredInsnReloc *reloc;
     const char *opcode;
     size_t opcode_len;
     size_t emit_idx;
