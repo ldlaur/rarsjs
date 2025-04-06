@@ -6,6 +6,7 @@ export const lineHighlightState = StateField.define<DecorationSet>({
   create() {
     return Decoration.none;
   },
+  // NOTE: this only works if there is only one highlighted line!
   update(highlights, tr) {
     for (let effect of tr.effects) {
       if (effect.is(lineHighlightEffect)) {
@@ -21,8 +22,8 @@ export const lineHighlightState = StateField.define<DecorationSet>({
               line.from,
             ),
           ]);
-        }
-      } else return Decoration.none;
+        } else return Decoration.none;
+      }
     }
     return highlights.map(tr.changes);
   },

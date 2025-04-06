@@ -35,7 +35,6 @@ export class WasmInterface {
   public pc?: Uint32Array;
   public textByLinenum?: Uint32Array;
   public textByLinenumLen?: Uint32Array;
-  public regArr: Array<number> = new Array(31).fill(0);
   public runtimeErrorAddr?: Uint32Array;
   public runtimeErrorType?: Uint32Array;
   public LOAD: (addr: number, pow: number) => number;
@@ -127,15 +126,12 @@ export class WasmInterface {
       return { line: errorLine, message: errorStr };
     }
 
-    for (let i = 0; i < 31; i++) this.regArr[i] = this.regsArr[i];
-    
     return null;
   }
 
   run(setText: (str: string) => void): void {
     this.setText = setText;
     this.exports.emulate();
-    for (let i = 0; i < 31; i++) this.regArr[i] = this.regsArr[i];
     if (this.runtimeErrorType[0] != 0) {
       const errorType = this.runtimeErrorType[0];
       switch (errorType) {

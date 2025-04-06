@@ -39,8 +39,7 @@ export const riscvLanguage = LRLanguage.define({
 export const wasmInterface = new WasmInterface();
 
 export const [dummy, setDummy] = createSignal<number>(0);
-const [regsArray, setRegsArray] = createSignal<number[]>(new Array(31).fill(0));
-export const [wasmPc, setWasmPc] = createSignal<string>("0x00000000");
+export const [wasmPc, setWasmPc] = createSignal<number>(0);
 export const [debugMode, setDebugMode] = createSignal<boolean>(false);
 const [consoleText, setConsoleText] = createSignal<string>("");
 
@@ -238,7 +237,7 @@ function updateLineNumber() {
     });
   } else {
     view.dispatch({
-      effects: lineHighlightEffect.of(0),
+      effects: lineHighlightEffect.of(0), // disable the line highlight, as line numbering starts from1 
     });
   }
 }
@@ -259,9 +258,8 @@ async function runRiscV(): Promise<void> {
     wasmInterface.run(setConsoleText);
   }
 
+  setWasmPc(wasmInterface.pc[0]);
   setDummy(dummy() + 1);
-  setRegsArray([...wasmInterface.regArr]);
-  setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
   updateLineNumber();
 }
 
@@ -275,21 +273,19 @@ async function startStepRiscV(): Promise<void> {
   setDebugMode(true);
   setConsoleText("");
   setBreakpoints();
+
+  setWasmPc(wasmInterface.pc[0]);
   setDummy(dummy() + 1);
-  setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
   updateLineNumber();
 }
 
 function singleStepRiscV(): void {
   if (!wasmInterface.stopExecution) {
     wasmInterface.run(setConsoleText);
+    setDebugMode(!wasmInterface.stopExecution);
+    setWasmPc(wasmInterface.pc[0]);
     setDummy(dummy() + 1);
-    setRegsArray([...wasmInterface.regArr]);
-    setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
     updateLineNumber();
-    if (wasmInterface.stopExecution) {
-      setDebugMode(false);
-    }
   }
 }
 
@@ -297,10 +293,9 @@ function continueStepRiscV(): void {
   while (1) {
     setBreakpoints();
     wasmInterface.run(setConsoleText);
+    setDebugMode(!wasmInterface.stopExecution);
+    setWasmPc(wasmInterface.pc[0]);
     setDummy(dummy() + 1);
-    setRegsArray([...wasmInterface.regArr]);
-    setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
-    setDebugMode(wasmInterface.stopExecution);
     updateLineNumber();
     if (breakpointSet.has(wasmInterface.pc[0])) break;
     if (wasmInterface.stopExecution) {
@@ -336,7 +331,6 @@ const App: Component = () => {
   return (
     <div class="h-dvh max-h-dvh w-dvw max-w-dvw flex flex-col justify-between overflow-hidden">
       <Navbar />
-
       <div class="flex w-full h-full overflow-hidden">
         {PaneResize(
           0.5,
@@ -345,21 +339,23 @@ const App: Component = () => {
             class="w-full h-full overflow-hidden theme-scrollbar"
             ref={editor}
           />,
+          /* Reactivity is broken for both, for RegisterTable i'm using pc, and for MemoryView i'm using dummy */
           PaneResize(
             0.75,
             "vertical",
             PaneResize(0.55, "horizontal",
-              <RegisterTable pc={wasmInterface.pc ? wasmInterface.pc[0] : 0} regs={wasmInterface.regArr} regWritten={wasmInterface.regWritten ? wasmInterface.regWritten[0] : 0} />,
+              <RegisterTable pc={wasmPc()}
+                regs={wasmInterface.regsArr ? [...wasmInterface.regsArr] : new Array(31).fill(0)}
+                regWritten={wasmInterface.regWritten ? wasmInterface.regWritten[0] : 0} />,
               <MemoryView dummy={dummy()}
                 writeAddr={wasmInterface.memWrittenAddr ? wasmInterface.memWrittenAddr[0] : 0}
                 writeLen={wasmInterface.memWrittenLen ? wasmInterface.memWrittenLen[0] : 0}
-                sp={wasmInterface.regArr ? wasmInterface.regArr[2-1] : 0}
+                sp={wasmInterface.regsArr ? wasmInterface.regsArr[2 - 1] : 0}
                 load={wasmInterface.LOAD}
               />),
             <div
               innerText={consoleText() ? consoleText() : "Console output will go here..."}
-              class={"w-full h-full overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
-              style={{ "font-family": "monospace" }}
+              class={"w-full h-full font-mono overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
             ></div>
           ),
         )}
