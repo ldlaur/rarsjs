@@ -734,8 +734,8 @@ bool elf_emit_obj(void **out, size_t *len, char **error) {
                                   .ent_sz = 0};
     shdrs[2] = (ElfSectionHeader){.name_off = 9,
                                   .type = SHT_SYMTAB,
-                                  .flags = 0,
-                                  .info = symtab_entnum,
+                                  .flags = SHF_INFO_LINK,
+                                  .info = 1,
                                   .off = sizeof(ElfHeader) + core_sz + strtab_sz,
                                   .virt_addr = 0,
                                   .mem_sz = symtab_sz,
