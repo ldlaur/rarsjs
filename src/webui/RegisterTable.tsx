@@ -1,6 +1,6 @@
-import { Component, For } from "solid-js";
+import { Component, For, Index } from "solid-js";
 
-export const RegisterTable: Component<{pc: number, regs: number[], regWritten: number}> = (props) => {
+export const RegisterTable: Component<{ pc: number, regs: number[], regWritten: number }> = (props) => {
   const regnames = [
     "ra",
     "sp",
@@ -42,20 +42,21 @@ export const RegisterTable: Component<{pc: number, regs: number[], regWritten: n
       <div class="grid-cols-[repeat(auto-fit,minmax(20ch,1fr))] grid">
         <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch] ">
           <div class="self-center pl-[1ch] font-bold">pc</div>
-          <div class="self-center pr-[1ch]">{"0x"+props.pc.toString(16).padStart(8, "0")}</div>
+          <div class="self-center pr-[1ch]">{"0x" + props.pc.toString(16).padStart(8, "0")}</div>
         </div>
-        <For each={props.regs}>
-          {(reg, idx) => (
+        {/* using Index here would optimize it, but it gets messy with animations
+            naively keeping it as is and making regWritten a signal would still cause everything to be recomputed
+        */}
+        {props.regs.map((reg, idx) => (
             <div class="justify-between flex flex-row box-content theme-border border-l border-b py-[0.5ch]">
               <div class="self-center pl-[1ch] font-bold">
-                {regnames[idx()]}/x{idx() + 1}
-            </div>
-              <div class={"self-center mr-[1ch] " + (idx() + 1 == props.regWritten ? "animate-fade-highlight" : "")}>
+                {regnames[idx]}/x{idx + 1}
+              </div>
+              <div class={"self-center mr-[1ch] " + (idx + 1 == props.regWritten ? "animate-fade-highlight" : "")}>
                 {"0x" + reg.toString(16).padStart(8, "0")}
               </div>
             </div>
-          )}
-        </For>
+          ))}
         {/* dummy left border of the last element */}
         <div class="theme-border border-l"></div>
       </div>

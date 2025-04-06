@@ -1,11 +1,12 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { Component, createSignal, onMount, createEffect, For, Show } from "solid-js";
 import { TabSelector } from "./TabSelector";
+import { dummy } from "./App";
 
 const ROW_HEIGHT: number = 24;
 
 // FIXME: dummy is a nuclear solution to force a reload
-export const MemoryView: Component<{ dummy: number, writeAddr: number, writeLen: number, sp: number, load: (addr: number, pow: number) => number | null }> = (props) => {
+export const MemoryView: Component<{ dummy: () => number, writeAddr: number, writeLen: number, sp: number, load: (addr: number, pow: number) => number | null }> = (props) => {
     let parentRef: HTMLDivElement | undefined;
     let dummyChunk: HTMLDivElement | undefined;
     const [containerWidth, setContainerWidth] = createSignal<number>(0);
@@ -84,6 +85,7 @@ export const MemoryView: Component<{ dummy: number, writeAddr: number, writeLen:
                                     </a>
                                 </Show>
                                 {(() => {
+                                    dummy();
                                     let start = getStartAddr();
                                     let components = [];
                                     let chunks = chunksPerLine() - 1;

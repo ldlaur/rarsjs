@@ -37,6 +37,7 @@ export class WasmInterface {
   public textByLinenumLen?: Uint32Array;
   public runtimeErrorAddr?: Uint32Array;
   public runtimeErrorType?: Uint32Array;
+  public hasError: boolean = false;
   public LOAD: (addr: number, pow: number) => number;
 
   constructor() {
@@ -87,6 +88,7 @@ export class WasmInterface {
     this.exports = this.wasmInstance.exports as unknown as WasmExports;
 
     this.stopExecution = false;
+    this.hasError = false;
     this.textBuffer = "";
 
     createU8(0).set(this.originalMemory);
@@ -142,6 +144,7 @@ export class WasmInterface {
       }
       setText(this.textBuffer);
       this.stopExecution = true;
+      this.hasError = true;
     }
   }
 }

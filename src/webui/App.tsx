@@ -40,6 +40,7 @@ export const wasmInterface = new WasmInterface();
 
 export const [dummy, setDummy] = createSignal<number>(0);
 export const [wasmPc, setWasmPc] = createSignal<number>(0);
+export const [wasmRegs, setWasmRegs] = createSignal<number[]>(new Array(31).fill(0));
 export const [debugMode, setDebugMode] = createSignal<boolean>(false);
 const [consoleText, setConsoleText] = createSignal<string>("");
 
@@ -161,6 +162,34 @@ function doChangeTheme(): void {
   updateCss();
 }
 
+window.addEventListener('keydown', (event) => {
+  if (debugMode() && event.altKey && event.key.toUpperCase() == 'S') {
+    event.preventDefault();
+    singleStepRiscV();
+  }
+  else if (debugMode() && event.altKey && event.key.toUpperCase() == 'N') {
+    event.preventDefault();
+    nextStepRiscV();
+  }
+  else if (debugMode() && event.altKey && event.key.toUpperCase() == 'F') {
+    event.preventDefault();
+    finishStepRiscV();
+  }
+  else if (debugMode() && event.altKey && event.key.toUpperCase() == 'C') {
+    event.preventDefault();
+    continueStepRiscV();
+  }
+  else if (event.altKey && event.key.toUpperCase() == 'R') {
+    event.preventDefault();
+    runRiscV();
+  }
+  else if (event.altKey && event.key.toUpperCase() == 'D') {
+    event.preventDefault();
+    startStepRiscV();
+  }
+});
+
+
 const Navbar: Component = () => {
   return (
     <nav class="sticky theme-gutter">
@@ -172,16 +201,30 @@ const Navbar: Component = () => {
           <div class="flex-shrink-0 mx-auto"></div>
           <Show when={debugMode()}>
             <button
+              on:click={nextStepRiscV}
+              class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+              title="Step over/Next (Alt-N)"
+            >
+              step_over
+            </button>
+            <button
               on:click={singleStepRiscV}
               class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-              title="Singlestep"
+              title="Step into (Alt-S)"
             >
-              arrow_downward_alt
+              step_into
+            </button>
+            <button
+              on:click={singleStepRiscV}
+              class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+              title="Step out/Finish (Alt-F)"
+            >
+              step_out
             </button>
             <button
               on:click={continueStepRiscV}
               class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-              title="Continue"
+              title="Continue (Alt-C)"
             >
               resume
             </button>
@@ -197,14 +240,14 @@ const Navbar: Component = () => {
           <button
             on:click={runRiscV}
             class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-            title="Run"
+            title="Run (Alt-R)"
           >
             play_circle
           </button>
           <button
             on:click={startStepRiscV}
             class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-            title="Start debug"
+            title="Debug (Alt-D)"
           >
             arrow_forward
           </button>
@@ -228,9 +271,9 @@ function setBreakpoints(): void {
   });
 }
 
-function updateLineNumber() {
+function updateLineNumber(error: boolean = false) {
   let linenoIdx = (wasmInterface.pc[0] - 0x00400000) / 4;
-  if (linenoIdx < wasmInterface.textByLinenumLen[0] && debugMode()) {
+  if (linenoIdx < wasmInterface.textByLinenumLen[0] && (debugMode() || error)) {
     let lineno = wasmInterface.textByLinenum[linenoIdx];
     view.dispatch({
       effects: lineHighlightEffect.of(lineno),
@@ -251,7 +294,8 @@ async function runRiscV(): Promise<void> {
     forceLinting(view);
     return;
   }
-
+  
+  setDebugMode(false);
   setConsoleText("");
 
   while (!wasmInterface.stopExecution) {
@@ -259,8 +303,9 @@ async function runRiscV(): Promise<void> {
   }
 
   setWasmPc(wasmInterface.pc[0]);
+  setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
   setDummy(dummy() + 1);
-  updateLineNumber();
+  updateLineNumber(wasmInterface.hasError);
 }
 
 async function startStepRiscV(): Promise<void> {
@@ -275,6 +320,7 @@ async function startStepRiscV(): Promise<void> {
   setBreakpoints();
 
   setWasmPc(wasmInterface.pc[0]);
+  setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
   setDummy(dummy() + 1);
   updateLineNumber();
 }
@@ -284,10 +330,14 @@ function singleStepRiscV(): void {
     wasmInterface.run(setConsoleText);
     setDebugMode(!wasmInterface.stopExecution);
     setWasmPc(wasmInterface.pc[0]);
+    setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
+
     setDummy(dummy() + 1);
     updateLineNumber();
   }
 }
+
+let temporaryBreakpoint: number | null = null;
 
 function continueStepRiscV(): void {
   while (1) {
@@ -295,13 +345,26 @@ function continueStepRiscV(): void {
     wasmInterface.run(setConsoleText);
     setDebugMode(!wasmInterface.stopExecution);
     setWasmPc(wasmInterface.pc[0]);
+    setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
+
     setDummy(dummy() + 1);
     updateLineNumber();
+    if (temporaryBreakpoint == wasmInterface.pc[0]) { temporaryBreakpoint = null; break; }
     if (breakpointSet.has(wasmInterface.pc[0])) break;
     if (wasmInterface.stopExecution) {
       break;
     }
   }
+}
+
+function nextStepRiscV(): void {
+  temporaryBreakpoint = wasmInterface.pc[0] + 4; // TODO: fix for 8byte pseudoinsns
+  continueStepRiscV();
+}
+
+function finishStepRiscV(): void {
+  temporaryBreakpoint = wasmInterface.regsArr[1 - 1]; // ra
+  continueStepRiscV();
 }
 
 const dummyIndent = indentService.of((context, pos) => {
@@ -346,15 +409,15 @@ const App: Component = () => {
             class="w-full h-full overflow-hidden theme-scrollbar"
             ref={editor}
           />,
-          /* Reactivity is broken for both, for RegisterTable i'm using pc, and for MemoryView i'm using dummy */
+          /* Reactivity is broken for both */
           PaneResize(
             0.75,
             "vertical",
             PaneResize(0.55, "horizontal",
               <RegisterTable pc={wasmPc()}
-                regs={wasmInterface.regsArr ? [...wasmInterface.regsArr] : new Array(31).fill(0)}
+                regs={wasmRegs()}
                 regWritten={wasmInterface.regWritten ? wasmInterface.regWritten[0] : 0} />,
-              <MemoryView dummy={dummy()}
+              <MemoryView dummy={dummy}
                 writeAddr={wasmInterface.memWrittenAddr ? wasmInterface.memWrittenAddr[0] : 0}
                 writeLen={wasmInterface.memWrittenLen ? wasmInterface.memWrittenLen[0] : 0}
                 sp={wasmInterface.regsArr ? wasmInterface.regsArr[2 - 1] : 0}

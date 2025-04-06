@@ -10,7 +10,7 @@ export const createAsmLinter = (wasmInterface: WasmInterface) => {
         const code = ev.state.doc.toString();
         let err = await wasmInterface.build(code);
         setDummy(dummy() + 1);
-        setWasmPc("0x" + wasmInterface.pc[0].toString(16).padStart(8, "0"));
+        setWasmPc(wasmInterface.pc[0]);
         if (err !== null)
           return [
             {
