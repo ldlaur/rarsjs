@@ -243,6 +243,27 @@ static void c_assemble(command_t *self) {
     fclose(out);
 }
 
+static void c_hexdump(command_t *self) {
+    FILE *file = fopen(self->arg, "rb");
+
+    if (NULL == file) {
+        fprintf(stderr, "hexdump: could not open file\n");
+        return;
+    }
+
+    u8 bytes[8];
+    size_t bytes_read = 0;
+    u32 off = 0;
+    while ((bytes_read = fread(bytes, 1, 8, file))) {
+        printf("%08x", off);
+        for (size_t i = 0; i < bytes_read; i++) {
+            printf(" %02x", bytes[i]);
+        }
+        printf("\n");
+        off += bytes_read;
+    }
+}
+
 int main(int argc, char **argv) {
     atexit(free_runtime);
     command_t cmd;
@@ -258,6 +279,7 @@ int main(int argc, char **argv) {
     command_option(&cmd, "-e", "--emulate <file>", "assemble and run an RV32 assembly file", c_emulate);
     command_option(&cmd, "-i", "--readelf <file>", "show information about ELF file", c_readelf);
     command_option(&cmd, "-o", "--output <file>", "choose output file name", c_output);
+    command_option(&cmd, "-x", "--hexdump <file>", "perform hexdump of file", c_hexdump);
     command_parse(&cmd, argc, argv);
 
     if (1 == argc) {
