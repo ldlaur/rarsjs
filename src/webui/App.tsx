@@ -17,14 +17,14 @@ import { lineHighlightEffect, lineHighlightState } from "./LineHighlight";
 import { breakpointGutter, breakpointState } from "./Breakpoint";
 import { createAsmLinter } from "./AssemblerErrors";
 import { forceLinting } from "@codemirror/lint";
-import { indentWithTab } from "@codemirror/commands"
+import { defaultKeymap, indentWithTab, insertNewlineAndIndent, insertNewlineKeepIndent } from "@codemirror/commands"
 
 import { WasmInterface } from "./RiscV";
 import { Settings } from "@uiw/codemirror-themes";
 
 import { parser } from "./riscv.grammar";
 import { highlighting } from "./GrammarHighlight";
-import { LRLanguage, LanguageSupport } from "@codemirror/language"
+import { LRLanguage, LanguageSupport, indentService } from "@codemirror/language"
 import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
@@ -304,6 +304,13 @@ function continueStepRiscV(): void {
   }
 }
 
+const dummyIndent = indentService.of((context, pos) => {
+  let line = context.lineAt(pos);
+  let prevLine = context.lineAt(line.from - 1);
+  let match = /^\s*/.exec(prevLine.text);
+  return match ? match[0].length : 0;
+});
+
 const App: Component = () => {
   let editor: HTMLDivElement | undefined;
 
@@ -315,14 +322,14 @@ const App: Component = () => {
     const state = EditorState.create({
       doc: "",
       extensions: [
-        new LanguageSupport(riscvLanguage),
+        new LanguageSupport(riscvLanguage, [dummyIndent]),
         createAsmLinter(wasmInterface),
         breakpointGutter, // must be first so it's the first gutter
         basicSetup,
         theme,
         cmTheme.of(gruvboxLight),
         [lineHighlightState],
-        keymap.of([indentWithTab]),
+        keymap.of([...defaultKeymap, indentWithTab]),
       ],
     });
     view = new EditorView({ state, parent: editor });
