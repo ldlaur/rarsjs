@@ -145,12 +145,12 @@ function updateCss(): void {
 `;
 }
 
-const [shadowStack, setShadowStack] = createSignal<{name: string, args: number[], sp: number}>(new Array());
+const [shadowStack, setShadowStack] = createSignal<{name: string, args: number[], sp: number}[]>(new Array());
 function stackPush(c: number) {
    let pc = wasmInterface.pc[0];
    let name = "fact";
    let sp = wasmInterface.pc[2-1];
-   let args = wasmInterface.regsArr.slice(10-1, 18-1);
+   let args = Array.from(wasmInterface.regsArr.slice(10-1, 18-1));
    setShadowStack([...shadowStack(), {name: name, args: args, sp: sp}]); 
    console.log(shadowStack());
 }
