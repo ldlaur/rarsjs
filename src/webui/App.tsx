@@ -87,7 +87,7 @@ function updateCss(): void {
   background-color: ${interpolate(
     cssTheme.background,
     cssTheme.foreground,
-    0.1)};
+    0.2)};
 }
 .theme-bg-active:active {
   background-color: ${interpolate(
@@ -217,51 +217,51 @@ const Navbar: Component = () => {
           <Show when={debugMode()}>
             <button
               on:click={nextStepRiscV}
-              class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+              class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
               title="Step over/Next (Alt-N)"
             >
               step_over
             </button>
             <button
               on:click={singleStepRiscV}
-              class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+              class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
               title="Step into (Alt-S)"
             >
               step_into
             </button>
             <button
               on:click={singleStepRiscV}
-              class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+              class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
               title="Step out/Finish (Alt-F)"
             >
               step_out
             </button>
             <button
               on:click={continueStepRiscV}
-              class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+              class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
               title="Continue (Alt-C)"
             >
               resume
             </button>
-            <div class="flex-shrink-0 mx-auto"></div>
+            <div class="cursor-pointer flex-shrink-0 mx-auto"></div>
           </Show>
           <button
             on:click={doChangeTheme}
-            class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+            class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
             title="Change theme"
           >
             dark_mode
           </button>
           <button
             on:click={runRiscV}
-            class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+            class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
             title="Run (Alt-R)"
           >
             play_circle
           </button>
           <button
             on:click={startStepRiscV}
-            class="flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+            class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
             title="Debug (Alt-D)"
           >
             arrow_forward
