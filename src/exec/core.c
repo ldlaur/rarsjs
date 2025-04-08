@@ -1192,7 +1192,8 @@ void emulate() {
 
     if (inst == 0x73) { do_syscall(); g_pc += 4; g_reg_written = 0; return; }
     u32 rd = BITS(11, 7);
-    u32 S1 = g_regs[BITS(19, 15)], S2 = g_regs[BITS(24, 20)], *D = &g_regs[rd];
+    u32 rs1 = BITS(19, 15);
+    u32 S1 = g_regs[rs1], S2 = g_regs[BITS(24, 20)], *D = &g_regs[rd];
     u32 T = 0;
     u32 F7 = BITS(31, 25), F6 = F7 >> 1;
 
@@ -1225,8 +1226,22 @@ void emulate() {
 
     if ((opcode2 & 0b11111) == 0b01101) { *D = imm20_up; goto end; } // LUI
     if ((opcode2 & 0b11111) == 0b00101) { *D = g_pc + imm20_up; goto end; } // AUIPC
-    if ((opcode2 & 0b11111) == 0b11011) { *D = g_pc + 4; g_pc += jal_imm; goto exit; } // JAL
-    if ((opcode2 & 0b11111) == 0b11001) { *D = g_pc + 4; g_pc = S1 + imm12_ext; goto exit; } // JALR
+    if ((opcode2 & 0b11111) == 0b11011) { 
+        *D = g_pc + 4;
+        g_pc += jal_imm;
+        if (rd == 1) {
+            shadowstack_push(g_pc);
+        }
+        goto exit;
+    } // JAL
+    if ((opcode2 & 0b11111) == 0b11001) { 
+        *D = g_pc + 4;
+        g_pc = S1 + imm12_ext;
+        // TODO: on pop, check that the addresses match
+        if (rd == 1) shadowstack_push(g_pc);
+        if (rd == 0 && rs1 == 1) shadowstack_pop(); // jr ra/ret
+        goto exit;
+    } // JALR
 
     if ((opcode & 0b1111) == 0b1100) {
         if ((opcode>>5) == 0) T = S1 == S2;
@@ -1377,3 +1392,5 @@ void free_runtime() {
     free(g_deferred_insns);
     free(g_globals);
 }
+
+

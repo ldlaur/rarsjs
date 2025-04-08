@@ -145,6 +145,21 @@ function updateCss(): void {
 `;
 }
 
+const [shadowStack, setShadowStack] = createSignal<{name: string, args: number[], sp: number}>(new Array());
+function stackPush(c: number) {
+   let pc = wasmInterface.pc[0];
+   let name = "fact";
+   let sp = wasmInterface.pc[2-1];
+   let args = wasmInterface.regsArr.slice(10-1, 18-1);
+   setShadowStack([...shadowStack(), {name: name, args: args, sp: sp}]); 
+   console.log(shadowStack());
+}
+
+function stackPop() {
+    setShadowStack(shadowStack().slice(0, -1));
+    console.log(shadowStack());
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   themeStyle = document.createElement("style");
   document.head.appendChild(themeStyle);
@@ -299,7 +314,7 @@ async function runRiscV(): Promise<void> {
   setConsoleText("");
 
   while (!wasmInterface.stopExecution) {
-    wasmInterface.run(setConsoleText);
+    wasmInterface.run(null, null, setConsoleText);
   }
 
   setWasmPc(wasmInterface.pc[0]);
@@ -327,7 +342,7 @@ async function startStepRiscV(): Promise<void> {
 
 function singleStepRiscV(): void {
   if (!wasmInterface.stopExecution) {
-    wasmInterface.run(setConsoleText);
+    wasmInterface.run(stackPush, stackPop, setConsoleText);
     setDebugMode(!wasmInterface.stopExecution);
     setWasmPc(wasmInterface.pc[0]);
     setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
@@ -342,7 +357,7 @@ let temporaryBreakpoint: number | null = null;
 function continueStepRiscV(): void {
   while (1) {
     setBreakpoints();
-    wasmInterface.run(setConsoleText);
+    wasmInterface.run(stackPush, stackPop, setConsoleText);
     setDebugMode(!wasmInterface.stopExecution);
     setWasmPc(wasmInterface.pc[0]);
     setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
@@ -373,6 +388,37 @@ const dummyIndent = indentService.of((context, pos) => {
   let match = /^\s*/.exec(prevLine.text);
   return match ? match[0].length : 0;
 });
+
+function toHex(arg: number): string {
+    return "0x"+arg.toString(16).padStart(8, "0");
+}
+const BacktraceCall: Component<{name: string, args: number[], sp: number}> = (props) => {
+    return <div class="flex">
+        <div class="font-bold pr-1">{props.name}</div>
+        <div class="flex flex-row flex-wrap">
+                <div class="theme-fg2">args=</div>
+                <div class="pr-1">{toHex(props.args[0])}</div>
+                <div class="pr-1">{toHex(props.args[1])}</div>
+                <div class="pr-1">{toHex(props.args[2])}</div>
+                <div class="pr-1">{toHex(props.args[3])}</div>
+                <div class="pr-1">{toHex(props.args[4])}</div>
+                <div class="pr-1">{toHex(props.args[5])}</div>
+                <div class="pr-1">{toHex(props.args[6])}</div>
+                <div class="pr-1">{toHex(props.args[7])}</div>
+                <div class="theme-fg2">sp=</div>
+                <div class="pr-1">{toHex(props.sp)}</div>
+        </div>
+    </div>
+};
+
+
+const BacktraceView: Component = () => {
+    return <div class="w-full font-mono text-sm overflow-auto">
+        <div class="flex flex-col">
+            {shadowStack().toReversed().map(ent => <BacktraceCall name={ent.name} args={ent.args} sp={ent.sp}/>)}
+        </div>
+    </div>
+};
 
 const App: Component = () => {
   let editor: HTMLDivElement | undefined;
@@ -405,10 +451,10 @@ const App: Component = () => {
         {PaneResize(
           0.5,
           "horizontal",
-          <main
+          PaneResize(0.75, "vertical", <main
             class="w-full h-full overflow-hidden theme-scrollbar"
             ref={editor}
-          />,
+          />, <BacktraceView />),
           /* Reactivity is broken for both */
           PaneResize(
             0.75,

@@ -18,7 +18,8 @@ size_t strlen(const char *str);
 int memcmp(const void *s1, const void *s2, size_t n);
 void *memcpy(void *dest, const void *src, size_t n);
 void *memset(void *dest, int c, size_t n);
-
+extern void shadowstack_push(uint32_t pc);
+extern void shadowstack_pop();
 #define assert(cond)          \
     {                         \
         if (!(cond)) panic(); \

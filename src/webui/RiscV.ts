@@ -39,6 +39,8 @@ export class WasmInterface {
   public runtimeErrorType?: Uint32Array;
   public hasError: boolean = false;
   public LOAD: (addr: number, pow: number) => number;
+  public stackPush: (addr: number) => void;
+  public stackPop: () => void;
 
   constructor() {
     this.memory = new WebAssembly.Memory({ initial: 7 });
@@ -64,6 +66,8 @@ export class WasmInterface {
             alert("wasm panic");
           },
           gettime64: () => BigInt(new Date().getTime() * 10 * 1000),
+          shadowstack_push: (n: number) => { if (this.stackPush) this.stackPush(n) },
+          shadowstack_pop: () => { if (this.stackPop) this.stackPop() },
         },
       });
       this.wasmInstance = instance;
@@ -131,8 +135,10 @@ export class WasmInterface {
     return null;
   }
 
-  run(setText: (str: string) => void): void {
+  run(stackPush, stackPop, setText: (str: string) => void): void {
     this.setText = setText;
+    this.stackPush = stackPush;
+    this.stackPop = stackPop;
     this.exports.emulate();
     if (this.runtimeErrorType[0] != 0) {
       const errorType = this.runtimeErrorType[0];
