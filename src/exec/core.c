@@ -1176,6 +1176,25 @@ void do_syscall() {
     }
 }
 
+
+// TODO: if a label isn't found precisely
+// instead of showing a raw address
+// show an offset from the preceding label
+// this is so ugly because i'm calling it from JS
+const char* g_pc_to_label_txt;
+size_t g_pc_to_label_len;
+void pc_to_label(u32 pc) {
+    for (size_t i = 0; i < g_labels_len; i++) {
+        if (g_labels[i].addr == pc) {
+            g_pc_to_label_txt = g_labels[i].txt;
+            g_pc_to_label_len = g_labels[i].len;
+            return;
+        }
+    }
+    g_pc_to_label_txt = NULL;
+    g_pc_to_label_len = 0;
+}
+
 // clang-format off
 void emulate() {
     g_runtime_error_type = ERROR_NONE;
@@ -1230,7 +1249,7 @@ void emulate() {
         *D = g_pc + 4;
         g_pc += jal_imm;
         if (rd == 1) {
-            shadowstack_push(g_pc);
+            shadowstack_push();
         }
         goto exit;
     } // JAL
@@ -1238,7 +1257,7 @@ void emulate() {
         *D = g_pc + 4;
         g_pc = S1 + imm12_ext;
         // TODO: on pop, check that the addresses match
-        if (rd == 1) shadowstack_push(g_pc);
+        if (rd == 1) shadowstack_push();
         if (rd == 0 && rs1 == 1) shadowstack_pop(); // jr ra/ret
         goto exit;
     } // JALR

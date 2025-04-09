@@ -145,19 +145,19 @@ function updateCss(): void {
 `;
 }
 
-const [shadowStack, setShadowStack] = createSignal<{name: string, args: number[], sp: number}[]>(new Array());
-function stackPush(c: number) {
-   let pc = wasmInterface.pc[0];
-   let name = "fact";
-   let sp = wasmInterface.pc[2-1];
-   let args = Array.from(wasmInterface.regsArr.slice(10-1, 18-1));
-   setShadowStack([...shadowStack(), {name: name, args: args, sp: sp}]); 
-   console.log(shadowStack());
+const [shadowStack, setShadowStack] = createSignal<{ name: string, args: number[], sp: number }[]>(new Array());
+function stackPush() {
+  let pc = wasmInterface.pc[0];
+  let name = wasmInterface.getStringFromPc(pc);
+  let sp = wasmInterface.regsArr[2 - 1];
+  let args = Array.from(wasmInterface.regsArr.slice(10 - 1, 18 - 1));
+  setShadowStack([...shadowStack(), { name: name, args: args, sp: sp }]);
+  console.log(shadowStack());
 }
 
 function stackPop() {
-    setShadowStack(shadowStack().slice(0, -1));
-    console.log(shadowStack());
+  setShadowStack(shadowStack().slice(0, -1));
+  console.log(shadowStack());
 }
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -309,7 +309,7 @@ async function runRiscV(): Promise<void> {
     forceLinting(view);
     return;
   }
-  
+
   setDebugMode(false);
   setConsoleText("");
 
@@ -390,34 +390,32 @@ const dummyIndent = indentService.of((context, pos) => {
 });
 
 function toHex(arg: number): string {
-    return "0x"+arg.toString(16).padStart(8, "0");
+  return "0x" + arg.toString(16).padStart(8, "0");
 }
-const BacktraceCall: Component<{name: string, args: number[], sp: number}> = (props) => {
-    return <div class="flex">
-        <div class="font-bold pr-1">{props.name}</div>
-        <div class="flex flex-row flex-wrap">
-                <div class="theme-fg2">args=</div>
-                <div class="pr-1">{toHex(props.args[0])}</div>
-                <div class="pr-1">{toHex(props.args[1])}</div>
-                <div class="pr-1">{toHex(props.args[2])}</div>
-                <div class="pr-1">{toHex(props.args[3])}</div>
-                <div class="pr-1">{toHex(props.args[4])}</div>
-                <div class="pr-1">{toHex(props.args[5])}</div>
-                <div class="pr-1">{toHex(props.args[6])}</div>
-                <div class="pr-1">{toHex(props.args[7])}</div>
-                <div class="theme-fg2">sp=</div>
-                <div class="pr-1">{toHex(props.sp)}</div>
-        </div>
+const BacktraceCall: Component<{ name: string, args: number[], sp: number }> = (props) => {
+  return <div class="flex">
+    <div class="font-bold pr-1">{props.name}</div>
+    <div class="flex flex-row flex-wrap">
+      <div class="theme-fg2">args=</div>
+      <div class="pr-1">{toHex(props.args[0])}</div>
+      <div class="pr-1">{toHex(props.args[1])}</div>
+      <div class="pr-1">{toHex(props.args[2])}</div>
+      <div class="pr-1">{toHex(props.args[3])}</div>
+      <div class="pr-1">{toHex(props.args[4])}</div>
+      <div class="pr-1">{toHex(props.args[5])}</div>
+      <div class="pr-1">{toHex(props.args[6])}</div>
+      <div class="pr-1">{toHex(props.args[7])}</div>
+      <div class="theme-fg2">sp=</div>
+      <div class="pr-1">{toHex(props.sp)}</div>
     </div>
+  </div>
 };
 
 
 const BacktraceView: Component = () => {
-    return <div class="w-full font-mono text-sm overflow-auto">
-        <div class="flex flex-col">
-            {shadowStack().toReversed().map(ent => <BacktraceCall name={ent.name} args={ent.args} sp={ent.sp}/>)}
-        </div>
-    </div>
+  return <div class="w-full h-full font-mono text-sm overflow-auto theme-scrollbar-slim flex flex-col">
+    {shadowStack().toReversed().map(ent => <BacktraceCall name={ent.name} args={ent.args} sp={ent.sp} />)}
+  </div>;
 };
 
 const App: Component = () => {

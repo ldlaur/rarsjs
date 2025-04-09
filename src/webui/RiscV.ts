@@ -3,6 +3,9 @@ import wasmUrl from "../main.wasm?url";
 interface WasmExports {
   emulate(): void;
   assemble: (offset: number, len: number) => void;
+  pc_to_label: (pc: number) => void;
+  LOAD: (addr: number, pow: number) => number;
+  
   __heap_base: number;
   g_regs: number;
   g_heap_size: number;
@@ -17,6 +20,8 @@ interface WasmExports {
   g_runtime_error_pc: number;
   g_runtime_error_addr: number;
   g_runtime_error_type: number;
+  g_pc_to_label_txt: number;
+  g_pc_to_label_len: number;
 }
 
 export class WasmInterface {
@@ -38,8 +43,9 @@ export class WasmInterface {
   public runtimeErrorAddr?: Uint32Array;
   public runtimeErrorType?: Uint32Array;
   public hasError: boolean = false;
+
   public LOAD: (addr: number, pow: number) => number;
-  public stackPush: (addr: number) => void;
+  public stackPush: () => void;
   public stackPop: () => void;
 
   constructor() {
@@ -71,7 +77,8 @@ export class WasmInterface {
         },
       });
       this.wasmInstance = instance;
-      this.LOAD = instance.exports["LOAD"] as (addr: number, pow: number) => number;
+      this.exports = this.wasmInstance.exports as unknown as WasmExports;
+      this.LOAD = this.exports.LOAD;
       // Save a snapshot of the original memory to restore between builds.
       this.originalMemory = new Uint8Array(this.memory.buffer.slice(0));
       console.log("Wasm module loaded");
@@ -88,8 +95,6 @@ export class WasmInterface {
 
     const createU8 = (off: number) => new Uint8Array(this.memory.buffer, off);
     const createU32 = (off: number) => new Uint32Array(this.memory.buffer, off);
-
-    this.exports = this.wasmInstance.exports as unknown as WasmExports;
 
     this.stopExecution = false;
     this.hasError = false;
@@ -135,7 +140,22 @@ export class WasmInterface {
     return null;
   }
 
-  run(stackPush, stackPop, setText: (str: string) => void): void {
+  getStringFromPc(pc: number): string {
+    const createU8 = (off: number) => new Uint8Array(this.memory.buffer, off);
+    const createU32 = (off: number) => new Uint32Array(this.memory.buffer, off);
+
+    this.exports.pc_to_label(pc);
+    const labelPtr = createU32(this.exports.g_pc_to_label_txt)[0];
+    if (labelPtr) {
+      const labelLen = createU32(this.exports.g_pc_to_label_len)[0];
+      const label = createU8(labelPtr);
+      const labelStr = new TextDecoder("utf8").decode(label.slice(0, labelLen));
+      return labelStr;
+    }
+    return "0x" + pc.toString(16);
+  }
+
+  run(stackPush: () => void, stackPop: () => void, setText: (str: string) => void): void {
     this.setText = setText;
     this.stackPush = stackPush;
     this.stackPop = stackPop;
