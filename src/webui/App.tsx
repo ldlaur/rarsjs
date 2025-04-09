@@ -6,25 +6,19 @@ import {
 } from "solid-js";
 import { basicSetup, EditorView } from "codemirror";
 import { keymap } from "@codemirror/view";
-import { Compartment, EditorState } from "@codemirror/state";
-import {
-  defaultSettingsGruvboxDark,
-  defaultSettingsGruvboxLight,
-  gruvboxDark,
-  gruvboxLight,
-} from "@uiw/codemirror-theme-gruvbox-dark";
+import { Compartment, EditorState, Extension } from "@codemirror/state";
+
 import { lineHighlightEffect, lineHighlightState } from "./LineHighlight";
 import { breakpointGutter, breakpointState } from "./Breakpoint";
 import { createAsmLinter } from "./AssemblerErrors";
 import { forceLinting } from "@codemirror/lint";
-import { defaultKeymap, indentWithTab, insertNewlineAndIndent, insertNewlineKeepIndent } from "@codemirror/commands"
+import { defaultKeymap, indentWithTab } from "@codemirror/commands"
 
 import { WasmInterface } from "./RiscV";
-import { Settings } from "@uiw/codemirror-themes";
 
 import { parser } from "./riscv.grammar";
 import { highlighting } from "./GrammarHighlight";
-import { LRLanguage, LanguageSupport, indentService } from "@codemirror/language"
+import { HighlightStyle, LRLanguage, LanguageSupport, indentService, syntaxHighlighting } from "@codemirror/language"
 import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
@@ -45,10 +39,227 @@ export const [debugMode, setDebugMode] = createSignal<boolean>(false);
 const [consoleText, setConsoleText] = createSignal<string>("");
 
 
+import { tags as t } from "@lezer/highlight"
+
+
+
+const colors = {
+  "base0": "#0d1117",
+  "base1": "#161b22",
+  "base2": "#21262d",
+  "base3": "#89929b",
+  "base4": "#c6cdd5",
+  "base5": "#ecf2f8",
+  "red": "#fa7970",
+  "orange": "#faa356",
+  "green": "#7ce38b",
+  "lightblue": "#a2d2fb",
+  "blue": "#77bdfb",
+  "purp": "#cea5fb",
+};
+
+export const githubDarkTheme = EditorView.theme({
+  "&": {
+    color: colors.base5,
+    backgroundColor: colors.base0
+  },
+
+  ".cm-content": {
+    caretColor: colors.blue
+  },
+
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.blue },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: colors.base2 },
+
+  ".cm-panels": { backgroundColor: colors.base0, color: colors.base5 },
+  ".cm-panels.cm-panels-top": { borderBottom: "2px solid black" },
+  ".cm-panels.cm-panels-bottom": { borderTop: "2px solid black" },
+
+  ".cm-searchMatch": {
+    backgroundColor: "#72a1ff59",
+    outline: "1px solid #457dff"
+  },
+  ".cm-searchMatch.cm-searchMatch-selected": {
+    backgroundColor: "#6199ff2f"
+  },
+
+  ".cm-activeLine": { backgroundColor: "#6699ff0b" },
+  ".cm-selectionMatch": { backgroundColor: "#aafe661a" },
+
+  "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
+    backgroundColor: "#bad0f847"
+  },
+
+  ".cm-gutters": {
+    backgroundColor: colors.base0,
+    color: colors.base4,
+    border: "none"
+  },
+
+  ".cm-activeLineGutter": {
+    backgroundColor: colors.base1
+  },
+
+  ".cm-foldPlaceholder": {
+    backgroundColor: "transparent",
+    border: "none",
+    color: "#ddd"
+  },
+  ".cm-textfield": {
+    backgroundColor: colors.base2,
+    backgroundImage: "none",
+    border: "none",
+  },
+  ".cm-button": {
+    backgroundColor: colors.base2,
+    backgroundImage: "none",
+    border: "none",
+  },
+
+  ".cm-search > label": {
+    "display": "flex",
+    "align-items": "center"
+  },
+  ".cm-search > br": {
+    "display": "none",
+  },
+  ".cm-panel.cm-search input[type=checkbox]": {
+    "-webkit-appearance": "none",
+    "-moz-appearance": "none",
+    "appearance": "none",
+    "width": "20px",
+    "margin": "5px",
+    "height": "20px",
+    "border": "none",
+    "background-color": colors.base2,
+    "cursor": "pointer",
+  },
+
+  ".cm-panel.cm-search input[type=checkbox]:hover": {
+    "background-color": colors.base3,
+  },
+
+  ".cm-panel.cm-search input[type=checkbox]:checked": {
+    "background-color": colors.base5,
+  },
+
+  ".cm-panel.cm-search input[type=checkbox]:checked:hover": {
+    "background-color": colors.base4,
+  },
+
+  ".cm-search > button:hover": {
+    "background-color": colors.base3,
+    "background-image": "none",
+  },
+
+  ".cm-search > button:active": {
+    "background-color": colors.base5,
+    "color": colors.base0,
+    "background-image": "none",
+  },
+
+  ".cm-search > button:active:hover": {
+    "background-color": colors.base4,
+    "color": colors.base0,
+    "background-image": "none",
+  },
+
+  ".cm-tooltip": {
+    border: "none",
+    backgroundColor: colors.base3
+  },
+  ".cm-tooltip .cm-tooltip-arrow:before": {
+    borderTopColor: "transparent",
+    borderBottomColor: "transparent"
+  },
+  ".cm-tooltip .cm-tooltip-arrow:after": {
+    borderTopColor: colors.base3,
+    borderBottomColor: colors.base3
+  },
+
+}, { dark: true })
+
+export const githubDarkHighlightStyle = HighlightStyle.define([
+  {
+    tag: t.keyword,
+    color: colors.purp
+  },
+  {
+    tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName],
+    color: colors.red
+  },
+  {
+    tag: [t.function(t.variableName), t.labelName],
+    color: colors.blue
+  },
+  {
+    tag: [t.color, t.constant(t.name), t.standard(t.name)],
+    color: colors.orange
+  },
+  {
+    tag: [t.definition(t.name), t.separator],
+    color: colors.base4
+  },
+  {
+    tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace],
+    color: colors.orange
+  },
+  {
+    tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)],
+    color: colors.lightblue
+  },
+  {
+    tag: [t.meta, t.comment],
+    color: colors.base3
+  },
+  {
+    tag: t.strong,
+    fontWeight: "bold"
+  },
+  {
+    tag: t.emphasis,
+    fontStyle: "italic"
+  },
+  {
+    tag: t.strikethrough,
+    textDecoration: "line-through"
+  },
+  {
+    tag: t.link,
+    color: colors.base3,
+    textDecoration: "underline"
+  },
+  {
+    tag: t.heading,
+    fontWeight: "bold",
+    color: colors.red
+  },
+  {
+    tag: [t.atom, t.bool, t.special(t.variableName)],
+    color: colors.orange
+  },
+  {
+    tag: [t.processingInstruction, t.string, t.inserted],
+    color: colors.green
+  },
+  {
+    tag: t.invalid,
+    color: colors.base5
+  },
+])
+
+/// Extension to enable the One Dark theme (both the editor theme and
+/// the highlight style).
+export const githubDark: Extension = [githubDarkTheme, syntaxHighlighting(githubDarkHighlightStyle)]
+
+
+
+
+
+
 let breakpointSet: Set<number> = new Set();
 let view: EditorView;
 let cmTheme: Compartment = new Compartment();
-let cssTheme: Settings = defaultSettingsGruvboxLight;
 let themeStyle: HTMLStyleElement | null = null;
 
 function interpolate(color1: string, color2: string, percent: number): string {
@@ -70,71 +281,60 @@ function interpolate(color1: string, color2: string, percent: number): string {
 function updateCss(): void {
   themeStyle.innerHTML = `
 .theme-bg {
-  background-color: ${cssTheme.background};
+  background-color: ${colors.base0};
 }
 .cm-debugging {
-  background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#603000" : "#f8c080"};
+  background-color: ${true ? "#603000" : "#f8c080"};
 }
 .cm-tooltip-lint {
-  color: ${cssTheme.foreground};
-  background-color: ${cssTheme.background};
+  color: ${colors.base5};
+  background-color: ${colors.base0};
   font-family: monospace;
 }
 .cm-breakpoint-marker {
-  background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#e04010" : "#ff5030"};
+  background-color: ${colors.red};
 }
 .theme-bg-hover:hover {
   background-color: ${interpolate(
-    cssTheme.background,
-    cssTheme.foreground,
+    colors.base0,
+    colors.base5,
     0.2)};
 }
 .theme-bg-active:active {
   background-color: ${interpolate(
-      cssTheme.background,
-      cssTheme.foreground,
+      colors.base0,
+      colors.base5,
       0.2)};
 }
 .theme-gutter {
-  background-color: ${cssTheme.gutterBackground};
+  background-color: ${colors.base0};
 }
 .theme-separator {
-  background-color: ${cssTheme.gutterBackground != cssTheme.background
-      ? cssTheme.gutterBackground
-      : interpolate(cssTheme.background, cssTheme.foreground, 0.1)};
+  background-color: ${interpolate(colors.base0, colors.base5, 0.1)};
 }
 .theme-fg {
-  color: ${cssTheme.foreground};
+  color: ${colors.base4};
 }
 .theme-fg2 {
-  color: ${interpolate(cssTheme.background, cssTheme.foreground, 0.5)};
+  color: ${colors.base3};
 }
 .theme-scrollbar-slim {
   scrollbar-width: thin;
-  scrollbar-color: ${interpolate(
-        cssTheme.background,
-        cssTheme.foreground,
-        0.5)} ${cssTheme.background};
+  scrollbar-color: ${colors.base3} ${colors.base0};
 }
 .theme-scrollbar {
-  scrollbar-color: ${interpolate(
-          cssTheme.background,
-          cssTheme.foreground,
-          0.5)} ${cssTheme.background};
+  scrollbar-color: ${colors.base3} ${colors.base0};
 }
   
 .theme-border {
-  border-color: ${interpolate(
-            cssTheme.foreground,
-            cssTheme.background,
-            0.8)};
+  border-color: ${interpolate(colors.base2, colors.base3, 0.5)};
 }
 .frame-highlight {
-  background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#307010" : "#90f080"};
+  background-color: ${colors.green};
 }
 @keyframes fadeHighlight {
   from {
-    background-color: ${cssTheme == defaultSettingsGruvboxDark ? "#f08020" : "#f8c080"};
+    background-color: ${colors.orange};
   }
   to {
   }
@@ -167,13 +367,13 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 function doChangeTheme(): void {
-  if (cssTheme == defaultSettingsGruvboxDark) {
-    cssTheme = defaultSettingsGruvboxLight;
-    view.dispatch({ effects: cmTheme.reconfigure(gruvboxLight) });
-  } else {
-    cssTheme = defaultSettingsGruvboxDark;
-    view.dispatch({ effects: cmTheme.reconfigure(gruvboxDark) });
-  }
+  //  if (true) {
+  //    cssTheme = defaultSettingsGruvboxLight;
+  //    view.dispatch({ effects: cmTheme.reconfigure(gruvboxLight) });
+  //  } else {
+  //    cssTheme = defaultSettingsGruvboxDark;
+  //    view.dispatch({ effects: cmTheme.reconfigure(gruvboxDark) });
+  //  }
   updateCss();
 }
 
@@ -434,7 +634,7 @@ const App: Component = () => {
         breakpointGutter, // must be first so it's the first gutter
         basicSetup,
         theme,
-        cmTheme.of(gruvboxLight),
+        cmTheme.of(githubDark),
         [lineHighlightState],
         keymap.of([...defaultKeymap, indentWithTab]),
       ],
