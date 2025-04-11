@@ -22,6 +22,7 @@ import { HighlightStyle, LRLanguage, LanguageSupport, indentService, syntaxHighl
 import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
+import { PaneResizeComp } from "./PaneResizeComp";
 
 let parserWithMetadata = parser.configure({
   props: [highlighting]
@@ -618,9 +619,8 @@ const BacktraceView: Component = () => {
   </div>;
 };
 
-const App: Component = () => {
+const Editor: Component = () => {
   let editor: HTMLDivElement | undefined;
-
   onMount(() => {
     const theme = EditorView.theme({
       "&.cm-editor": { height: "100%" },
@@ -642,6 +642,13 @@ const App: Component = () => {
     view = new EditorView({ state, parent: editor });
   });
 
+  return <main
+            class="w-full h-full overflow-hidden theme-scrollbar"
+            ref={editor} />;
+}
+
+
+const App: Component = () => {
   return (
     <div class="h-dvh max-h-dvh w-dvw max-w-dvw flex flex-col justify-between overflow-hidden">
       <Navbar />
@@ -649,15 +656,14 @@ const App: Component = () => {
         {PaneResize(
           0.5,
           "horizontal",
-          PaneResize(0.75, "vertical", <main
-            class="w-full h-full overflow-hidden theme-scrollbar"
-            ref={editor}
-          />, <BacktraceView />),
+          false,
+          <PaneResizeComp firstSize={0.75} direction="vertical" disableSecond={!debugMode()} a={<Editor />} b={<BacktraceView />} />,
           /* Reactivity is broken for both */
           PaneResize(
             0.75,
             "vertical",
-            PaneResize(0.55, "horizontal",
+            false,
+            PaneResize(0.55, "horizontal", false,
               <RegisterTable pc={wasmPc()}
                 regs={wasmRegs()}
                 regWritten={wasmInterface.regWritten ? wasmInterface.regWritten[0] : 0} />,
