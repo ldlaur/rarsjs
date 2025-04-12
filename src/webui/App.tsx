@@ -31,6 +31,10 @@ export const riscvLanguage = LRLanguage.define({
   parser: parserWithMetadata,
 })
 
+import { githubLight, githubDark, Theme, Colors } from './GithubTheme'
+
+let currentTheme: Theme = githubLight;
+
 export const wasmInterface = new WasmInterface();
 
 export const [dummy, setDummy] = createSignal<number>(0);
@@ -39,253 +43,18 @@ export const [wasmRegs, setWasmRegs] = createSignal<number[]>(new Array(31).fill
 export const [debugMode, setDebugMode] = createSignal<boolean>(false);
 const [consoleText, setConsoleText] = createSignal<string>("");
 
-
-import { tags as t } from "@lezer/highlight"
-
-
-
-const colors = {
-  "base0": "#0d1117",
-  "base1": "#161b22",
-  "base2": "#21262d",
-  "base3": "#89929b",
-  "base4": "#c6cdd5",
-  "base5": "#ecf2f8",
-  "red": "#fa7970",
-  "orange": "#faa356",
-  "green": "#7ce38b",
-  "lightblue": "#a2d2fb",
-  "blue": "#77bdfb",
-  "purp": "#cea5fb",
-};
-
-export const githubDarkTheme = EditorView.theme({
-  "&": {
-    color: colors.base5,
-    backgroundColor: colors.base0
-  },
-
-  ".cm-content": {
-    caretColor: colors.blue
-  },
-
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.blue },
-  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: colors.base2 },
-
-  ".cm-panels": { backgroundColor: colors.base0, color: colors.base5 },
-  ".cm-panels.cm-panels-top": { borderBottom: "2px solid black" },
-  ".cm-panels.cm-panels-bottom": { borderTop: "2px solid black" },
-
-  ".cm-searchMatch": {
-    backgroundColor: "#72a1ff59",
-    outline: "1px solid #457dff"
-  },
-  ".cm-searchMatch.cm-searchMatch-selected": {
-    backgroundColor: "#6199ff2f"
-  },
-
-  ".cm-activeLine": { backgroundColor: "#6699ff0b" },
-  ".cm-selectionMatch": { backgroundColor: "#aafe661a" },
-
-  "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
-    backgroundColor: "#bad0f847"
-  },
-
-  ".cm-gutters": {
-    backgroundColor: colors.base0,
-    color: colors.base4,
-    border: "none"
-  },
-
-  ".cm-activeLineGutter": {
-    backgroundColor: colors.base1
-  },
-
-  ".cm-foldPlaceholder": {
-    backgroundColor: "transparent",
-    border: "none",
-    color: "#ddd"
-  },
-  ".cm-textfield": {
-    backgroundColor: colors.base2,
-    backgroundImage: "none",
-    border: "none",
-  },
-  ".cm-button": {
-    backgroundColor: colors.base2,
-    backgroundImage: "none",
-    border: "none",
-  },
-
-  ".cm-search > label": {
-    "display": "flex",
-    "align-items": "center"
-  },
-  ".cm-search > br": {
-    "display": "none",
-  },
-  ".cm-panel.cm-search input[type=checkbox]": {
-    "-webkit-appearance": "none",
-    "-moz-appearance": "none",
-    "appearance": "none",
-    "width": "20px",
-    "margin": "5px",
-    "height": "20px",
-    "border": "none",
-    "background-color": colors.base2,
-    "cursor": "pointer",
-  },
-
-  ".cm-panel.cm-search input[type=checkbox]:hover": {
-    "background-color": colors.base3,
-  },
-
-  ".cm-panel.cm-search input[type=checkbox]:checked": {
-    "background-color": colors.base5,
-  },
-
-  ".cm-panel.cm-search input[type=checkbox]:checked:hover": {
-    "background-color": colors.base4,
-  },
-
-  ".cm-search > button:hover": {
-    "background-color": colors.base3,
-    "background-image": "none",
-  },
-
-  ".cm-search > button:active": {
-    "background-color": colors.base5,
-    "color": colors.base0,
-    "background-image": "none",
-  },
-
-  ".cm-search > button:active:hover": {
-    "background-color": colors.base4,
-    "color": colors.base0,
-    "background-image": "none",
-  },
-
-  ".cm-tooltip": {
-    border: "none",
-    backgroundColor: colors.base3
-  },
-  ".cm-tooltip .cm-tooltip-arrow:before": {
-    borderTopColor: "transparent",
-    borderBottomColor: "transparent"
-  },
-  ".cm-tooltip .cm-tooltip-arrow:after": {
-    borderTopColor: colors.base3,
-    borderBottomColor: colors.base3
-  },
-
-}, { dark: true })
-
-export const githubDarkHighlightStyle = HighlightStyle.define([
-  {
-    tag: t.keyword,
-    color: colors.purp
-  },
-  {
-    tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName],
-    color: colors.red
-  },
-  {
-    tag: [t.function(t.variableName), t.labelName],
-    color: colors.blue
-  },
-  {
-    tag: [t.color, t.constant(t.name), t.standard(t.name)],
-    color: colors.orange
-  },
-  {
-    tag: [t.definition(t.name), t.separator],
-    color: colors.base4
-  },
-  {
-    tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace],
-    color: colors.orange
-  },
-  {
-    tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)],
-    color: colors.lightblue
-  },
-  {
-    tag: [t.meta, t.comment],
-    color: colors.base3
-  },
-  {
-    tag: t.strong,
-    fontWeight: "bold"
-  },
-  {
-    tag: t.emphasis,
-    fontStyle: "italic"
-  },
-  {
-    tag: t.strikethrough,
-    textDecoration: "line-through"
-  },
-  {
-    tag: t.link,
-    color: colors.base3,
-    textDecoration: "underline"
-  },
-  {
-    tag: t.heading,
-    fontWeight: "bold",
-    color: colors.red
-  },
-  {
-    tag: [t.atom, t.bool, t.special(t.variableName)],
-    color: colors.orange
-  },
-  {
-    tag: [t.processingInstruction, t.string, t.inserted],
-    color: colors.green
-  },
-  {
-    tag: t.invalid,
-    color: colors.base5
-  },
-])
-
-/// Extension to enable the One Dark theme (both the editor theme and
-/// the highlight style).
-export const githubDark: Extension = [githubDarkTheme, syntaxHighlighting(githubDarkHighlightStyle)]
-
-
-
-
-
-
 let breakpointSet: Set<number> = new Set();
 let view: EditorView;
 let cmTheme: Compartment = new Compartment();
 let themeStyle: HTMLStyleElement | null = null;
 
-function interpolate(color1: string, color2: string, percent: number): string {
-  const r1 = parseInt(color1.substring(1, 3), 16);
-  const g1 = parseInt(color1.substring(3, 5), 16);
-  const b1 = parseInt(color1.substring(5, 7), 16);
-
-  const r2 = parseInt(color2.substring(1, 3), 16);
-  const g2 = parseInt(color2.substring(3, 5), 16);
-  const b2 = parseInt(color2.substring(5, 7), 16);
-
-  const r = Math.max(0, Math.min(255, Math.round(r1 + (r2 - r1) * percent)));
-  const g = Math.max(0, Math.min(255, Math.round(g1 + (g2 - g1) * percent)));
-  const b = Math.max(0, Math.min(255, Math.round(b1 + (b2 - b1) * percent)));
-
-  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-}
-
-function updateCss(): void {
+function updateCss(colors: Colors): void {
   themeStyle.innerHTML = `
 .theme-bg {
   background-color: ${colors.base0};
 }
 .cm-debugging {
-  background-color: ${true ? "#603000" : "#f8c080"};
+  background-color: ${colors.bgorange};
 }
 .cm-tooltip-lint {
   color: ${colors.base5};
@@ -296,22 +65,16 @@ function updateCss(): void {
   background-color: ${colors.red};
 }
 .theme-bg-hover:hover {
-  background-color: ${interpolate(
-    colors.base0,
-    colors.base5,
-    0.2)};
+  background-color: ${colors.base1};
 }
 .theme-bg-active:active {
-  background-color: ${interpolate(
-      colors.base0,
-      colors.base5,
-      0.2)};
+  background-color: ${colors.base1};
 }
 .theme-gutter {
   background-color: ${colors.base0};
 }
 .theme-separator {
-  background-color: ${interpolate(colors.base0, colors.base5, 0.1)};
+  background-color: ${colors.base1};
 }
 .theme-fg {
   color: ${colors.base4};
@@ -326,16 +89,15 @@ function updateCss(): void {
 .theme-scrollbar {
   scrollbar-color: ${colors.base3} ${colors.base0};
 }
-  
 .theme-border {
-  border-color: ${interpolate(colors.base2, colors.base3, 0.5)};
+  border-color: ${colors.base2};
 }
 .frame-highlight {
   background-color: ${colors.green};
 }
 @keyframes fadeHighlight {
   from {
-    background-color: ${colors.orange};
+    background-color: ${colors.bgorange};
   }
   to {
   }
@@ -364,19 +126,20 @@ function stackPop() {
 window.addEventListener("DOMContentLoaded", () => {
   themeStyle = document.createElement("style");
   document.head.appendChild(themeStyle);
-  updateCss();
+  updateCss(currentTheme.colors);
 });
 
-function doChangeTheme(): void {
-  //  if (true) {
-  //    cssTheme = defaultSettingsGruvboxLight;
-  //    view.dispatch({ effects: cmTheme.reconfigure(gruvboxLight) });
-  //  } else {
-  //    cssTheme = defaultSettingsGruvboxDark;
-  //    view.dispatch({ effects: cmTheme.reconfigure(gruvboxDark) });
-  //  }
-  updateCss();
+function changeTheme(theme: Theme): void {
+  view.dispatch({ effects: cmTheme.reconfigure(theme.cmTheme) });
+  updateCss(theme.colors);
 }
+
+
+function doChangeTheme(): void {
+  if (currentTheme == githubDark) { currentTheme = githubLight; changeTheme(githubLight); }
+  else if (currentTheme == githubLight) { currentTheme = githubDark; changeTheme(githubDark); }
+}
+
 
 window.addEventListener('keydown', (event) => {
   if (debugMode() && event.altKey && event.key.toUpperCase() == 'S') {
@@ -634,7 +397,7 @@ const Editor: Component = () => {
         breakpointGutter, // must be first so it's the first gutter
         basicSetup,
         theme,
-        cmTheme.of(githubDark),
+        cmTheme.of(currentTheme.cmTheme),
         [lineHighlightState],
         keymap.of([...defaultKeymap, indentWithTab]),
       ],
