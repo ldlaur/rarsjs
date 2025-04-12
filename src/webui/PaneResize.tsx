@@ -1,13 +1,13 @@
-import { createSignal, onMount, onCleanup } from "solid-js";
+import { createSignal, onMount, onCleanup, Component } from "solid-js";
 import { JSX } from "solid-js/jsx-runtime";
 
-export function PaneResize(
+export const PaneResize: Component<{
     firstSize: number,
     direction: "vertical" | "horizontal",
     disableSecond: boolean,
-    a: JSX.Element,
-    b: JSX.Element,
-): JSX.Element {
+    children: [() => JSX.Element, () => JSX.Element]
+}> = (props) => {
+    
     let handle: HTMLDivElement | undefined;
     let container: HTMLDivElement | undefined;
 
@@ -32,7 +32,7 @@ export function PaneResize(
         document.body.style.userSelect = "none";
         handle!.style.pointerEvents = "auto";
         const client =
-            direction == "vertical"
+            props.direction == "vertical"
                 ? (e as MouseEvent).clientY ?? (e as TouchEvent).touches[0]?.clientY
                 : (e as MouseEvent).clientX ?? (e as TouchEvent).touches[0]?.clientX;
         setResizeState({ origSize: size(), orig: client });
@@ -41,11 +41,11 @@ export function PaneResize(
     const resizeMove = (e: MouseEvent | TouchEvent) => {
         if (resizeState() === null) return;
         const client =
-            direction == "vertical"
+            props.direction == "vertical"
                 ? (e as MouseEvent).clientY ?? (e as TouchEvent).touches[0]?.clientY
                 : (e as MouseEvent).clientX ?? (e as TouchEvent).touches[0]?.clientX;
         const calcSize = resizeState()!.origSize + (client - resizeState()!.orig);
-        const dim = direction == "vertical"
+        const dim = props.direction == "vertical"
             ? container!.clientHeight
             : container!.clientWidth;
         setSize(Math.max(0, Math.min(calcSize, dim - 4)));
@@ -53,7 +53,7 @@ export function PaneResize(
 
     const updateSize = () => {
         const newSize =
-            direction == "vertical"
+            props.direction == "vertical"
                 ? container!.clientHeight
                 : container!.clientWidth;
         if (newSize === 0) return;
@@ -63,10 +63,10 @@ export function PaneResize(
 
     onMount(() => {
         const initialSize =
-            direction == "vertical"
+            props.direction == "vertical"
                 ? container!.clientHeight
                 : container!.clientWidth;
-        setSize(initialSize * firstSize);
+        setSize(initialSize * props.firstSize);
         setContainerSize(initialSize);
 
         const ro = new ResizeObserver(() => updateSize());
@@ -90,20 +90,20 @@ export function PaneResize(
             class="flex w-full h-full max-h-full max-w-full theme-fg theme-bg"
             ref={container}
             classList={{
-                "flex-col": direction == "vertical",
-                "flex-row": direction == "horizontal",
+                "flex-col": props.direction == "vertical",
+                "flex-row": props.direction == "horizontal",
             }}
         >
                 <div
                     class="theme-bg theme-fg flex-shrink overflow-hidden"
                     style={{
-                        height: direction == "vertical" ? `${size()}px` : "auto",
-                        "min-height": direction == "vertical" ? `${size()}px` : "auto",
-                        width: direction == "horizontal" ? `${size()}px` : "auto",
-                        "min-width": direction == "horizontal" ? `${size()}px` : "auto",
+                        height: props.direction == "vertical" ? `${size()}px` : "auto",
+                        "min-height": props.direction == "vertical" ? `${size()}px` : "auto",
+                        width: props.direction == "horizontal" ? `${size()}px` : "auto",
+                        "min-width": props.direction == "horizontal" ? `${size()}px` : "auto",
                     }}
                 >
-                    {a}
+                    {props.children[0]()}
                 </div>
                 <div
                     on:mousedown={resizeDown}
@@ -111,13 +111,13 @@ export function PaneResize(
                     ref={handle}
                     style={{ "flex-shrink": 0 }}
                     class={
-                        disableSecond ? "hidden" : (direction == "vertical"
+                        props.disableSecond ? "hidden" : (props.direction == "vertical"
                             ? "w-full h-[4px] theme-separator cursor-row-resize"
                             : "h-full w-[4px] theme-separator cursor-col-resize")
                     }
                 ></div>
-                <div class={disableSecond ? "hidden" : "theme-bg theme-fg flex-grow flex-shrink overflow-hidden"}>
-                    {b}
+                <div class={props.disableSecond ? "hidden" : "theme-bg theme-fg flex-grow flex-shrink overflow-hidden"}>
+                    {props.children[1]()}
                 </div>
         </div>
     );

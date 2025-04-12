@@ -77,35 +77,38 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
                 <div ref={dummyChunk} class="invisible absolute ">{"000000000"}</div>
                 <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
                     <For each={rowVirtualizer.getVirtualItems()}>
-                        {(virtualItem) => (
-                            <div style={{ position: "absolute", top: `${virtualItem.start}px`, width: "100%" }}>
+                        {(virtRow) => (
+                            <div style={{ position: "absolute", top: `${virtRow.start}px`, width: "100%" }}>
                                 <Show when={chunksPerLine() > 1}>
                                     <a class="theme-fg2 pr-2">
-                                        {(getStartAddr() + virtualItem.index * (chunksPerLine() - 1) * 4).toString(16).padStart(8, "0")}
+                                        {(getStartAddr() + virtRow.index * (chunksPerLine() - 1) * 4).toString(16).padStart(8, "0")}
                                     </a>
                                 </Show>
                                 {(() => {
                                     dummy();
                                     let start = getStartAddr();
-                                    let components = [];
                                     let chunks = chunksPerLine() - 1;
+                                    let idx = virtRow.index;
                                     if (chunksPerLine() < 2) chunks = 1;
+                                    let components = new Array(chunks * 4);
                                     for (let i = 0; i < chunks; i++) {
                                         for (let j = 0; j < 4; j++) {
                                             let style = "";
-                                            let ptr = start + (virtualItem.index * chunks + i) * 4 + j;
-                                            if ((virtualItem.index * chunks + i) * 4 + j >= 65536) break;
+                                            let ptr = start + (idx * chunks + i) * 4 + j;
+                                            if ((idx * chunks + i) * 4 + j >= 65536) break;
                                             let isAnimated = ptr >= props.writeAddr && ptr < props.writeAddr + props.writeLen;
                                             let grayedOut = activeTab() == "stack" && ptr < props.sp;
                                             if (grayedOut) style = "theme-fg2";
                                             if (ptr >= props.sp && ptr < props.sp + 4) style = "frame-highlight";
                                             if (isAnimated) style = "animate-fade-highlight";
                                             let text = props.load ? props.load(ptr, 0).toString(16).padStart(2, "0") : "00";
-                                            components.push(<a class={style}>{text}</a>);
-                                            if (j == 3) components.push(<a> </a>);                                                            }
+                                            if (j == 3) style += " mr-[1ch]";
+                                            components[i * 4 + j] = <a class={style}>{text}</a>;
+                                        }
                                     }
                                     return components;
                                 })()}
+
                             </div>
                         )}
                     </For>

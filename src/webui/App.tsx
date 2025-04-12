@@ -22,7 +22,7 @@ import { HighlightStyle, LRLanguage, LanguageSupport, indentService, syntaxHighl
 import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
-import { PaneResizeComp } from "./PaneResizeComp";
+import 'solid-devtools'
 
 let parserWithMetadata = parser.configure({
   props: [highlighting]
@@ -643,8 +643,8 @@ const Editor: Component = () => {
   });
 
   return <main
-            class="w-full h-full overflow-hidden theme-scrollbar"
-            ref={editor} />;
+    class="w-full h-full overflow-hidden theme-scrollbar"
+    ref={editor} />;
 }
 
 
@@ -653,32 +653,29 @@ const App: Component = () => {
     <div class="h-dvh max-h-dvh w-dvw max-w-dvw flex flex-col justify-between overflow-hidden">
       <Navbar />
       <div class="flex w-full h-full overflow-hidden">
-        {PaneResize(
-          0.5,
-          "horizontal",
-          false,
-          <PaneResizeComp firstSize={0.75} direction="vertical" disableSecond={!debugMode()} a={<Editor />} b={<BacktraceView />} />,
-          /* Reactivity is broken for both */
-          PaneResize(
-            0.75,
-            "vertical",
-            false,
-            PaneResize(0.55, "horizontal", false,
-              <RegisterTable pc={wasmPc()}
+        <PaneResize firstSize={0.5} direction="horizontal" disableSecond={false}>
+          {() => <PaneResize firstSize={0.75} direction="vertical" disableSecond={!debugMode()}>
+            {() => <Editor />}
+            {() => <BacktraceView />}
+          </PaneResize>}
+          {() => <PaneResize firstSize={0.75} direction="vertical" disableSecond={false}>
+            {() => <PaneResize firstSize={0.55} direction="horizontal" disableSecond={false}>
+              {() => <RegisterTable pc={wasmPc()}
                 regs={wasmRegs()}
-                regWritten={wasmInterface.regWritten ? wasmInterface.regWritten[0] : 0} />,
-              <MemoryView dummy={dummy}
+                regWritten={wasmInterface.regWritten ? wasmInterface.regWritten[0] : 0} />}
+              {() => <MemoryView dummy={dummy}
                 writeAddr={wasmInterface.memWrittenAddr ? wasmInterface.memWrittenAddr[0] : 0}
                 writeLen={wasmInterface.memWrittenLen ? wasmInterface.memWrittenLen[0] : 0}
                 sp={wasmInterface.regsArr ? wasmInterface.regsArr[2 - 1] : 0}
                 load={wasmInterface.LOAD}
-              />),
-            <div
+              />}
+            </PaneResize>}
+            {() => <div
               innerText={consoleText() ? consoleText() : "Console output will go here..."}
               class={"w-full h-full font-mono overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
-            ></div>
-          ),
-        )}
+            ></div>}
+          </PaneResize>}
+        </PaneResize>
       </div>
     </div>
   );
