@@ -20,6 +20,7 @@ export interface Colors {
     orange: string;
     bgorange: string;
     green: string;
+    bggreen: string;
     lightblue: string;
     blue: string;
     purp: string;
@@ -39,15 +40,16 @@ const darkColors: Colors = {
     base5: "#ecf2f8",
     red: "#fa7970",
     orange: "#faa356",
-    bgorange: "#953800",
+    bgorange: "#802000",
     green: "#7ce38b",
     lightblue: "#a2d2fb",
     blue: "#77bdfb",
     purp: "#cea5fb",
+    bggreen: "#116329"
 };
 
 const lightColors = {
-    base0: "#ffffff",
+    base0: "#fefefe",
     base1: "#f6f8fa",
     base2: "#d1d5da",
     base3: "#959da5",
@@ -60,7 +62,8 @@ const lightColors = {
     lightblue: "#0550ae",
     comment: "#59636e",
     green: "#116329",
-    bgorange: "#faa356",
+    bgorange: "#fac080",
+    bggreen: "#7ce38b"
 };
 
 const cssTheme = (dark: boolean) => {

@@ -101,7 +101,7 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
                                             if (grayedOut) style = "theme-fg2";
                                             if (ptr >= props.sp && ptr < props.sp + 4) style = "frame-highlight";
                                             if (isAnimated) style = "animate-fade-highlight";
-                                            let text = props.load ? props.load(ptr, 0).toString(16).padStart(2, "0") : "00";
+                                            let text = props.load ? props.load(ptr, 1).toString(16).padStart(2, "0") : "00";
                                             if (j == 3) style += " mr-[1ch]";
                                             components[i * 4 + j] = <a class={style}>{text}</a>;
                                         }

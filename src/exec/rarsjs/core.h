@@ -44,8 +44,9 @@ static inline void shadowstack_pop() {}
 #define STACK_LEN 4096
 #define DATA_END 0x70000000
 
-#define push(arr, len, cap) \
-    ((len) >= (cap) ? grow((void **)&(arr), &(cap), sizeof(*(arr))), (arr) + (len)++ : (arr) + (len)++)
+#define push(arr, len, cap)                                           \
+    ((len) >= (cap)  ? grow((void **)&(arr), &(cap), sizeof(*(arr))), \
+     (arr) + (len)++ : (arr) + (len)++)
 
 static void grow(void **arr, size_t *cap, size_t size) {
     size_t oldcap = *cap;
@@ -116,7 +117,8 @@ typedef struct LabelData {
     Section *section;
 } LabelData;
 
-typedef const char *DeferredInsnCb(Parser *p, const char *opcode, size_t opcode_len);
+typedef const char *DeferredInsnCb(Parser *p, const char *opcode,
+                                   size_t opcode_len);
 typedef const char *DeferredInsnReloc(const char *sym, size_t sym_len);
 
 typedef struct DeferredInsn {
@@ -137,7 +139,13 @@ typedef struct Global {
     } elf;
 } Global;
 
-typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERROR_STORE = 3 } Error;
+typedef enum Error : u32 {
+    ERROR_NONE = 0,
+    ERROR_FETCH = 1,
+    ERROR_LOAD = 2,
+    ERROR_STORE = 3,
+    ERROR_UNHANDLED_INSN = 4
+} Error;
 
 extern export Section g_text;
 extern export Section g_data;
@@ -169,7 +177,9 @@ extern export int g_exit_code;
 
 void assemble(const char *, size_t);
 void emulate();
-bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr, Section **sec);
+bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
+                    Section **sec);
 void prepare_runtime_sections();
 void prepare_stack();
 void free_runtime();
+u32 LOAD(u32 addr, int size, bool *err);

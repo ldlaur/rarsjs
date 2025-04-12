@@ -4,7 +4,7 @@ interface WasmExports {
   emulate(): void;
   assemble: (offset: number, len: number) => void;
   pc_to_label: (pc: number) => void;
-  LOAD: (addr: number, pow: number) => number;
+  emu_load: (addr: number, size: number) => number;
   
   __heap_base: number;
   g_regs: number;
@@ -44,7 +44,7 @@ export class WasmInterface {
   public runtimeErrorType?: Uint32Array;
   public hasError: boolean = false;
 
-  public LOAD: (addr: number, pow: number) => number;
+  public emu_load: (addr: number, size: number) => number;
   public stackPush: () => void;
   public stackPop: () => void;
 
@@ -78,7 +78,7 @@ export class WasmInterface {
       });
       this.wasmInstance = instance;
       this.exports = this.wasmInstance.exports as unknown as WasmExports;
-      this.LOAD = this.exports.LOAD;
+      this.emu_load = this.exports.emu_load;
       // Save a snapshot of the original memory to restore between builds.
       this.originalMemory = new Uint8Array(this.memory.buffer.slice(0));
       console.log("Wasm module loaded");
@@ -166,6 +166,7 @@ export class WasmInterface {
         case 1: this.textBuffer += `ERROR: cannot fetch instruction from PC=0x${this.pc[0].toString(16)}\n`; break;
         case 2: this.textBuffer += `ERROR: cannot load from address 0x${this.runtimeErrorAddr[0].toString(16)} at PC=0x${this.pc[0].toString(16)}\n`; break;
         case 3: this.textBuffer += `ERROR: cannot store to address 0x${this.runtimeErrorAddr[0].toString(16)} at PC=0x${this.pc[0].toString(16)}\n`; break;
+        case 4: this.textBuffer += `ERROR: unhandled instruction at PC=0x${this.pc[0].toString(16)}\n`; break;
         default: this.textBuffer += `ERROR: PC=0x${this.pc[0].toString(16)}\n`; break;
       }
       setText(this.textBuffer);

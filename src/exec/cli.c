@@ -28,6 +28,10 @@ static void emulate_safe(void) {
                 fprintf(stderr, "emulator: store error at pc=0x%08x on addr=0x%08x\n", g_pc, g_runtime_error_addr);
                 return;
 
+            case ERROR_UNHANDLED_INSN:
+                fprintf(stderr, "emulator: unhandled insn at pc=0x%08x\n", g_pc);
+                return;
+
             default:
                 break;
         }

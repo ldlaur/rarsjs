@@ -1,7 +1,7 @@
 Language: Cpp
 BasedOnStyle: Google
 IndentWidth: 4
-ColumnLimit: 120
+ColumnLimit: 80
 NamespaceIndentation: All
 AllowShortLambdasOnASingleLine: true
 BreakBeforeBinaryOperators: None

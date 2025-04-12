@@ -99,12 +99,15 @@ u32 JAL(u32 rd, u32 off) { return 0b1101111 | (rd << 7) | (((off >> 12) & 255) <
 u32 JALR(u32 rd, u32 rs1, u32 off) { return 0b1100111 | (rd << 7) | (rs1 << 15) | (off << 20); }
 // clang-format on
 
-bool whitespace(char c) { return c == '\n' || c == '\t' || c == ' ' || c == '\r'; }
+bool whitespace(char c) {
+    return c == '\n' || c == '\t' || c == ' ' || c == '\r';
+}
 bool trailing(char c) { return c == '\t' || c == ' '; }
 
 bool digit(char c) { return (c >= '0' && c <= '9'); }
 bool ident(char c) {
-    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_') || (c == '.');
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') || (c == '_') || (c == '.');
 }
 
 void advance(Parser *p) {
@@ -146,7 +149,8 @@ bool skip_comment(Parser *p) {
             return true;
         } else if (peek_n(p, 1) == '*') {
             advance_n(p, 2);
-            while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/')) advance(p);
+            while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/'))
+                advance(p);
             advance_n(p, 2);
             return true;
         } else {
@@ -177,7 +181,9 @@ void skip_trailing(Parser *p) {
                 continue;
             } else if (peek_n(p, 1) == '*') {
                 advance_n(p, 2);
-                while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/')) advance(p);
+                while (p->pos < p->size &&
+                       !(peek(p) == '*' && peek_n(p, 1) == '/'))
+                    advance(p);
                 advance_n(p, 2);
                 continue;
             } else break;
@@ -320,9 +326,10 @@ int parse_reg(Parser *p) {
             return num;
         }
     }
-    char *names[] = {"zero", "ra", "sp", "gp", "tp",  "t0",  "t1", "t2", "fp", "s1", "a0",
-                     "a1",   "a2", "a3", "a4", "a5",  "a6",  "a7", "s2", "s3", "s4", "s5",
-                     "s6",   "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
+    char *names[] = {"zero", "ra", "sp",  "gp",  "tp", "t0", "t1", "t2",
+                     "fp",   "s1", "a0",  "a1",  "a2", "a3", "a4", "a5",
+                     "a6",   "a7", "s2",  "s3",  "s4", "s5", "s6", "s7",
+                     "s8",   "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
     for (int i = 0; i < 32; i++) {
         if (str_eq(str, len, names[i])) return i;
     }
@@ -341,7 +348,8 @@ void asm_emit_byte(u8 byte, int linenum) {
 
 void asm_emit(u32 inst, int linenum) {
     if (g_section == &g_text) {
-        *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) = linenum;
+        *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) =
+            linenum;
     }
     asm_emit_byte(inst >> 0, linenum);
     asm_emit_byte(inst >> 8, linenum);
@@ -351,7 +359,8 @@ void asm_emit(u32 inst, int linenum) {
 
 static Extern *get_extern(const char *sym, size_t sym_len) {
     for (size_t i = 0; i < g_externs_len; i++) {
-        if (g_externs[i].len == sym_len && 0 == memcmp(sym, g_externs[i].symbol, sym_len)) {
+        if (g_externs[i].len == sym_len &&
+            0 == memcmp(sym, g_externs[i].symbol, sym_len)) {
             return &g_externs[i];
         }
     }
@@ -363,7 +372,8 @@ static Extern *get_extern(const char *sym, size_t sym_len) {
 
 const char *reloc_branch(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
+                         g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -373,7 +383,8 @@ const char *reloc_branch(const char *sym, size_t sym_len) {
 
 const char *reloc_jal(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
+                         g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -383,7 +394,8 @@ const char *reloc_jal(const char *sym, size_t sym_len) {
 
 const char *reloc_hi20(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
+                         g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -393,7 +405,8 @@ const char *reloc_hi20(const char *sym, size_t sym_len) {
 
 const char *reloc_lo12i(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
+                         g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -403,7 +416,8 @@ const char *reloc_lo12i(const char *sym, size_t sym_len) {
 
 const char *reloc_lo12s(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
+                         g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -413,12 +427,14 @@ const char *reloc_lo12s(const char *sym, size_t sym_len) {
 
 const char *reloc_hi20lo12i(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
+                         g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
     r->type = R_RISCV_HI20;
-    r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r = push(g_section->relocations.buf, g_section->relocations.len,
+             g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx + 4;
@@ -428,12 +444,14 @@ const char *reloc_hi20lo12i(const char *sym, size_t sym_len) {
 
 const char *reloc_hi20lo12s(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
+                         g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
     r->type = R_RISCV_HI20;
-    r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    r = push(g_section->relocations.buf, g_section->relocations.len,
+             g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx + 4;
@@ -443,7 +461,8 @@ const char *reloc_hi20lo12s(const char *sym, size_t sym_len) {
 
 const char *reloc_abs32(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len, g_section->relocations.cap);
+    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
+                         g_section->relocations.cap);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -560,7 +579,8 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
-const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcode, size_t opcode_len, u32 *out_addr,
+const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb,
+                  const char *opcode, size_t opcode_len, u32 *out_addr,
                   bool *later, DeferredInsnReloc *reloc) {
     *later = false;
     const char *target;
@@ -570,7 +590,8 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcod
     if (target_len == 0) return "No label";
 
     for (size_t i = 0; i < g_labels_len; i++) {
-        if (g_labels[i].len == target_len && memcmp(g_labels[i].txt, target, target_len) == 0) {
+        if (g_labels[i].len == target_len &&
+            memcmp(g_labels[i].txt, target, target_len) == 0) {
             *out_addr = g_labels[i].addr;
             return NULL;
         }
@@ -579,7 +600,8 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb, const char *opcod
     if (g_in_fixup) {
         return reloc(target, target_len);
     }
-    DeferredInsn *insn = push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
+    DeferredInsn *insn =
+        push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
     insn->emit_idx = g_text.emit_idx;
     insn->p = *orig;
     insn->cb = cb;
@@ -608,7 +630,8 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_branch, opcode, opcode_len, &addr, &later, reloc_branch);
+    const char *err = label(p, &orig, handle_branch, opcode, opcode_len, &addr,
+                            &later, reloc_branch);
     if (err) return err;
     if (later) {
         asm_emit(0, p->startline);
@@ -631,7 +654,8 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
-const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len) {
+const char *handle_branch_zero(Parser *p, const char *opcode,
+                               size_t opcode_len) {
     Parser orig = *p;
     u32 addr;
     int s;
@@ -643,7 +667,8 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_branch_zero, opcode, opcode_len, &addr, &later, reloc_branch);
+    const char *err = label(p, &orig, handle_branch_zero, opcode, opcode_len,
+                            &addr, &later, reloc_branch);
     if (err) return err;
     if (later) {
         asm_emit(0, p->startline);
@@ -663,7 +688,8 @@ const char *handle_branch_zero(Parser *p, const char *opcode, size_t opcode_len)
     return NULL;
 }
 
-const char *handle_alu_pseudo(Parser *p, const char *opcode, size_t opcode_len) {
+const char *handle_alu_pseudo(Parser *p, const char *opcode,
+                              size_t opcode_len) {
     u32 addr;
     int d, s;
 
@@ -711,7 +737,8 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     u32 addr;
-    err = label(p, &orig, handle_jump, opcode, opcode_len, &addr, &later, reloc_jal);
+    err = label(p, &orig, handle_jump, opcode, opcode_len, &addr, &later,
+                reloc_jal);
     if (err) return err;
     if (later) {
         asm_emit(0, p->startline);
@@ -758,7 +785,8 @@ const char *handle_jump_reg(Parser *p, const char *opcode, size_t opcode_len) {
             skip_whitespace(p);
             if (!parse_numeric(p, &simm)) return "Invalid imm";
         }
-        if (simm >= -2048 && simm <= 2047) asm_emit(JALR(d, s, simm), p->startline);
+        if (simm >= -2048 && simm <= 2047)
+            asm_emit(JALR(d, s, simm), p->startline);
         else return "Immediate out of range";
     } else if (str_eq(opcode, opcode_len, "jr")) {
         if ((s = parse_reg(p)) == -1) return "Invalid rs";
@@ -826,7 +854,8 @@ const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
 
     u32 addr;
     skip_whitespace(p);
-    const char *err = label(p, &orig, handle_la, opcode, opcode_len, &addr, &later, reloc_hi20lo12i);
+    const char *err = label(p, &orig, handle_la, opcode, opcode_len, &addr,
+                            &later, reloc_hi20lo12i);
     if (later) {
         asm_emit(0, p->startline);
         asm_emit(0, p->startline);
@@ -856,12 +885,15 @@ typedef struct OpcodeHandling {
 OpcodeHandling opcode_types[] = {
     {
         handle_alu_reg,
-        {"add", "slt", "sltu", "and", "or", "xor", "sll", "srl", "sub", "sra", "mul", "mulh", "mulu", "mulhu", "div",
-         "divu", "rem", "remu"},
+        {"add", "slt", "sltu", "and", "or", "xor", "sll", "srl", "sub", "sra",
+         "mul", "mulh", "mulu", "mulhu", "div", "divu", "rem", "remu"},
     },
-    {handle_alu_imm, {"addi", "slt", "sltiu", "andi", "ori", "xori", "slli", "srli", "srai"}},
+    {handle_alu_imm,
+     {"addi", "slt", "sltiu", "andi", "ori", "xori", "slli", "srli", "srai"}},
     {handle_ldst, {"lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw"}},
-    {handle_branch, {"beq", "bne", "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu", "bleu"}},
+    {handle_branch,
+     {"beq", "bne", "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu",
+      "bleu"}},
     {handle_branch_zero, {"beqz", "bnez", "blez", "bgez", "bltz", "bgtz"}},
     {handle_alu_pseudo, {"mv", "not", "neg", "seqz", "snez", "sltz", "sgtz"}},
     {handle_jump, {"j", "jal"}},
@@ -969,7 +1001,8 @@ export void assemble(const char *txt, size_t s) {
                 const char *ident;
                 size_t ident_len;
                 parse_ident(p, &ident, &ident_len);
-                *push(g_globals, g_globals_len, g_globals_cap) = (Global){.str = ident, .len = ident_len};
+                *push(g_globals, g_globals_len, g_globals_cap) =
+                    (Global){.str = ident, .len = ident_len};
                 continue;
             } else if (str_eq(directive, directive_len, "byte")) {
                 i32 value;
@@ -1040,13 +1073,15 @@ export void assemble(const char *txt, size_t s) {
                             err = "Invalid string";
                             break;
                         }
-                        for (size_t i = 0; i < out_len; i++) asm_emit_byte(out[i], p->startline);
+                        for (size_t i = 0; i < out_len; i++)
+                            asm_emit_byte(out[i], p->startline);
                         free(out);
                     } else break;
                     first = false;
                 }
                 continue;
-            } else if (str_eq(directive, directive_len, "asciz") || str_eq(directive, directive_len, "string")) {
+            } else if (str_eq(directive, directive_len, "asciz") ||
+                       str_eq(directive, directive_len, "string")) {
                 char *out;
                 size_t out_len;
                 bool first = true;
@@ -1058,7 +1093,8 @@ export void assemble(const char *txt, size_t s) {
                             err = "Invalid string";
                             break;
                         }
-                        for (size_t i = 0; i < out_len; i++) asm_emit_byte(out[i], p->startline);
+                        for (size_t i = 0; i < out_len; i++)
+                            asm_emit_byte(out[i], p->startline);
                         asm_emit_byte(0, p->startline);
                         free(out);
                     } else break;
@@ -1081,7 +1117,10 @@ export void assemble(const char *txt, size_t s) {
         if (consume_if(p, ':')) {
             u32 addr = g_section->emit_idx + g_section->base;
             *push(g_labels, g_labels_len, g_labels_cap) =
-                (LabelData){.txt = ident, .len = ident_len, .addr = addr, .section = g_section};
+                (LabelData){.txt = ident,
+                            .len = ident_len,
+                            .addr = addr,
+                            .section = g_section};
             continue;
         }
 
@@ -1089,7 +1128,8 @@ export void assemble(const char *txt, size_t s) {
         opcode_len = ident_len;
 
         bool found = false;
-        for (size_t i = 0; !found && i < sizeof(opcode_types) / sizeof(OpcodeHandling); i++) {
+        for (size_t i = 0;
+             !found && i < sizeof(opcode_types) / sizeof(OpcodeHandling); i++) {
             for (size_t j = 0; !found && opcode_types[i].opcodes[j]; j++) {
                 if (str_eq(opcode, opcode_len, opcode_types[i].opcodes[j])) {
                     found = true;
@@ -1102,7 +1142,8 @@ export void assemble(const char *txt, size_t s) {
         }
         if (err) break;
 
-        // see comment above skip_trailing on why this is distinct from skip_whitespace
+        // see comment above skip_trailing on why this is distinct from
+        // skip_whitespace
         skip_trailing(p);
         char next = peek(p);
         if (next != '\n' && next != '\0') {
@@ -1133,122 +1174,6 @@ export void assemble(const char *txt, size_t s) {
     resolve_symbol("_start", strlen("_start"), true, &g_pc, NULL);
 }
 
-static inline i32 SIGN(int bits, u32 x) {
-    int m = 32 - bits;
-    return ((i32)(x << m)) >> m;
-}
-
-static inline int32_t div32(int32_t a, int32_t b) {
-    if (b == 0) {
-        return -1;
-    } else if (a == ((int32_t)1 << (32 - 1)) && b == -1) {
-        return a;
-    } else {
-        return a / b;
-    }
-}
-static inline u32 divu32(u32 a, u32 b) {
-    if (b == 0) {
-        return -1;
-    } else {
-        return a / b;
-    }
-}
-static inline int32_t rem32(int32_t a, int32_t b) {
-    if (b == 0) {
-        return a;
-    } else if (a == ((int32_t)1 << (32 - 1)) && b == -1) {
-        return 0;
-    } else {
-        return a % b;
-    }
-}
-static inline u32 remu32(u32 a, u32 b) {
-    if (b == 0) {
-        return a;
-    } else {
-        return a % b;
-    }
-}
-
-#define ERR (__builtin_unreachable(), 1)
-
-bool check_addr_range(u32 A, u32 size) {
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *sec = g_sections[i];
-
-        if (A >= sec->base && A < sec->limit) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-u32 LOAD(u32 A, int pow) {
-    u8 *memspace = NULL;
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *sec = g_sections[i];
-
-        // TODO: check read permission?
-        if (A >= sec->base && A < sec->limit) {
-            memspace = sec->buf;
-            A -= sec->base;
-            break;
-        }
-    }
-
-    // TODO: flag error?
-    if (NULL == memspace) {
-        return 0;
-    }
-
-    if (pow == 0) return memspace[A];
-    else if (pow == 1) {
-        u16 tmp;
-        memcpy(&tmp, memspace + A, 2);
-        return tmp;
-    } else if (pow == 2) {
-        u32 tmp;
-        memcpy(&tmp, memspace + A, 4);
-        return tmp;
-    }
-    __builtin_unreachable();
-}
-
-void STORE(u32 A, u32 B, int pow) {
-    g_mem_written_len = 1 << pow;
-    g_mem_written_addr = A;
-
-    u8 *memspace = NULL;
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *sec = g_sections[i];
-
-        // TODO: check read permission?
-        if (A >= sec->base && A < sec->limit) {
-            memspace = sec->buf;
-            A -= sec->base;
-            break;
-        }
-    }
-
-    // TODO: flag error?
-    if (NULL == memspace) {
-        return;
-    }
-
-    if (pow == 0) memspace[A] = B;
-    else if (pow == 1) {
-        memcpy(memspace + A, &B, 2);
-    } else if (pow == 2) {
-        memcpy(memspace + A, &B, 4);
-    } else if (pow > 2) __builtin_unreachable();
-    return;
-}
-
-#define BIT(n) (1UL << (n))
-#define ALL_ONES(n) (BIT((n)) - 1)
-#define BITS(endinclus, start) ((inst >> (start)) & ALL_ONES((endinclus) + 1 - (start)))
 
 void do_syscall() {
     u32 param = g_regs[10];
@@ -1267,7 +1192,14 @@ void do_syscall() {
         while (i--) putchar(buffer[i]);
     } else if (g_regs[17] == 4) {
         // print string
-        for (int i = 0; LOAD(param + i, 0); i++) putchar(LOAD(param + i, 0));
+        u32 i = 0;
+        while (1) {
+            bool err = false;
+            u8 ch = LOAD(param + i, 1, &err);
+            if (err) return; // TODO: return an error?
+            if (ch == 0) break;
+            putchar(ch);
+        }
     } else if (g_regs[17] == 11) {
         // print char
         putchar(param);
@@ -1275,7 +1207,8 @@ void do_syscall() {
         // print int hex
         putchar('0');
         putchar('x');
-        for (int i = 32 - 4; i >= 0; i -= 4) putchar("0123456789abcdef"[(param >> i) & 15]);
+        for (int i = 32 - 4; i >= 0; i -= 4)
+            putchar("0123456789abcdef"[(param >> i) & 15]);
     } else if (g_regs[17] == 35) {
         // print int binary
         putchar('0');
@@ -1288,12 +1221,11 @@ void do_syscall() {
     }
 }
 
-
 // TODO: if a label isn't found precisely
 // instead of showing a raw address
 // show an offset from the preceding label
 // this is so ugly because i'm calling it from JS
-const char* g_pc_to_label_txt;
+const char *g_pc_to_label_txt;
 size_t g_pc_to_label_len;
 void pc_to_label(u32 pc) {
     for (size_t i = 0; i < g_labels_len; i++) {
@@ -1307,157 +1239,9 @@ void pc_to_label(u32 pc) {
     g_pc_to_label_len = 0;
 }
 
-// clang-format off
-void emulate() {
-    g_runtime_error_type = ERROR_NONE;
-    g_mem_written_len = 0;
-    g_regs[0] = 0;
 
-    if (!check_addr_range(g_pc, 2)) {
-        g_runtime_error_addr = g_pc;
-        g_runtime_error_type = ERROR_FETCH;
-        return;
-    }
-    u32 inst = LOAD(g_pc, 2);
-
-
-    if (inst == 0x73) { do_syscall(); g_pc += 4; g_reg_written = 0; return; }
-    u32 rd = BITS(11, 7);
-    u32 rs1 = BITS(19, 15);
-    u32 S1 = g_regs[rs1], S2 = g_regs[BITS(24, 20)], *D = &g_regs[rd];
-    u32 T = 0;
-    u32 F7 = BITS(31, 25), F6 = F7 >> 1;
-
-    u32 btype_imm_ = 0, store_imm_ = 0, jal_imm_ = 0;
-                            btype_imm_ |= BITS(31, 31);
-    btype_imm_ <<= 1;       btype_imm_ |= BITS( 7,  7);
-    btype_imm_ <<= 30-25+1; btype_imm_ |= BITS(30, 25);
-    btype_imm_ <<= 11-8+1;  btype_imm_ |= BITS(11,  8);
-    btype_imm_ <<= 1;       btype_imm_ |= 0;
-                            store_imm_ |= BITS(31, 25);
-    store_imm_ <<= 11-7+1;  store_imm_ |= BITS(11,  7);
-                            jal_imm_   |= BITS(31, 31);
-    jal_imm_   <<= 19-12+1; jal_imm_   |= BITS(19, 12);
-    jal_imm_   <<= 20-20+1; jal_imm_   |= BITS(20, 20);
-    jal_imm_   <<= 30-25+1; jal_imm_   |= BITS(30, 25);
-    jal_imm_   <<= 24-21+1; jal_imm_   |= BITS(24, 21);
-    jal_imm_   <<= 1;       jal_imm_   |= 0;
-
-    i32 btype_imm = SIGN(13, btype_imm_);
-    i32 store_imm = SIGN(12, store_imm_);
-    i32 jal_imm   = SIGN(21, jal_imm_);
-    i32 imm12_ext = (((i32)inst)>>20);
-    i32 imm20_up  = BITS(31, 12) << 12;
-
-    u32 opcode = BITS(6, 3) | (BITS(14, 12) << 4);
-    u32 opcode2 = BITS(6, 2) | (BITS(14, 12) << 5);
-
-    bool mul = F7 == 1, zero = 0, one = 0;
-    if (!mul) { zero = F6 == 0, one = F6 != 0; }
-
-    if ((opcode2 & 0b11111) == 0b01101) { *D = imm20_up; goto end; } // LUI
-    if ((opcode2 & 0b11111) == 0b00101) { *D = g_pc + imm20_up; goto end; } // AUIPC
-    if ((opcode2 & 0b11111) == 0b11011) { 
-        *D = g_pc + 4;
-        g_pc += jal_imm;
-        if (rd == 1) {
-            shadowstack_push();
-        }
-        goto exit;
-    } // JAL
-    if ((opcode2 & 0b11111) == 0b11001) { 
-        *D = g_pc + 4;
-        g_pc = S1 + imm12_ext;
-        // TODO: on pop, check that the addresses match
-        if (rd == 1) shadowstack_push();
-        if (rd == 0 && rs1 == 1) shadowstack_pop(); // jr ra/ret
-        goto exit;
-    } // JALR
-
-    if ((opcode & 0b1111) == 0b1100) {
-        if ((opcode>>5) == 0) T = S1 == S2;
-        if ((opcode>>5) == 1) ERR;
-        if ((opcode>>5) == 2) T = (i32)S1 < (i32)S2;
-        if ((opcode>>5) == 3) T = S1 < S2;
-        if ((opcode>>4) & 1) T = !T;
-        g_pc += T ? btype_imm : 4;
-        rd = 0; 
-        goto exit;
-    }
-
-    if ((opcode & 0b1111) == 0b0000) {
-        T = (opcode >> 4) & 3;
-        int pow = (opcode >> 4) & 3;
-        if (!check_addr_range(S1 + imm12_ext, 1<<pow)) {
-            g_runtime_error_addr = S1 + imm12_ext;
-            g_runtime_error_type = ERROR_LOAD;
-            return;
-        }
-        u32 load = LOAD(S1 + imm12_ext, T);
-        *D = (opcode >> 6) ? load : SIGN(8 << T, load);
-        goto end;
-    }
-    
-    if ((opcode & 0b1111) == 0b0100) {
-        rd = 0;
-        int pow = (opcode >> 4) & 3;
-        if (!check_addr_range(S1 + store_imm, 1<<pow)) {
-            g_runtime_error_addr = S1 + store_imm;
-            g_runtime_error_type = ERROR_STORE;
-            return;
-        }
-        STORE(S1 + store_imm, S2, pow);
-        goto end;
-    }
-
-    switch(opcode) {
-    case 0b0000010: T = imm12_ext; goto inst_ADD; // ADDI
-    case 0b0100010: T = imm12_ext; goto inst_SLT; // SLTI
-    case 0b0110010: T = imm12_ext; goto inst_SLTU; // SLTIU
-    case 0b1000010: T = imm12_ext; goto inst_XOR; // XORI
-    case 0b1100010: T = imm12_ext; goto inst_OR; // ORI
-    case 0b1110010: T = imm12_ext; goto inst_AND; // ANDI
-    case 0b0010010: T = BITS(25, 20); goto inst_SLL; // SLLI
-    case 0b1010010: T = BITS(25, 20); goto inst_SR; // SRLI/SRAI
-    case 0b0000110: if (zero) { T = S2; goto inst_ADD; } *D =
-                         one  ? (S1 - S2) : // SUB
-                         mul  ? ((i32)S1 * (i32)S2) :
-                         ERR; goto end; // MUL
-    case 0b0010110: if (zero) { T = S2; goto inst_SLL; }
-                     *D = ((i64)(i32)S1 * (i64)(i32)S2) >> 32; goto end; // MULH
-    case 0b0100110: if (zero) { T = S2; goto inst_SLT; }
-                    else *D = S1 * S2; goto end; // MULU
-    case 0b0110110: if (zero) { T = S2; goto inst_SLTU; }
-                    *D = ((u64)S1 * (u64)S2) >> 32; goto end; // MULHU
-    case 0b1000110: if (zero) { T = S2; goto inst_XOR; }
-                    *D = div32(S1,S2); goto end; // DIV
-    case 0b1010110: if (!mul) { T = S2; goto inst_SR; }
-                    *D = divu32(S1,S2); goto end;
-    case 0b1100110: if (zero) { T = S2; goto inst_OR; } // OR
-                    *D = rem32(S1, S2); goto end; // REM
-    case 0b1110110: if (zero) { T = S2; goto inst_AND; } // AND
-                    *D = remu32(S1, S2); goto end; // REMU
-    default: ERR;
-    }
-    goto exit;
-
-inst_ADD: *D = (i32)S1 + T; goto end;
-inst_SLT: *D = (i32)S1 < (i32)T; goto end;
-inst_SLTU: *D = S1 < T; goto end;
-inst_XOR: *D = S1 ^ T; goto end;
-inst_OR: *D = S1 | T; goto end;
-inst_AND: *D = S1 & T; goto end;
-inst_SLL: *D = S1 << (T & 0x1F); goto end;
-inst_SR: *D = zero ? (S1 >> (T & 0x1F)) : ((i32)S1 >> (T & 0x1F)); goto end;
-
-end:
-    g_pc += 4;
-
-exit:
-    g_reg_written = rd;
-}
-
-bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr, Section **sec) {
+bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
+                    Section **sec) {
     LabelData *ret = NULL;
     for (size_t i = 0; i < g_labels_len; i++) {
         LabelData *l = &g_labels[i];
@@ -1470,14 +1254,18 @@ bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32* addr, Sec
         for (size_t i = 0; i < g_globals_len; i++)
             if (str_eq_2(sym, sym_len, g_globals[i].str, g_globals[i].len)) {
                 *addr = ret->addr;
-                if (sec) { *sec = ret->section; }
+                if (sec) {
+                    *sec = ret->section;
+                }
                 return true;
             }
         return false;
     }
     if (ret) {
         *addr = ret->addr;
-        if (sec) { *sec = ret->section; }
+        if (sec) {
+            *sec = ret->section;
+        }
         return true;
     }
     return false;
@@ -1500,7 +1288,8 @@ void prepare_stack() {
 
     g_stack.buf = malloc(g_stack.len);
     g_stack.capacity = STACK_LEN;
-    g_regs[2] = STACK_TOP; // FIXME: now i am diverging from RARS, which does STACK_TOP - 4
+    g_regs[2] = STACK_TOP;  // FIXME: now i am diverging from RARS, which
+                            // does STACK_TOP - 4
     *push(g_sections, g_sections_len, g_sections_cap) = &g_stack;
 }
 
@@ -1525,5 +1314,3 @@ void free_runtime() {
     free(g_deferred_insns);
     free(g_globals);
 }
-
-

@@ -93,7 +93,7 @@ function updateCss(colors: Colors): void {
   border-color: ${colors.base2};
 }
 .frame-highlight {
-  background-color: ${colors.green};
+  background-color: ${colors.bggreen};
 }
 @keyframes fadeHighlight {
   from {
@@ -430,7 +430,7 @@ const App: Component = () => {
                 writeAddr={wasmInterface.memWrittenAddr ? wasmInterface.memWrittenAddr[0] : 0}
                 writeLen={wasmInterface.memWrittenLen ? wasmInterface.memWrittenLen[0] : 0}
                 sp={wasmInterface.regsArr ? wasmInterface.regsArr[2 - 1] : 0}
-                load={wasmInterface.LOAD}
+                load={wasmInterface.emu_load}
               />}
             </PaneResize>}
             {() => <div

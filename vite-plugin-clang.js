@@ -9,7 +9,7 @@ function compile(outpath, optimize) {
       fs.mkdirSync(outpath, { recursive: true });
     }
     exec(
-      `clang --target=wasm32 -nostdlib -Wl,--export-all -Wl,--no-entry -Wl,--allow-undefined -Wl,--import-memory ${opts} -o ${outpath}/main.wasm src/exec/core.c src/exec/wasm.c`,
+      `clang --target=wasm32 -flto -nostdlib -Wl,--export-all -Wl,--no-entry -Wl,--allow-undefined -Wl,--import-memory ${opts} -o ${outpath}/main.wasm src/exec/core.c src/exec/emulate.c src/exec/wasm.c`,
       (error, stdout, stderr) => {
         if (error) {
           reject(stderr);
