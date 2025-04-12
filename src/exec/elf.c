@@ -111,7 +111,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
     }
 
     if (e_header->phdrs_off >= elf_contents_len ||
-        e_header->phdrs_off + (e_header->phent_sz * e_header->phent_num) >= elf_contents_len) {
+        e_header->phdrs_off + (e_header->phent_sz * e_header->phent_num) > elf_contents_len) {
         *error = "program headers offset exceeds buffer size";
         goto fail;
     }
@@ -169,7 +169,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
     }
 
     if (e_header->shdrs_off >= elf_contents_len ||
-        e_header->shdrs_off + (e_header->shent_sz * e_header->shent_num) >= elf_contents_len) {
+        e_header->shdrs_off + (e_header->shent_sz * e_header->shent_num) > elf_contents_len) {
         *error = "section headers offset exceeds buffer size";
         goto fail;
     }
