@@ -97,10 +97,10 @@ export const PaneResize: Component<{
                 <div
                     class="theme-bg theme-fg flex-shrink overflow-hidden"
                     style={{
-                        height: props.direction == "vertical" ? `${size()}px` : "auto",
-                        "min-height": props.direction == "vertical" ? `${size()}px` : "auto",
-                        width: props.direction == "horizontal" ? `${size()}px` : "auto",
-                        "min-width": props.direction == "horizontal" ? `${size()}px` : "auto",
+                        height: props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
+                        "min-height": props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
+                        width: props.direction == "horizontal" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
+                        "min-width": props.direction == "horizontal" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
                     }}
                 >
                     {props.children[0]()}

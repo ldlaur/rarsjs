@@ -158,6 +158,10 @@ window.addEventListener('keydown', (event) => {
     event.preventDefault();
     continueStepRiscV();
   }
+  else if (debugMode() && event.altKey && event.key.toUpperCase() == 'Q') {
+    event.preventDefault();
+    quitRiscV();
+  }
   else if (event.altKey && event.key.toUpperCase() == 'R') {
     event.preventDefault();
     runRiscV();
@@ -206,6 +210,13 @@ const Navbar: Component = () => {
               title="Continue (Alt-C)"
             >
               resume
+            </button>
+            <button
+              on:click={quitRiscV}
+              class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+              title="Quit debugging (Alt-Q)"
+            >
+              stop
             </button>
             <div class="cursor-pointer flex-shrink-0 mx-auto"></div>
           </Show>
@@ -335,6 +346,13 @@ function continueStepRiscV(): void {
     }
   }
 }
+
+function quitRiscV(): void {
+  setDebugMode(false);
+  setDummy(dummy() + 1);
+  updateLineNumber();
+}
+
 
 function nextStepRiscV(): void {
   temporaryBreakpoint = wasmInterface.pc[0] + 4; // TODO: fix for 8byte pseudoinsns

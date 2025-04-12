@@ -12,7 +12,7 @@ export default defineConfig({
     include: ["@lezer/generator"]
   },
   build: {
-    target: 'esnext',
+    target: 'es6',
     outDir: "dist",
   },
 });
