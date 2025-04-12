@@ -24,6 +24,8 @@ interface WasmExports {
   g_pc_to_label_len: number;
 }
 
+const INSTRUCTION_LIMIT: number = 100 * 1000;
+
 export class WasmInterface {
   private memory: WebAssembly.Memory;
   private wasmInstance?: WebAssembly.Instance;
@@ -43,6 +45,7 @@ export class WasmInterface {
   public runtimeErrorAddr?: Uint32Array;
   public runtimeErrorType?: Uint32Array;
   public hasError: boolean = false;
+  public instructions: number;
 
   public emu_load: (addr: number, size: number) => number;
   public stackPush: () => void;
@@ -72,7 +75,7 @@ export class WasmInterface {
             alert("wasm panic");
           },
           gettime64: () => BigInt(new Date().getTime() * 10 * 1000),
-          shadowstack_push: (n: number) => { if (this.stackPush) this.stackPush(n) },
+          shadowstack_push: (n: number) => { if (this.stackPush) this.stackPush() },
           shadowstack_pop: () => { if (this.stackPop) this.stackPop() },
         },
       });
@@ -97,6 +100,7 @@ export class WasmInterface {
     const createU32 = (off: number) => new Uint32Array(this.memory.buffer, off);
 
     this.stopExecution = false;
+    this.instructions = 0;
     this.hasError = false;
     this.textBuffer = "";
 
@@ -160,7 +164,13 @@ export class WasmInterface {
     this.stackPush = stackPush;
     this.stackPop = stackPop;
     this.exports.emulate();
-    if (this.runtimeErrorType[0] != 0) {
+    this.instructions++;
+    if (this.instructions > INSTRUCTION_LIMIT) {
+      this.textBuffer += `ERROR: instruction limit ${INSTRUCTION_LIMIT} reached\n`;
+      setText(this.textBuffer);
+      this.stopExecution = true;
+      this.hasError = true;
+    } else if (this.runtimeErrorType[0] != 0) {
       const errorType = this.runtimeErrorType[0];
       switch (errorType) {
         case 1: this.textBuffer += `ERROR: cannot fetch instruction from PC=0x${this.pc[0].toString(16)}\n`; break;

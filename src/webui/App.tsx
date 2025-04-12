@@ -415,6 +415,7 @@ const Editor: Component = () => {
         breakpointGutter, // must be first so it's the first gutter
         basicSetup,
         theme,
+        EditorView.editorAttributes.of({ style: "font-size: 1.4em" }),
         cmTheme.of(currentTheme.cmTheme),
         [lineHighlightState],
         keymap.of([...defaultKeymap, indentWithTab]),
@@ -453,7 +454,7 @@ const App: Component = () => {
             </PaneResize>}
             {() => <div
               innerText={consoleText() ? consoleText() : "Console output will go here..."}
-              class={"w-full h-full font-mono text-xs overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
+              class={"w-full h-full font-mono text-md overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
             ></div>}
           </PaneResize>}
         </PaneResize>

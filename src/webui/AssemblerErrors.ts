@@ -21,8 +21,7 @@ export const createAsmLinter = (wasmInterface: WasmInterface) => {
               severity: "error",
             },
           ];
-        }
-        else {
+        } else {
           return [];
         }
       }

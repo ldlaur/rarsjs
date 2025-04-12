@@ -7,7 +7,7 @@ export const PaneResize: Component<{
     disableSecond: boolean,
     children: [() => JSX.Element, () => JSX.Element]
 }> = (props) => {
-    
+
     let handle: HTMLDivElement | undefined;
     let container: HTMLDivElement | undefined;
 
@@ -94,31 +94,31 @@ export const PaneResize: Component<{
                 "flex-row": props.direction == "horizontal",
             }}
         >
-                <div
-                    class="theme-bg theme-fg flex-shrink overflow-hidden"
-                    style={{
-                        height: props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
-                        "min-height": props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
-                        width: props.direction == "horizontal" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
-                        "min-width": props.direction == "horizontal" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
-                    }}
-                >
-                    {props.children[0]()}
-                </div>
-                <div
-                    on:mousedown={resizeDown}
-                    on:touchstart={resizeDown}
-                    ref={handle}
-                    style={{ "flex-shrink": 0 }}
-                    class={
-                        props.disableSecond ? "hidden" : (props.direction == "vertical"
-                            ? "w-full h-[4px] theme-separator cursor-row-resize"
-                            : "h-full w-[4px] theme-separator cursor-col-resize")
-                    }
-                ></div>
-                <div class={props.disableSecond ? "hidden" : "theme-bg theme-fg flex-grow flex-shrink overflow-hidden"}>
-                    {props.children[1]()}
-                </div>
+            <div
+                class="theme-bg theme-fg flex-shrink overflow-hidden"
+                style={{
+                    height: props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
+                    "min-height": props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
+                    width: props.direction == "horizontal" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
+                    "min-width": props.direction == "horizontal" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
+                }}
+            >
+                {props.children[0]()}
+            </div>
+            <div
+                on:mousedown={resizeDown}
+                on:touchstart={resizeDown}
+                ref={handle}
+                style={{ "flex-shrink": 0 }}
+                class={
+                    props.disableSecond ? "hidden" : (props.direction == "vertical"
+                        ? "w-full h-[4px] theme-separator cursor-row-resize"
+                        : "h-full w-[4px] theme-separator cursor-col-resize")
+                }
+            ></div>
+            <div class={props.disableSecond ? "hidden" : "theme-bg theme-fg flex-grow flex-shrink overflow-hidden"}>
+                {props.children[1]()}
+            </div>
         </div>
     );
 }
