@@ -80,7 +80,6 @@ static void c_build(command_t *self) {
 
     fwrite(elf_contents, elf_sz, 1, out);
     fclose(out);
-
 }
 
 static void c_run(command_t *self) {
@@ -121,7 +120,7 @@ static void c_emulate(command_t *self) {
 
     uint32_t addr;
     g_pc = TEXT_BASE;
-    if (resolve_symbol("_start", strlen("_start"), true, &addr)) {
+    if (resolve_symbol("_start", strlen("_start"), true, &addr, NULL)) {
         g_pc = addr;
     }
 
@@ -213,11 +212,65 @@ static void c_output(command_t *self) {
     g_exec_out = self->arg;
 }
 
+static void c_assemble(command_t *self) {
+    assemble_from_file(self->arg);
+    /*Extern *e = push(g_externs, g_externs_len, g_externs_cap);
+    *e = (Extern){.symbol = "_test_ext", .len = strlen("_test_ext")};
+    *push(g_text.relocations.buf, g_text.relocations.len, g_text.relocations.cap) =
+        (Relocation){.type = R_RISCV_32, .symbol = e};*/
+
+    if (g_error) {
+        return;
+    }
+
+    void *elf_contents = NULL;
+    size_t elf_sz = 0;
+    char *error = NULL;
+
+    if (!elf_emit_obj(&elf_contents, &elf_sz, &error)) {
+        fprintf(stderr, "assembler: %s\n", error);
+        return;
+    }
+
+    FILE *out = fopen(g_obj_out, "wb");
+
+    if (NULL == out) {
+        fprintf(stderr, "assembelr: could not open output file\n");
+        return;
+    }
+
+    fwrite(elf_contents, elf_sz, 1, out);
+    fclose(out);
+}
+
+static void c_hexdump(command_t *self) {
+    FILE *file = fopen(self->arg, "rb");
+
+    if (NULL == file) {
+        fprintf(stderr, "hexdump: could not open file\n");
+        return;
+    }
+
+    u8 bytes[8];
+    size_t bytes_read = 0;
+    u32 off = 0;
+    while ((bytes_read = fread(bytes, 1, 8, file))) {
+        printf("%08x", off);
+        for (size_t i = 0; i < bytes_read; i++) {
+            printf(" %02x", bytes[i]);
+        }
+        printf("\n");
+        off += bytes_read;
+    }
+}
+
 int main(int argc, char **argv) {
     atexit(free_runtime);
     command_t cmd;
     // TODO: place real version number
     command_init(&cmd, argv[0], "0.0.1");
+    command_option(&cmd, "-a", "--assemble <file>",
+                   "assemble an RV32 assembly file and output an ELF32 relocatable object file", c_assemble);
     command_option(&cmd, "-b", "--build <file>",
                    "assemble an RV32 assembly file"
                    " and output an ELF32 executable",
@@ -226,6 +279,7 @@ int main(int argc, char **argv) {
     command_option(&cmd, "-e", "--emulate <file>", "assemble and run an RV32 assembly file", c_emulate);
     command_option(&cmd, "-i", "--readelf <file>", "show information about ELF file", c_readelf);
     command_option(&cmd, "-o", "--output <file>", "choose output file name", c_output);
+    command_option(&cmd, "-x", "--hexdump <file>", "perform hexdump of file", c_hexdump);
     command_parse(&cmd, argc, argv);
 
     if (1 == argc) {

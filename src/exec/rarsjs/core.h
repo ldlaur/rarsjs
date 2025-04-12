@@ -70,21 +70,20 @@ typedef struct Parser {
     int startline;
 } Parser;
 
-typedef struct LabelData {
-    const char *txt;
-    size_t len;
-    u32 addr;
-} LabelData;
-
 typedef struct {
     const char *symbol;
     size_t len;
+    struct {
+        size_t stidx;
+    } elf;
 } Extern;
 
 typedef struct {
     size_t offset;
     size_t size;
+    size_t addend;
     Extern *symbol;
+    size_t type;
 } Relocation;
 
 typedef struct Section {
@@ -101,18 +100,30 @@ typedef struct Section {
         size_t len;
         size_t cap;
     } relocations;
+    struct {
+        size_t shidx;
+    } elf;
     bool read;
     bool write;
     bool execute;
     bool physical;
 } Section;
 
+typedef struct LabelData {
+    const char *txt;
+    size_t len;
+    u32 addr;
+    Section *section;
+} LabelData;
+
 typedef const char *DeferredInsnCb(Parser *p, const char *opcode, size_t opcode_len);
+typedef const char *DeferredInsnReloc(const char *sym, size_t sym_len);
 
 typedef struct DeferredInsn {
     Parser p;
     Section *section;
     DeferredInsnCb *cb;
+    DeferredInsnReloc *reloc;
     const char *opcode;
     size_t opcode_len;
     size_t emit_idx;
@@ -121,6 +132,9 @@ typedef struct DeferredInsn {
 typedef struct Global {
     const char *str;
     size_t len;
+    struct {
+        size_t stidx;
+    } elf;
 } Global;
 
 typedef enum Error : u32 { ERROR_NONE = 0, ERROR_FETCH = 1, ERROR_LOAD = 2, ERROR_STORE = 3 } Error;
@@ -155,7 +169,7 @@ extern export int g_exit_code;
 
 void assemble(const char *, size_t);
 void emulate();
-bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr);
+bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr, Section **sec);
 void prepare_runtime_sections();
 void prepare_stack();
 void free_runtime();
