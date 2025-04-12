@@ -41,7 +41,7 @@ export const [dummy, setDummy] = createSignal<number>(0);
 export const [wasmPc, setWasmPc] = createSignal<number>(0);
 export const [wasmRegs, setWasmRegs] = createSignal<number[]>(new Array(31).fill(0));
 export const [debugMode, setDebugMode] = createSignal<boolean>(false);
-const [consoleText, setConsoleText] = createSignal<string>("");
+export const [consoleText, setConsoleText] = createSignal<string>("");
 
 let breakpointSet: Set<number> = new Set();
 let view: EditorView;
@@ -435,7 +435,7 @@ const App: Component = () => {
             </PaneResize>}
             {() => <div
               innerText={consoleText() ? consoleText() : "Console output will go here..."}
-              class={"w-full h-full font-mono overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
+              class={"w-full h-full font-mono text-xs overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
             ></div>}
           </PaneResize>}
         </PaneResize>
