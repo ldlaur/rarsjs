@@ -1216,7 +1216,7 @@ void do_syscall() {
         for (int i = 31; i >= 0; i--) {
             putchar(((param >> i) & 1) ? '1' : '0');
         }
-    } else if (g_regs[17] == 93 || g_regs[17] == 7) {
+    } else if (g_regs[17] == 93 || g_regs[17] == 7 || g_regs[17] == 10) {
         emu_exit();
     }
 }
@@ -1276,7 +1276,7 @@ void prepare_stack() {
                         .base = STACK_TOP - STACK_LEN,
                         .limit = STACK_TOP,
                         .len = STACK_LEN,
-                        .capacity = 0,
+                        .capacity = STACK_LEN,
                         .buf = NULL,
                         .emit_idx = 0,
                         .align = 1,
@@ -1287,7 +1287,6 @@ void prepare_stack() {
                         .physical = false};
 
     g_stack.buf = malloc(g_stack.len);
-    g_stack.capacity = STACK_LEN;
     g_regs[2] = STACK_TOP;  // FIXME: now i am diverging from RARS, which
                             // does STACK_TOP - 4
     *push(g_sections, g_sections_len, g_sections_cap) = &g_stack;

@@ -182,6 +182,8 @@ export class WasmInterface {
       setText(this.textBuffer);
       this.stopExecution = true;
       this.hasError = true;
+    } else if (this.stopExecution) {
+      setText("Executed successfully");
     }
   }
 }

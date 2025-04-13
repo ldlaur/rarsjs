@@ -365,6 +365,7 @@ function finishStepRiscV(): void {
 }
 
 const dummyIndent = indentService.of((context, pos) => {
+  if (pos == -1) return 0; // why?
   let line = context.lineAt(pos);
   if (line.from == 0) return 0;
   let prevLine = context.lineAt(line.from - 1);
