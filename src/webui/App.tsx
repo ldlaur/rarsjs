@@ -22,7 +22,7 @@ import { HighlightStyle, LRLanguage, LanguageSupport, indentService, syntaxHighl
 import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
-import 'solid-devtools'
+
 
 let parserWithMetadata = parser.configure({
   props: [highlighting]
