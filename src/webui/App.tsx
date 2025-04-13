@@ -177,9 +177,9 @@ const Navbar: Component = () => {
   return (
     <nav class="sticky theme-gutter">
       <div class="mx-auto px-2">
-        <div class="flex items-center h-8">
+        <div class="flex items-center h-10">
           <div class="flex-shrink-0">
-            <h1 class="text-l font-bold theme-fg">rars.js</h1>
+            <h1 class="text-xl font-bold theme-fg">rars.js</h1>
           </div>
           <div class="flex-shrink-0 mx-auto"></div>
           <Show when={debugMode()}>
@@ -438,7 +438,7 @@ const App: Component = () => {
       <Navbar />
       <div class="flex w-full h-full overflow-hidden">
         <PaneResize firstSize={0.5} direction="horizontal" disableSecond={false}>
-          {() => <PaneResize firstSize={0.75} direction="vertical" disableSecond={!debugMode()}>
+          {() => <PaneResize firstSize={0.85} direction="vertical" disableSecond={!debugMode()}>
             {() => <Editor />}
             {() => <BacktraceView />}
           </PaneResize>}

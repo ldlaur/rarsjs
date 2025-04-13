@@ -12,6 +12,6 @@ int main(void)
         int len = __AFL_FUZZ_TESTCASE_LEN;
         src = realloc(src, len);
         memcpy(src, buf, len);
-        assemble(src, len);
+        assemble(src, len, false);
     }
 }

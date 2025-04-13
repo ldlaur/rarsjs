@@ -38,7 +38,7 @@ static void emulate_safe(void) {
     }
 }
 
-static void assemble_from_file(const char *src_path) {
+static void assemble_from_file(const char *src_path, bool allow_externs) {
     FILE *f = fopen(src_path, "r");
 
     if (NULL == f) {
@@ -52,7 +52,7 @@ static void assemble_from_file(const char *src_path) {
     rewind(f);
     char *txt = malloc(s);
     fread(txt, s, 1, f);
-    assemble(txt, s);
+    assemble(txt, s, allow_externs);
 
     if (g_error) {
         fprintf(stderr, "assembler: line %u %s\n", g_error_line, g_error);
@@ -60,7 +60,7 @@ static void assemble_from_file(const char *src_path) {
 }
 
 static void c_build(command_t *self) {
-    assemble_from_file(self->arg);
+    assemble_from_file(self->arg, false);
 
     if (g_error) {
         return;
@@ -117,7 +117,7 @@ static void c_run(command_t *self) {
 }
 
 static void c_emulate(command_t *self) {
-    assemble_from_file(self->arg);
+    assemble_from_file(self->arg, false);
     if (g_error) {
         return;
     }
@@ -217,7 +217,7 @@ static void c_output(command_t *self) {
 }
 
 static void c_assemble(command_t *self) {
-    assemble_from_file(self->arg);
+    assemble_from_file(self->arg, true);
     /*Extern *e = push(g_externs, g_externs_len, g_externs_cap);
     *e = (Extern){.symbol = "_test_ext", .len = strlen("_test_ext")};
     *push(g_text.relocations.buf, g_text.relocations.len, g_text.relocations.cap) =

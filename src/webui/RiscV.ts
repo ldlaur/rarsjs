@@ -2,7 +2,7 @@ import wasmUrl from "../main.wasm?url";
 
 interface WasmExports {
   emulate(): void;
-  assemble: (offset: number, len: number) => void;
+  assemble: (offset: number, len: number, allow_externs: boolean) => void;
   pc_to_label: (pc: number) => void;
   emu_load: (addr: number, size: number) => number;
   
@@ -127,7 +127,7 @@ export class WasmInterface {
 
     createU8(offset).set(strBytes);
     createU32(this.exports.g_heap_size)[0] = (strLen + 7) & (~7); // align up to 8
-    this.exports.assemble(offset, strLen);
+    this.exports.assemble(offset, strLen, false);
     const textByLinenumPtr = createU32(this.exports.g_text_by_linenum)[0];
     this.textByLinenum = createU32(textByLinenumPtr);
     this.textByLinenumLen = createU32(this.exports.g_text_by_linenum_len);

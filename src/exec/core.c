@@ -42,6 +42,8 @@ extern size_t g_externs_len, g_externs_cap;
 Global *g_globals;
 size_t g_globals_len, g_globals_cap;
 
+bool g_allow_externs;
+
 // clang-format off
 u32 DS1S2(u32 d, u32 s1, u32 s2) { return (d << 7) | (s1 << 15) | (s2 << 20); }
 #define InstA(Name, op2, op12, one, mul) u32 Name(u32 d, u32 s1, u32 s2)  { return 0b11 | (op2 << 2) | (op12 << 12) | DS1S2(d, s1, s2) | ((one*0b01000) << 27) | (mul << 25); }
@@ -596,7 +598,7 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb,
         }
     }
 
-    if (g_in_fixup && !reloc) return "Label not found";
+    if (g_in_fixup && (!reloc || !g_allow_externs)) return "Label not found";
     if (g_in_fixup) {
         *out_addr = 0;
         return reloc(target, target_len);
@@ -906,8 +908,9 @@ OpcodeHandling opcode_types[] = {
     {handle_ecall, {"ecall"}},
 };
 
-export void assemble(const char *txt, size_t s) {
-    
+export void assemble(const char *txt, size_t s, bool allow_externs) {
+    g_allow_externs = allow_externs;
+
     g_text = (Section){.name = ".text",
                        .base = TEXT_BASE,
                        .limit = TEXT_END,

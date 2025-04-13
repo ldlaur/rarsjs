@@ -175,7 +175,7 @@ extern export Error g_runtime_error_type;
 extern export bool g_exited;
 extern export int g_exit_code;
 
-void assemble(const char *, size_t);
+void assemble(const char *str, size_t len, bool allow_externs);
 void emulate();
 bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
                     Section **sec);
