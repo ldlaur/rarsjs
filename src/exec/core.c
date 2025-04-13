@@ -590,19 +590,20 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb,
     if (target_len == 0) return "No label";
 
     for (size_t i = 0; i < g_labels_len; i++) {
-        if (g_labels[i].len == target_len &&
-            memcmp(g_labels[i].txt, target, target_len) == 0) {
+        if (str_eq_2(g_labels[i].txt, g_labels[i].len, target, target_len)) {
             *out_addr = g_labels[i].addr;
             return NULL;
         }
     }
+
     if (g_in_fixup && !reloc) return "Label not found";
     if (g_in_fixup) {
+        *out_addr = 0;
         return reloc(target, target_len);
     }
     DeferredInsn *insn =
         push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
-    insn->emit_idx = g_text.emit_idx;
+    insn->emit_idx = g_section->emit_idx;
     insn->p = *orig;
     insn->cb = cb;
     insn->reloc = reloc;
@@ -637,7 +638,7 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
         asm_emit(0, p->startline);
         return NULL;
     }
-    i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "beq")) inst = BEQ(s1, s2, simm);
@@ -674,7 +675,7 @@ const char *handle_branch_zero(Parser *p, const char *opcode,
         asm_emit(0, p->startline);
         return NULL;
     }
-    i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
 
     u32 inst = 0;
     if (str_eq(opcode, opcode_len, "beqz")) inst = BEQ(s, 0, simm);
@@ -744,7 +745,7 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
         asm_emit(0, p->startline);
         return NULL;
     }
-    i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
     asm_emit(JAL(d, simm), p->startline);
     return NULL;
 }
@@ -862,7 +863,7 @@ const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
         return NULL;
     }
     if (err) return err;
-    i32 simm = addr - (g_text.emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
 
     u32 lo = simm & 0xFFF;
     if (lo >= 0x800) lo -= 0x1000;
@@ -906,6 +907,7 @@ OpcodeHandling opcode_types[] = {
 };
 
 export void assemble(const char *txt, size_t s) {
+    
     g_text = (Section){.name = ".text",
                        .base = TEXT_BASE,
                        .limit = TEXT_END,
@@ -963,6 +965,9 @@ export void assemble(const char *txt, size_t s) {
 
     g_globals = NULL;
     g_globals_len = 0, g_globals_cap = 0;
+
+    g_externs = NULL;
+    g_externs_len = 0, g_externs_cap = 0;
 
     prepare_runtime_sections();
 
@@ -1156,8 +1161,8 @@ export void assemble(const char *txt, size_t s) {
         g_in_fixup = true;
         for (size_t i = 0; i < g_deferred_insn_len; i++) {
             struct DeferredInsn *insn = &g_deferred_insns[i];
-            g_text.emit_idx = insn->emit_idx;
             g_section = insn->section;
+            g_section->emit_idx = insn->emit_idx;
             p = &insn->p;
             err = insn->cb(&insn->p, insn->opcode, insn->opcode_len);
             if (err) break;
@@ -1304,12 +1309,14 @@ void prepare_runtime_sections() {
 void free_runtime() {
     // THIS IS COMMENTED BECAUSE SOME SECTION BUFFERS ARE NOT
     // HEAP ALLOCATED (E.G., THOSE FROM ELF FILES)
-    /*for (size_t i = 0; i < g_sections_len; i++) {
-        free(g_sections[i]->buf);
-    }*/
+    // for (size_t i = 0; i < g_sections_len; i++) {
+    //     free(g_sections[i]->relocations.buf);
+    //     free(g_sections[i]->buf);
+    // }
     free(g_sections);
     free(g_text_by_linenum);
     free(g_labels);
     free(g_deferred_insns);
     free(g_globals);
+    free(g_externs);
 }

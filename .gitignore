@@ -1,4 +1,4 @@
-node_modules
+ùnode_modules
 dist
 a.out
 src/main.wasm
@@ -61,3 +61,5 @@ dkms.conf
 ./rarsjs
 .vercel
 rarsjs
+fuzz/
+node_modules/
