@@ -425,7 +425,7 @@ const Editor: Component = () => {
   });
 
   return <main
-    class="w-full h-full overflow-hidden theme-scrollbar"
+    class="w-full h-full overflow-hidden theme-scrollbar" style={{contain: "strict"}}
     ref={editor} />;
 }
 

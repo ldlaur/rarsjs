@@ -71,9 +71,9 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
 
     // FIXME: selecting data should not also select the address column
     return (
-        <div class="h-full flex flex-col">
+        <div class="h-full flex flex-col" style={{contain: "strict"}}>
             <TabSelector tab={activeTab()} setTab={setActiveTab} tabs={[".text", ".data", "stack"]} />
-            <div ref={parentRef} class="font-mono text-lg overflow-auto theme-scrollbar ml-2">
+            <div ref={parentRef} class="font-mono text-lg overflow-auto theme-scrollbar ml-2" >
                 <div ref={dummyChunk} class="invisible absolute ">{"000000000"}</div>
                 <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
                     <For each={rowVirtualizer.getVirtualItems()}>

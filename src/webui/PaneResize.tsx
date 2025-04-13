@@ -88,6 +88,7 @@ export const PaneResize: Component<{
     return (
         <div
             class="flex w-full h-full max-h-full max-w-full theme-fg theme-bg"
+            style={{contain: "strict"}}
             ref={container}
             classList={{
                 "flex-col": props.direction == "vertical",
@@ -97,6 +98,7 @@ export const PaneResize: Component<{
             <div
                 class="theme-bg theme-fg flex-shrink overflow-hidden"
                 style={{
+                    contain: "strict",
                     height: props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
                     "min-height": props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
                     width: props.direction == "horizontal" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
@@ -116,7 +118,7 @@ export const PaneResize: Component<{
                         : "h-full w-[4px] theme-separator cursor-col-resize")
                 }
             ></div>
-            <div class={props.disableSecond ? "hidden" : "theme-bg theme-fg flex-grow flex-shrink overflow-hidden"}>
+            <div style={{contain: "strict"}} class={props.disableSecond ? "hidden" : "theme-bg theme-fg flex-grow flex-shrink overflow-hidden"}>
                 {props.children[1]()}
             </div>
         </div>
