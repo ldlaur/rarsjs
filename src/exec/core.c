@@ -1216,7 +1216,7 @@ void do_syscall() {
         for (int i = 31; i >= 0; i--) {
             putchar(((param >> i) & 1) ? '1' : '0');
         }
-    } else if (g_regs[17] == 93) {
+    } else if (g_regs[17] == 93 || g_regs[17] == 7) {
         emu_exit();
     }
 }

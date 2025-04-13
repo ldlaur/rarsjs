@@ -63,7 +63,7 @@ u8 *emulator_get_addr(u32 addr, int size) {
     for (size_t i = 0; i < g_sections_len; i++) {
         Section *sec = g_sections[i];
         // TODO: check permissions
-        if (addr >= sec->base && addr + size < sec->len)
+        if (addr >= sec->base && addr + size < sec->base + sec->len)
             return sec->buf + (addr - sec->base);
     }
     return NULL;
@@ -116,6 +116,7 @@ void STORE(u32 addr, u32 val, int size, bool *err) {
     *err = false;
 }
 
+void do_syscall();
 
 void emulate() {
     g_runtime_error_type = ERROR_NONE;
@@ -152,6 +153,8 @@ void emulate() {
     u32 *D = &g_regs[rd];
 
     u32 opcode = extr(inst, 6, 0);
+
+    if (inst == 0x73) { do_syscall(); g_pc += 4; g_reg_written = 0; return; }
 
     // LUI
     if (opcode == 0b0110111) {

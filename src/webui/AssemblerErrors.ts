@@ -22,6 +22,7 @@ export const createAsmLinter = (wasmInterface: WasmInterface) => {
             },
           ];
         } else {
+          setConsoleText("");
           return [];
         }
       }
