@@ -63,7 +63,7 @@ u8 *emulator_get_addr(u32 addr, int size) {
     for (size_t i = 0; i < g_sections_len; i++) {
         Section *sec = g_sections[i];
         // TODO: check permissions
-        if (addr >= sec->base && addr + size < sec->limit)
+        if (addr >= sec->base && addr + size < sec->len)
             return sec->buf + (addr - sec->base);
     }
     return NULL;
