@@ -80,6 +80,8 @@ const cssTheme = (dark: boolean) => {
 
         ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.blue },
         "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: colors.base2 },
+        ".cm-activeLine": {  "background-color": colors.base2+"28" },
+        ".cm-content ::selection .cm-activeLine": { backgroundColor: colors.base3 },
 
         ".cm-panels": { backgroundColor: colors.base0, color: colors.base5 },
         ".cm-panels.cm-panels-top": { borderBottom: "2px solid black" },
@@ -93,7 +95,6 @@ const cssTheme = (dark: boolean) => {
             backgroundColor: "#6199ff2f"
         },
 
-        ".cm-activeLine": { backgroundColor: colors.base1 },
         ".cm-selectionMatch": { backgroundColor: "#aafe661a" },
 
         "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
