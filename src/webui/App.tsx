@@ -6,7 +6,7 @@ import {
 } from "solid-js";
 import { basicSetup, EditorView } from "codemirror";
 import { keymap } from "@codemirror/view";
-import { Compartment, EditorState, Extension } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 
 import { lineHighlightEffect, lineHighlightState } from "./LineHighlight";
 import { breakpointGutter, breakpointState } from "./Breakpoint";
@@ -18,11 +18,11 @@ import { WasmInterface } from "./RiscV";
 
 import { parser } from "./riscv.grammar";
 import { highlighting } from "./GrammarHighlight";
-import { HighlightStyle, LRLanguage, LanguageSupport, indentService, syntaxHighlighting } from "@codemirror/language"
+import { LRLanguage, LanguageSupport, indentService, indentUnit } from "@codemirror/language"
 import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
-
+import { githubLight, githubDark, Theme, Colors } from './GithubTheme'
 
 let parserWithMetadata = parser.configure({
   props: [highlighting]
@@ -31,7 +31,6 @@ export const riscvLanguage = LRLanguage.define({
   parser: parserWithMetadata,
 })
 
-import { githubLight, githubDark, Theme, Colors } from './GithubTheme'
 
 let currentTheme: Theme = getDefaultTheme();
 
@@ -457,6 +456,7 @@ const Editor: Component = () => {
         EditorView.editorAttributes.of({ style: "font-size: 1.4em" }),
         cmTheme.of(currentTheme.cmTheme),
         [lineHighlightState],
+        indentUnit.of("    "),
         keymap.of([...defaultKeymap, indentWithTab]),
       ],
     });
