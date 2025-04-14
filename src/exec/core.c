@@ -1206,6 +1206,7 @@ void do_syscall() {
             u8 ch = LOAD(param + i, 1, &err);
             if (err) return; // TODO: return an error?
             if (ch == 0) break;
+            i++;
             putchar(ch);
         }
     } else if (g_regs[17] == 11) {

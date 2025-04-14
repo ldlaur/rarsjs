@@ -1,34 +1,34 @@
-## Usage
+# rars.js
+A minimal assembler, editor, simulator and debugger for RISC-V (RV32IM), meant to be a useful tool for computer architecture students, inspired by the original [RARS](https://github.com/TheThirdOne/rars).
+## Features
+This initial release introduces the following core features:
+### Web UI version:
+- **modern editing experience**:
+  - whole-UI light and dark themes
+  - CodeMirror 6-based editor with RV32IM syntax highighting
+  - live error reporting
+- **debugging tools**:
+  - register and memory visualization with live updates
+  - call stack inspector
+  - breakpoint management
+  - step/next/continue debugging
 
-Those templates dependencies are maintained via [pnpm](https://pnpm.io) via `pnpm up -Lri`.
+### Command-line utilities
+- minimal, cross-platform C
+- ELF binary and object file generation
+- headless execution of the emulator
 
-This is the reason you see a `pnpm-lock.yaml`. That being said, any package manager will work. This file can be safely be removed once you clone a template.
-
-```bash
-$ npm install # or pnpm install or yarn install
+# Installation
+## Command-line utilities
+A working C compiler and 
+```
+make
 ```
 
-### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
-
-## Available Scripts
-
-In the project directory, you can run:
-
-### `npm run dev` or `npm start`
-
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
-
-The page will reload if you make edits.<br>
-
-### `npm run build`
-
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
-
-## Deployment
-
-You can deploy the `dist` folder to any static host provider (netlify, surge, now, etc.)
+## Web UI
+Clang with support for WASM (if you're using macOS, make sure you're not using AppleClang), node and npm
+```
+npm install
+npm run dev # for a developement live reload server
+npm run build # to build in dist/
+```

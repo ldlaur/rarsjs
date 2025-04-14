@@ -33,7 +33,7 @@ export const riscvLanguage = LRLanguage.define({
 
 import { githubLight, githubDark, Theme, Colors } from './GithubTheme'
 
-let currentTheme: Theme = githubLight;
+let currentTheme: Theme = getDefaultTheme();
 
 export const wasmInterface = new WasmInterface();
 
@@ -134,10 +134,27 @@ function changeTheme(theme: Theme): void {
   updateCss(theme.colors);
 }
 
+function getDefaultTheme() {
+  const savedTheme = localStorage.getItem("theme");
+  if (savedTheme && savedTheme == "GithubDark") return githubDark;
+  else if (savedTheme && savedTheme == "GithubLight") return githubLight;
+
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  if (prefersDark) return githubDark;
+  else return githubLight;
+}
 
 function doChangeTheme(): void {
-  if (currentTheme == githubDark) { currentTheme = githubLight; changeTheme(githubLight); }
-  else if (currentTheme == githubLight) { currentTheme = githubDark; changeTheme(githubDark); }
+  if (currentTheme == githubDark) {
+    currentTheme = githubLight;
+    changeTheme(githubLight);
+    localStorage.setItem("theme", "GithubLight");
+  }
+  else if (currentTheme == githubLight) {
+    currentTheme = githubDark;
+    changeTheme(githubDark);
+    localStorage.setItem("theme", "GithubDark");
+  }
 }
 
 
@@ -275,7 +292,6 @@ function updateLineNumber(error: boolean = false) {
   }
 }
 
-// TODO: inhibit rebuild while running
 async function runRiscV(): Promise<void> {
   let err = await wasmInterface.build(
     view.state.doc.toString(),
@@ -365,13 +381,31 @@ function finishStepRiscV(): void {
 }
 
 const dummyIndent = indentService.of((context, pos) => {
-  if (pos < 0 || pos > context.state.doc.length) return 0;
+  if (pos < 0 || pos > context.state.doc.length) return null;
   let line = context.lineAt(pos);
-  if (line.from == 0) return 0;
+  if (line.from === 0) return 0;
   let prevLine = context.lineAt(line.from - 1);
   let match = /^\s*/.exec(prevLine.text);
   return match ? match[0].length : 0;
 });
+
+const tabKeymap = keymap.of([{
+  key: "Tab",
+  run(view) {
+    const { state, dispatch } = view;
+    const { from, to } = state.selection.main;
+    const line = state.doc.lineAt(from);
+    // if selection or not at start of line, insert tab
+    if (from !== to || from > line.from) {
+      dispatch(state.update(state.replaceSelection("\t"), {
+        scrollIntoView: true,
+        userEvent: "input"
+      }));
+      return true;
+    }
+    return false;
+  }
+}]);
 
 function toHex(arg: number): string {
   return "0x" + arg.toString(16).padStart(8, "0");
@@ -404,14 +438,17 @@ const BacktraceView: Component = () => {
 
 const Editor: Component = () => {
   let editor: HTMLDivElement | undefined;
+
   onMount(() => {
     const theme = EditorView.theme({
       "&.cm-editor": { height: "100%" },
       ".cm-scroller": { overflow: "auto" },
     });
+    const savedText = localStorage.getItem("savedtext") || "";
     const state = EditorState.create({
-      doc: "",
+      doc: savedText,
       extensions: [
+        tabKeymap,
         new LanguageSupport(riscvLanguage, [dummyIndent]),
         createAsmLinter(wasmInterface),
         breakpointGutter, // must be first so it's the first gutter
@@ -424,10 +461,14 @@ const Editor: Component = () => {
       ],
     });
     view = new EditorView({ state, parent: editor });
+
+    setInterval(() => {
+      localStorage.setItem("savedtext", view.state.doc.toString());
+    }, 1000);
   });
 
   return <main
-    class="w-full h-full overflow-hidden theme-scrollbar" style={{contain: "strict"}}
+    class="w-full h-full overflow-hidden theme-scrollbar" style={{ contain: "strict" }}
     ref={editor} />;
 }
 

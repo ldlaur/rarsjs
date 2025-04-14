@@ -19,6 +19,7 @@ export interface Colors {
     red: string;
     orange: string;
     bgorange: string;
+    bgorange2: string;
     green: string;
     bggreen: string;
     lightblue: string;
@@ -41,6 +42,7 @@ const darkColors: Colors = {
     red: "#fa7970",
     orange: "#faa356",
     bgorange: "#802000",
+    bgorange2: "#a04020",
     green: "#7ce38b",
     lightblue: "#a2d2fb",
     blue: "#77bdfb",
@@ -63,6 +65,7 @@ const lightColors = {
     comment: "#59636e",
     green: "#116329",
     bgorange: "#fac080",
+    bgorange2: "#faa356",
     bggreen: "#7ce38b"
 };
 
@@ -77,7 +80,9 @@ const cssTheme = (dark: boolean) => {
         ".cm-content": {
             caretColor: colors.blue
         },
-
+        ".cm-debugging.cm-activeLine": {
+            backgroundColor: colors.bgorange2
+        },
         ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.blue },
         "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: colors.base2 },
         ".cm-activeLine": {  "background-color": colors.base2+"28" },

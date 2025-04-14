@@ -183,7 +183,7 @@ export class WasmInterface {
       this.stopExecution = true;
       this.hasError = true;
     } else if (this.stopExecution) {
-      setText("Executed successfully");
+      setText(this.textBuffer + "\nExecuted successfully.");
     }
   }
 }
