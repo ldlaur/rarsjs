@@ -1,5 +1,7 @@
 # rars.js
 A minimal assembler, editor, simulator and debugger for RISC-V (RV32IM), meant to be a useful tool for computer architecture students, inspired by the original [RARS](https://github.com/TheThirdOne/rars).
+You can try it now online on [rarsjs.vercel.app](https://rarsjs.vercel.app).
+
 ![Screenshot of the rars.js Web UI, debugging a recursive factorial program](images/webui.png)
 ## Features
 This initial release introduces the following core features:
