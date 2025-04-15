@@ -191,7 +191,7 @@ window.addEventListener('keydown', (event) => {
 
 const Navbar: Component = () => {
   return (
-    <nav class="sticky theme-gutter">
+    <nav class="flex-none theme-gutter">
       <div class="mx-auto px-2">
         <div class="flex items-center h-10">
           <div class="flex-shrink-0">
@@ -431,7 +431,7 @@ const BacktraceCall: Component<{ name: string, args: number[], sp: number }> = (
 
 const BacktraceView: Component = () => {
   return <div class="w-full h-full font-mono text-sm overflow-auto theme-scrollbar-slim flex flex-col">
-    {shadowStack().toReversed().map(ent => <BacktraceCall name={ent.name} args={ent.args} sp={ent.sp} />)}
+    {[...shadowStack()].reverse().map(ent => <BacktraceCall name={ent.name} args={ent.args} sp={ent.sp} />)}
   </div>;
 };
 
@@ -475,9 +475,9 @@ const Editor: Component = () => {
 
 const App: Component = () => {
   return (
-    <div class="h-dvh max-h-dvh w-dvw max-w-dvw flex flex-col justify-between overflow-hidden">
+    <div class="fullsize flex flex-col justify-between overflow-hidden">
       <Navbar />
-      <div class="flex w-full h-full overflow-hidden">
+      <div class="grow flex overflow-hidden">
         <PaneResize firstSize={0.5} direction="horizontal" disableSecond={false}>
           {() => <PaneResize firstSize={0.85} direction="vertical" disableSecond={!debugMode()}>
             {() => <Editor />}

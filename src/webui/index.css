@@ -22,3 +22,17 @@
   direction: ltr;
   -webkit-font-smoothing: antialiased;
 }
+
+@supports (width: 100dvw) {
+  .fullsize {
+    width: 100dvw;
+    height: 100dvh;
+  }
+}
+
+@supports not (width: 100dvw) {
+  .fullsize {
+    width: 100vw;
+    height: 100vh;
+  }
+}
