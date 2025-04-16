@@ -1,8 +1,8 @@
 AFL_CC ?= afl-clang-fast
 LIBFUZZER_CC ?= clang
-CFLAGS ?= -g
-LIBFUZZER_FLAGS ?= -fsanitize=address -fsanitize=fuzzer
-AFL_FLAGS ?= -O2 -fsanitize=memory
+CFLAGS ?= -g -Isrc/exec/ezld/include
+LIBFUZZER_FLAGS ?= $(CFLAGS) -fsanitize=address -fsanitize=fuzzer
+AFL_FLAGS ?= $(CFLAGS) -O2 -fsanitize=memory
 
 SRC = src/exec/core.c src/exec/emulate.c src/exec/vendor/commander.c src/exec/cli.c src/exec/elf.c
 AFLSRC = src/exec/core.c src/exec/emulate.c src/exec/afl.c

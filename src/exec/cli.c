@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ezld/include/ezld/linker.h"
+#include "ezld/include/ezld/runtime.h"
 #include "rarsjs/core.h"
 #include "rarsjs/elf.h"
 #include "vendor/commander.h"
@@ -14,8 +16,10 @@
         fprintf(stderr, "only one command is allowed\n"); \
         exit(-1);                                         \
     }                                                     \
-    g_next_arg = malloc(strlen(self->arg) + 1);           \
-    strcpy(g_next_arg, self->arg);
+    if (NULL != self->arg) {                              \
+        g_next_arg = malloc(strlen(self->arg) + 1);       \
+        strcpy(g_next_arg, self->arg);                    \
+    }
 
 // Type of command handler functions (c_*)
 typedef void (*cmd_func_t)(void);
@@ -33,6 +37,11 @@ static int g_argc;
 // for commands c_*
 static char *g_next_arg = NULL;
 static cmd_func_t g_command = NULL;
+
+// These are non-command arguments
+// Set in main
+static const char **g_cmd_args;
+static int g_cmd_args_len;
 
 // UTILITY FUNCTIONS
 
@@ -278,6 +287,31 @@ static void c_assemble(void) {
     fclose(out);
 }
 
+static void c_link(void) {
+    const char *fake_argv[] = {"linker", NULL};
+    ezld_runtime_init(1, fake_argv);
+    ezld_config_t cfg = {0};
+
+    cfg.entry_label = "_start";
+    cfg.out_path = g_exec_out;
+    cfg.seg_align = 0x1000;
+    ezld_array_init(cfg.o_files);
+    ezld_array_init(cfg.sections);
+    *ezld_array_push(cfg.sections) =
+        (ezld_sec_cfg_t){.name = ".text", .virt_addr = TEXT_BASE};
+    *ezld_array_push(cfg.sections) =
+        (ezld_sec_cfg_t){.name = ".data", .virt_addr = DATA_BASE};
+
+    for (int i = 0; i < g_cmd_args_len; i++) {
+        const char *filpath = g_cmd_args[i];
+        *ezld_array_push(cfg.o_files) = filpath;
+    }
+
+    ezld_link(cfg);
+    ezld_array_free(cfg.o_files);
+    ezld_array_free(cfg.sections);
+}
+
 // OPTIONS
 
 static void c_hexdump() {
@@ -338,6 +372,11 @@ static void opt_hexdump(command_t *self) {
     g_command = c_hexdump;
 }
 
+static void opt_link(command_t *self) {
+    CHK_CMD();
+    g_command = c_link;
+}
+
 int main(int argc, char **argv) {
     atexit(free_runtime);
     g_argc = argc;
@@ -361,15 +400,19 @@ int main(int argc, char **argv) {
                    "assemble and run an RV32 assembly file", opt_emulate);
     command_option(&cmd, "-i", "--readelf <file>",
                    "show information about ELF file", opt_readelf);
-    command_option(&cmd, "-o", "--output <file>", "choose output file name",
-                   opt_o);
     command_option(&cmd, "-x", "--hexdump <file>", "perform hexdump of file",
                    opt_hexdump);
+    command_option(&cmd, "-l", "--link", "link object files using ezld linker",
+                   opt_link);
+    command_option(&cmd, "-o", "--output <file>", "choose output file name",
+                   opt_o);
     command_parse(&cmd, argc, argv);
-    command_free(&cmd);
+    g_cmd_args = (const char **)cmd.argv;
+    g_cmd_args_len = cmd.argc;
 
     if (1 == argc || NULL == g_command) {
         command_help(&cmd);
+        command_free(&cmd);
         return EXIT_FAILURE;
     }
 
@@ -378,5 +421,6 @@ int main(int argc, char **argv) {
     if (g_out_changed) {
         free((void *)g_obj_out);
     }
+    command_free(&cmd);
     return EXIT_SUCCESS;
 }
