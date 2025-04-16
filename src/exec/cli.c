@@ -25,8 +25,8 @@
 typedef void (*cmd_func_t)(void);
 
 // Default output paths, changed by opt_o
-static const char *g_obj_out = "a.o";
-static const char *g_exec_out = "a.out";
+static char *g_obj_out = "a.o";
+static char *g_exec_out = "a.out";
 static bool g_out_changed = false;
 
 // Copies of argc, argv from main
@@ -312,8 +312,6 @@ static void c_link(void) {
     ezld_array_free(cfg.sections);
 }
 
-// OPTIONS
-
 static void c_hexdump() {
     FILE *file = fopen(g_next_arg, "rb");
 
@@ -322,18 +320,86 @@ static void c_hexdump() {
         return;
     }
 
-    u8 bytes[8];
+    u8 bytes[16];
     size_t bytes_read = 0;
     u32 off = 0;
-    while ((bytes_read = fread(bytes, 1, 8, file))) {
-        printf("%08x", off);
-        for (size_t i = 0; i < bytes_read; i++) {
-            printf(" %02x", bytes[i]);
+    printf("[ Offset ]    %8s %8s %8s %8s\n", "[0 - 3]", "[4 - 7]", "[8 - 11]",
+           "[12 - 15]");
+    while ((bytes_read = fread(bytes, 1, 16, file))) {
+        printf("[%08x]    ", off);
+        for (size_t i = 0; i < bytes_read; i += 4) {
+            for (size_t j = 0; j < 4 && i + j < bytes_read; j++) {
+                printf("%02x", bytes[i + j]);
+            }
+            printf(" ");
         }
         printf("\n");
         off += bytes_read;
     }
 }
+
+static void c_ascii(void) {
+    FILE *file = fopen(g_next_arg, "rb");
+
+    if (NULL == file) {
+        fprintf(stderr, "ascii: could not open file\n");
+        return;
+    }
+
+    char bytes[16];
+    size_t bytes_read = 0;
+    u32 off = 0;
+    printf(
+        "[ Offset ]    +00 +01 +02 +03 +04 +05 +06 +07 +08 +09 +10 +11 +12 "
+        "+13 +14 +15\n");
+
+    while ((bytes_read = fread(bytes, 1, 16, file))) {
+        printf("[%08x]    ", off);
+        for (size_t i = 0; i < bytes_read; i++) {
+            unsigned char c = bytes[i];
+
+            printf(" ");
+            switch (c) {
+                case 0:
+                    printf("\\0");
+                    break;
+
+                case '\n':
+                    printf("\\n");
+                    break;
+
+                case '\r':
+                    printf("\\r");
+                    break;
+
+                case '\t':
+                    printf("\\t");
+                    break;
+
+                case '\a':
+                    printf("\\a");
+                    break;
+
+                case '\b':
+                    printf("\\b");
+                    break;
+
+                default:
+                    if (c >= 32 && c < 127) {
+                        printf(" %c", c);
+                    } else {
+                        printf("%02x", c);
+                    }
+                    break;
+            }
+            printf(" ");
+        }
+        printf("\n");
+        off += bytes_read;
+    }
+}
+
+// OPTIONS
 
 static void opt_assemble(command_t *self) {
     CHK_CMD();
@@ -377,6 +443,11 @@ static void opt_link(command_t *self) {
     g_command = c_link;
 }
 
+static void opt_ascii(command_t *self) {
+    CHK_CMD();
+    g_command = c_ascii;
+}
+
 int main(int argc, char **argv) {
     atexit(free_runtime);
     g_argc = argc;
@@ -402,6 +473,8 @@ int main(int argc, char **argv) {
                    "show information about ELF file", opt_readelf);
     command_option(&cmd, "-x", "--hexdump <file>", "perform hexdump of file",
                    opt_hexdump);
+    command_option(&cmd, "-c", "--ascii <file>", "perform ascii dump of file",
+                   opt_ascii);
     command_option(&cmd, "-l", "--link", "link object files using ezld linker",
                    opt_link);
     command_option(&cmd, "-o", "--output <file>", "choose output file name",
