@@ -181,7 +181,8 @@ export class WasmInterface {
       setText(this.textBuffer);
       this.hasError = true;
     } else if (this.successfulExecution) {
-      setText(this.textBuffer + "\nExecuted successfully.");
+      const needsNewline = this.textBuffer.length && this.textBuffer[this.textBuffer.length-1] != '\n';
+      setText(this.textBuffer + (needsNewline ? "\nExecuted successfully." : "Executed successfully."));
     }
   }
 }
