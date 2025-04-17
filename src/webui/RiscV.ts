@@ -34,7 +34,7 @@ export class WasmInterface {
   private originalMemory?: Uint8Array;
   private setText: (str: string) => void;
   public textBuffer: string = "";
-  public stopExecution: boolean;
+  public successfulExecution: boolean;
   public regsArr?: Uint32Array;
   public memWrittenLen?: Uint32Array;
   public memWrittenAddr?: Uint32Array;
@@ -69,7 +69,7 @@ export class WasmInterface {
           },
           emu_exit: () => {
             console.log("EXIT");
-            this.stopExecution = true;
+            this.successfulExecution = true;
           },
           panic: () => {
             alert("wasm panic");
@@ -99,7 +99,7 @@ export class WasmInterface {
     const createU8 = (off: number) => new Uint8Array(this.memory.buffer, off);
     const createU32 = (off: number) => new Uint32Array(this.memory.buffer, off);
 
-    this.stopExecution = false;
+    this.successfulExecution = false;
     this.instructions = 0;
     this.hasError = false;
     this.textBuffer = "";
@@ -168,7 +168,6 @@ export class WasmInterface {
     if (this.instructions > INSTRUCTION_LIMIT) {
       this.textBuffer += `ERROR: instruction limit ${INSTRUCTION_LIMIT} reached\n`;
       setText(this.textBuffer);
-      this.stopExecution = true;
       this.hasError = true;
     } else if (this.runtimeErrorType[0] != 0) {
       const errorType = this.runtimeErrorType[0];
@@ -180,9 +179,8 @@ export class WasmInterface {
         default: this.textBuffer += `ERROR: PC=0x${this.pc[0].toString(16)}\n`; break;
       }
       setText(this.textBuffer);
-      this.stopExecution = true;
       this.hasError = true;
-    } else if (this.stopExecution) {
+    } else if (this.successfulExecution) {
       setText(this.textBuffer + "\nExecuted successfully.");
     }
   }

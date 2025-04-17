@@ -40,6 +40,7 @@ export const [dummy, setDummy] = createSignal<number>(0);
 export const [wasmPc, setWasmPc] = createSignal<number>(0);
 export const [wasmRegs, setWasmRegs] = createSignal<number[]>(new Array(31).fill(0));
 export const [debugMode, setDebugMode] = createSignal<boolean>(false);
+export const [hasError, setHasError] = createSignal<boolean>(false);
 export const [consoleText, setConsoleText] = createSignal<string>("");
 
 let breakpointSet: Set<number> = new Set();
@@ -277,9 +278,10 @@ function setBreakpoints(): void {
   });
 }
 
-function updateLineNumber(error: boolean = false) {
+function updateLineNumber() {
+  console.log(debugMode(), hasError());
   let linenoIdx = (wasmInterface.pc[0] - 0x00400000) / 4;
-  if (linenoIdx < wasmInterface.textByLinenumLen[0] && (debugMode() || error)) {
+  if (linenoIdx < wasmInterface.textByLinenumLen[0] && (debugMode() || hasError())) {
     let lineno = wasmInterface.textByLinenum[linenoIdx];
     view.dispatch({
       effects: lineHighlightEffect.of(lineno),
@@ -301,16 +303,19 @@ async function runRiscV(): Promise<void> {
   }
 
   setDebugMode(false);
+  setHasError(false);
   setConsoleText("");
 
-  while (!wasmInterface.stopExecution) {
+  while (1) {
     wasmInterface.run(null, null, setConsoleText);
+    if (wasmInterface.successfulExecution || wasmInterface.hasError) break;
   }
-
+  if (wasmInterface.successfulExecution || wasmInterface.hasError) setDebugMode(false);
+  setHasError(wasmInterface.hasError);
   setWasmPc(wasmInterface.pc[0]);
   setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
   setDummy(dummy() + 1);
-  updateLineNumber(wasmInterface.hasError);
+  updateLineNumber();
 }
 
 async function startStepRiscV(): Promise<void> {
@@ -323,7 +328,7 @@ async function startStepRiscV(): Promise<void> {
   setDebugMode(true);
   setConsoleText("");
   setBreakpoints();
-
+  setHasError(false);
   setWasmPc(wasmInterface.pc[0]);
   setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
   setDummy(dummy() + 1);
@@ -331,38 +336,36 @@ async function startStepRiscV(): Promise<void> {
 }
 
 function singleStepRiscV(): void {
-  if (!wasmInterface.stopExecution) {
-    wasmInterface.run(stackPush, stackPop, setConsoleText);
-    setDebugMode(!wasmInterface.stopExecution);
-    setWasmPc(wasmInterface.pc[0]);
-    setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
+  wasmInterface.run(stackPush, stackPop, setConsoleText);
+  if (wasmInterface.successfulExecution || wasmInterface.hasError) setDebugMode(false);
+  setWasmPc(wasmInterface.pc[0]);
+  setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
 
-    setDummy(dummy() + 1);
-    updateLineNumber();
-  }
+  setDummy(dummy() + 1);
+  updateLineNumber();
 }
 
 let temporaryBreakpoint: number | null = null;
 
 function continueStepRiscV(): void {
+  setBreakpoints();
   while (1) {
-    setBreakpoints();
     wasmInterface.run(stackPush, stackPop, setConsoleText);
-    setDebugMode(!wasmInterface.stopExecution);
-    setWasmPc(wasmInterface.pc[0]);
-    setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
-
-    setDummy(dummy() + 1);
-    updateLineNumber();
     if (temporaryBreakpoint == wasmInterface.pc[0]) { temporaryBreakpoint = null; break; }
     if (breakpointSet.has(wasmInterface.pc[0])) break;
-    if (wasmInterface.stopExecution) {
-      break;
-    }
+    if (wasmInterface.successfulExecution || wasmInterface.hasError) break;
   }
+
+  if (wasmInterface.successfulExecution || wasmInterface.hasError) setDebugMode(false);
+  setHasError(wasmInterface.hasError);
+  setWasmPc(wasmInterface.pc[0]);
+  setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
+  setDummy(dummy() + 1);
+  updateLineNumber();
 }
 
 function quitRiscV(): void {
+  setHasError(false);
   setDebugMode(false);
   setDummy(dummy() + 1);
   updateLineNumber();
