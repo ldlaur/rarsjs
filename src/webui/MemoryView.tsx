@@ -1,8 +1,7 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { Component, createSignal, onMount, createEffect, For, Show } from "solid-js";
 import { TabSelector } from "./TabSelector";
-import { dummy } from "./App";
-
+import { shadowStack, wasmInterface } from './App';
 const ROW_HEIGHT: number = 24;
 
 // FIXME: dummy is a nuclear solution to force a reload
@@ -71,49 +70,68 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
 
     // FIXME: selecting data should not also select the address column
     return (
-        <div class="h-full flex flex-col" style={{contain: "strict"}}>
-            <TabSelector tab={activeTab()} setTab={setActiveTab} tabs={[".text", ".data", "stack"]} />
-            <div ref={parentRef} class="font-mono text-lg overflow-auto theme-scrollbar ml-2" >
-                <div ref={dummyChunk} class="invisible absolute ">{"000000000"}</div>
-                <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
-                    <For each={rowVirtualizer.getVirtualItems()}>
-                        {(virtRow) => (
-                            <div style={{ position: "absolute", top: `${virtRow.start}px`, width: "100%" }}>
-                                <Show when={chunksPerLine() > 1}>
-                                    <a class="theme-fg2 pr-2">
-                                        {(getStartAddr() + virtRow.index * (chunksPerLine() - 1) * 4).toString(16).padStart(8, "0")}
-                                    </a>
-                                </Show>
-                                {(() => {
-                                    dummy();
-                                    let start = getStartAddr();
-                                    let chunks = chunksPerLine() - 1;
-                                    let idx = virtRow.index;
-                                    if (chunksPerLine() < 2) chunks = 1;
-                                    let components = new Array(chunks * 4);
-                                    for (let i = 0; i < chunks; i++) {
-                                        for (let j = 0; j < 4; j++) {
-                                            let style = "";
-                                            let ptr = start + (idx * chunks + i) * 4 + j;
-                                            if ((idx * chunks + i) * 4 + j >= 65536) break;
-                                            let isAnimated = ptr >= props.writeAddr && ptr < props.writeAddr + props.writeLen;
-                                            let grayedOut = activeTab() == "stack" && ptr < props.sp;
-                                            if (grayedOut) style = "theme-fg2";
-                                            if (ptr >= props.sp && ptr < props.sp + 4) style = "frame-highlight";
-                                            if (isAnimated) style = "animate-fade-highlight";
-                                            let text = props.load ? props.load(ptr, 1).toString(16).padStart(2, "0") : "00";
-                                            if (j == 3) style += " mr-[1ch]";
-                                            components[i * 4 + j] = <a class={style}>{text}</a>;
+        <div class="h-full flex flex-col" style={{ contain: "strict" }}>
+            <TabSelector tab={activeTab()} setTab={setActiveTab} tabs={[".text", ".data", "stack", "frames"]} />
+            <Show when={activeTab() == "frames"}>
+                <For each={[...shadowStack()].reverse()}>
+                    {(elem, idx) => {
+                        let realIdx = shadowStack().length - 1 - idx();
+                        let startSp = idx() == 0 ? wasmInterface.regsArr[2-1] : shadowStack()[realIdx + 1].sp;
+                        let elems = [];
+                        for (let ptr = elem.sp - 4; ptr >= startSp; ptr -= 4) {
+                            let text = props.load ? props.load(ptr, 4).toString(16).padStart(8, "0") : "00000000";
+                            elems.push(<div>{text}</div>);
+                        }
+                        return <div class="flex flex-col">
+                            <div>{elem.name}</div>
+                            {elems}
+                        </div>
+                    }}
+                </For>
+            </Show>
+            <Show when={activeTab() != "frames"}>
+                <div ref={parentRef} class="font-mono text-lg overflow-auto theme-scrollbar ml-2" >
+                    <div ref={dummyChunk} class="invisible absolute ">{"000000000"}</div>
+                    <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
+                        <For each={rowVirtualizer.getVirtualItems()}>
+                            {(virtRow) => (
+                                <div style={{ position: "absolute", top: `${virtRow.start}px`, width: "100%" }}>
+                                    <Show when={chunksPerLine() > 1}>
+                                        <a class="theme-fg2 pr-2">
+                                            {(getStartAddr() + virtRow.index * (chunksPerLine() - 1) * 4).toString(16).padStart(8, "0")}
+                                        </a>
+                                    </Show>
+                                    {(() => {
+                                        props.dummy();
+                                        let start = getStartAddr();
+                                        let chunks = chunksPerLine() - 1;
+                                        let idx = virtRow.index;
+                                        if (chunksPerLine() < 2) chunks = 1;
+                                        let components = new Array(chunks * 4);
+                                        for (let i = 0; i < chunks; i++) {
+                                            for (let j = 0; j < 4; j++) {
+                                                let style = "";
+                                                let ptr = start + (idx * chunks + i) * 4 + j;
+                                                if ((idx * chunks + i) * 4 + j >= 65536) break;
+                                                let isAnimated = ptr >= props.writeAddr && ptr < props.writeAddr + props.writeLen;
+                                                let grayedOut = activeTab() == "stack" && ptr < props.sp;
+                                                if (grayedOut) style = "theme-fg2";
+                                                if (ptr >= props.sp && ptr < props.sp + 4) style = "frame-highlight";
+                                                if (isAnimated) style = "animate-fade-highlight";
+                                                let text = props.load ? props.load(ptr, 1).toString(16).padStart(2, "0") : "00";
+                                                if (j == 3) style += " mr-[1ch]";
+                                                components[i * 4 + j] = <a class={style}>{text}</a>;
+                                            }
                                         }
-                                    }
-                                    return components;
-                                })()}
+                                        return components;
+                                    })()}
 
-                            </div>
-                        )}
-                    </For>
+                                </div>
+                            )}
+                        </For>
+                    </div>
                 </div>
-            </div>
+            </Show>
         </div>
     );
 };

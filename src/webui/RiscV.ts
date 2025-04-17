@@ -180,7 +180,7 @@ export class WasmInterface {
         case 2: this.textBuffer += `ERROR: cannot load from address 0x${this.runtimeErrorAddr[0].toString(16)} at PC=0x${this.pc[0].toString(16)}\n`; break;
         case 3: this.textBuffer += `ERROR: cannot store to address 0x${this.runtimeErrorAddr[0].toString(16)} at PC=0x${this.pc[0].toString(16)}\n`; break;
         case 4: this.textBuffer += `ERROR: unhandled instruction at PC=0x${this.pc[0].toString(16)}\n`; break;
-        default: this.textBuffer += `ERROR: PC=0x${this.pc[0].toString(16)}\n`; break;
+        default: this.textBuffer += `ERROR${errorType}: PC=0x${this.pc[0].toString(16)} ${this.runtimeErrorAddr[0].toString(16)}\n`; break;
       }
       setText(this.textBuffer);
       this.hasError = true;

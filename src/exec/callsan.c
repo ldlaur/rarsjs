@@ -21,9 +21,12 @@ export ShadowStackEnt *g_shadow_stack;
 export size_t g_shadow_stack_len, g_shadow_stack_cap;
 
 void callsan_init() {
-    // TODO: technically _start should initialize gp for main
-    g_reg_bitmap =
-        (1ul << REG_ZERO) | (1ul << REG_SP) | (1ul << REG_TP) | (1ul << REG_GP);
+    g_reg_bitmap = (1ul << REG_ZERO) | (1ul << REG_SP) | (1ul << REG_TP) |
+                   (1ul << REG_GP) | (1u << REG_FP) | (1u << REG_S1) |
+                   (1u << REG_S2) | (1u << REG_S3) | (1u << REG_S4) |
+                   (1u << REG_S5) | (1u << REG_S6) | (1u << REG_S7) |
+                   (1u << REG_S8) | (1u << REG_S9) | (1u << REG_S10) |
+                   (1u << REG_S11);
     g_shadow_stack = NULL;
     g_shadow_stack_len = 0;
     g_shadow_stack_cap = 0;
@@ -44,20 +47,23 @@ const u32 CALLSAN_CALL_ACCESSIBLE =
     (1ul << REG_ZERO) | (1ul << REG_SP) | (1ul << REG_RA) | (1ul << REG_TP) |
     (1ul << REG_GP) | (1u << REG_A0) | (1u << REG_A1) | (1u << REG_A2) |
     (1u << REG_A3) | (1u << REG_A4) | (1u << REG_A5) | (1u << REG_A6) |
-    (1u << REG_A7);
+    (1u << REG_A7) | (1u << REG_FP) | (1u << REG_S1) | (1u << REG_S2) |
+    (1u << REG_S3) | (1u << REG_S4) | (1u << REG_S5) | (1u << REG_S6) |
+    (1u << REG_S7) | (1u << REG_S8) | (1u << REG_S9) | (1u << REG_S10) |
+    (1u << REG_S11);
 
 const u32 CALLSAN_CALL_CLOBBERED =
     (1u << REG_T0) | (1u << REG_T1) | (1u << REG_T2) | (1u << REG_T3) |
-    (1u << REG_T4) | (1u << REG_T5) | (1u << REG_T6) | (1u << REG_A0) |
-    (1u << REG_A1) | (1u << REG_A2) | (1u << REG_A3) | (1u << REG_A4) |
-    (1u << REG_A5) | (1u << REG_A6) | (1u << REG_A7);
+    (1u << REG_T4) | (1u << REG_T5) | (1u << REG_T6) | (1u << REG_A2) |
+    (1u << REG_A3) | (1u << REG_A4) | (1u << REG_A5) | (1u << REG_A6) |
+    (1u << REG_A7);
 
 void callsan_call() {
     ShadowStackEnt *e =
         push(g_shadow_stack, g_shadow_stack_len, g_shadow_stack_cap);
     e->sregs[0] = g_regs[REG_FP];
     e->sregs[1] = g_regs[REG_S1];
-    for (int i = REG_S2; i <= REG_S11; i++) e->sregs[i - REG_S2] = g_regs[i];
+    for (int i = REG_S2; i <= REG_S11; i++) e->sregs[2 + i - REG_S2] = g_regs[i];
     for (int i = REG_A0; i <= REG_A7; i++) e->args[i - REG_A0] = g_regs[i];
     e->sp = g_regs[REG_SP];
     e->pc = g_pc;
@@ -98,8 +104,8 @@ bool callsan_ret() {
         }
     }
 
-    // after a function return you cannot read the A and T registers
-    // since the function hypothetically may have clobbered them
+    // after a function return you cannot read the A (except A0 and A1) and T
+    // registers since the function hypothetically may have clobbered them
     g_reg_bitmap = e->reg_bitmap & ~CALLSAN_CALL_CLOBBERED;
     return true;
 }

@@ -50,6 +50,9 @@ static void emulate_safe(void) {
         emulate();
 
         switch (g_runtime_error_type) {
+            case ERROR_NONE:
+                break;
+
             case ERROR_FETCH:
                 fprintf(stderr,
                         "emulator: fetch error at pc=0x%08x on addr=0x%08x\n",
@@ -74,7 +77,10 @@ static void emulate_safe(void) {
                 return;
 
             default:
-                break;
+            fprintf(stderr, "emulator: unhandled error at pc=0x%08x\n",
+                g_pc);
+
+                return;
         }
     }
 }

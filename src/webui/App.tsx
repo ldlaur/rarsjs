@@ -108,7 +108,7 @@ function updateCss(colors: Colors): void {
 `;
 }
 
-const [shadowStack, setShadowStack] = createSignal<{ name: string, args: number[], sp: number }[]>([]);
+export const [shadowStack, setShadowStack] = createSignal<{ name: string, args: number[], sp: number }[]>([]);
 
 window.addEventListener("DOMContentLoaded", () => {
   themeStyle = document.createElement("style");
@@ -286,7 +286,6 @@ function updateShadowStack() {
   for (let i = 0; i < wasmInterface.shadowStackLen[0]; i++) {
     let pc = shadowStack[i * (96/4) + 0];
     let sp = shadowStack[i * (96/4) + 1];
-    console.log(pc, sp);
     let args = shadowStack.slice(i * (96/4) + 2).slice(0, 8);
     st[i] = { name: wasmInterface.getStringFromPc(pc), args: [...args], sp: sp };
   }
