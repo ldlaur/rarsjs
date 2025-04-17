@@ -1,0 +1,3 @@
+[submodule "src/exec/ezld"]
+	path = src/exec/ezld
+	url = https://github.com/Alessandro-Salerno/ezld
