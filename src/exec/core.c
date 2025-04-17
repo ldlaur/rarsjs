@@ -908,8 +908,11 @@ OpcodeHandling opcode_types[] = {
     {handle_ecall, {"ecall"}},
 };
 
+void callsan_init();
+
 export void assemble(const char *txt, size_t s, bool allow_externs) {
     g_allow_externs = allow_externs;
+    callsan_init();
 
     g_text = (Section){.name = ".text",
                        .base = TEXT_BASE,

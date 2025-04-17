@@ -22,6 +22,8 @@ interface WasmExports {
   g_runtime_error_type: number;
   g_pc_to_label_txt: number;
   g_pc_to_label_len: number;
+  g_shadow_stack: number;
+  g_shadow_stack_len: number;
 }
 
 const INSTRUCTION_LIMIT: number = 100 * 1000;
@@ -46,14 +48,20 @@ export class WasmInterface {
   public runtimeErrorType?: Uint32Array;
   public hasError: boolean = false;
   public instructions: number;
+  public shadowStackPtr?: Uint32Array;
+  public shadowStack?: Uint32Array;
+  public shadowStackLen?: Uint32Array;
 
   public emu_load: (addr: number, size: number) => number;
-  public stackPush: () => void;
-  public stackPop: () => void;
 
   constructor() {
     this.memory = new WebAssembly.Memory({ initial: 7 });
   }
+
+
+  createU8(off: number) { return new Uint8Array(this.memory.buffer, off) }
+  createU32(off: number) { return new Uint32Array(this.memory.buffer, off) }
+
 
   async loadModule(): Promise<void> {
     if (this.loadedPromise) return this.loadedPromise;
@@ -75,8 +83,6 @@ export class WasmInterface {
             alert("wasm panic");
           },
           gettime64: () => BigInt(new Date().getTime() * 10 * 1000),
-          shadowstack_push: (n: number) => { if (this.stackPush) this.stackPush() },
-          shadowstack_pop: () => { if (this.stackPop) this.stackPop() },
         },
       });
       this.wasmInstance = instance;
@@ -96,28 +102,28 @@ export class WasmInterface {
       await this.loadModule();
     }
 
-    const createU8 = (off: number) => new Uint8Array(this.memory.buffer, off);
-    const createU32 = (off: number) => new Uint32Array(this.memory.buffer, off);
-
     this.successfulExecution = false;
     this.instructions = 0;
     this.hasError = false;
     this.textBuffer = "";
 
-    createU8(0).set(this.originalMemory);
+    this.createU8(0).set(this.originalMemory);
 
     const encoder = new TextEncoder();
     const strBytes = encoder.encode(source);
     const strLen = strBytes.length;
     const offset = this.exports.__heap_base;
 
-    this.memWrittenAddr = createU32(this.exports.g_mem_written_addr);
-    this.memWrittenLen = createU32(this.exports.g_mem_written_len);
-    this.regWritten = createU32(this.exports.g_reg_written);
-    this.pc = createU32(this.exports.g_pc);
-    this.regsArr = createU32(this.exports.g_regs + 4);
-    this.runtimeErrorAddr = createU32(this.exports.g_runtime_error_addr);
-    this.runtimeErrorType = createU32(this.exports.g_runtime_error_type);
+    this.memWrittenAddr = this.createU32(this.exports.g_mem_written_addr);
+    this.memWrittenLen = this.createU32(this.exports.g_mem_written_len);
+    this.regWritten = this.createU32(this.exports.g_reg_written);
+    this.pc = this.createU32(this.exports.g_pc);
+    this.regsArr = this.createU32(this.exports.g_regs + 4);
+    this.runtimeErrorAddr = this.createU32(this.exports.g_runtime_error_addr);
+    this.runtimeErrorType = this.createU32(this.exports.g_runtime_error_type);
+    this.shadowStackLen = this.createU32(this.exports.g_shadow_stack_len);
+    this.shadowStackPtr = this.createU32(this.exports.g_shadow_stack);
+    
     if (offset + strLen > this.memory.buffer.byteLength) {
       const pages = Math.ceil(
         (offset + strLen - this.memory.buffer.byteLength) / 65536,
@@ -125,17 +131,17 @@ export class WasmInterface {
       this.memory.grow(pages);
     }
 
-    createU8(offset).set(strBytes);
-    createU32(this.exports.g_heap_size)[0] = (strLen + 7) & (~7); // align up to 8
+    this.createU8(offset).set(strBytes);
+    this.createU32(this.exports.g_heap_size)[0] = (strLen + 7) & (~7); // align up to 8
     this.exports.assemble(offset, strLen, false);
-    const textByLinenumPtr = createU32(this.exports.g_text_by_linenum)[0];
-    this.textByLinenum = createU32(textByLinenumPtr);
-    this.textByLinenumLen = createU32(this.exports.g_text_by_linenum_len);
+    const textByLinenumPtr = this.createU32(this.exports.g_text_by_linenum)[0];
+    this.textByLinenum = this.createU32(textByLinenumPtr);
+    this.textByLinenumLen = this.createU32(this.exports.g_text_by_linenum_len);
 
-    const errorLine = createU32(this.exports.g_error_line)[0];
-    const errorPtr = createU32(this.exports.g_error)[0];
+    const errorLine = this.createU32(this.exports.g_error_line)[0];
+    const errorPtr = this.createU32(this.exports.g_error)[0];
     if (errorPtr) {
-      const error = createU8(errorPtr);
+      const error = this.createU8(errorPtr);
       const errorLen = error.indexOf(0);
       const errorStr = new TextDecoder("utf8").decode(error.slice(0, errorLen));
       return { line: errorLine, message: errorStr };
@@ -143,26 +149,24 @@ export class WasmInterface {
 
     return null;
   }
+  getShadowStack(): Uint32Array {
+    return this.createU32(this.shadowStackPtr[0]);
+  }
 
   getStringFromPc(pc: number): string {
-    const createU8 = (off: number) => new Uint8Array(this.memory.buffer, off);
-    const createU32 = (off: number) => new Uint32Array(this.memory.buffer, off);
-
     this.exports.pc_to_label(pc);
-    const labelPtr = createU32(this.exports.g_pc_to_label_txt)[0];
+    const labelPtr = this.createU32(this.exports.g_pc_to_label_txt)[0];
     if (labelPtr) {
-      const labelLen = createU32(this.exports.g_pc_to_label_len)[0];
-      const label = createU8(labelPtr);
+      const labelLen = this.createU32(this.exports.g_pc_to_label_len)[0];
+      const label = this.createU8(labelPtr);
       const labelStr = new TextDecoder("utf8").decode(label.slice(0, labelLen));
       return labelStr;
     }
     return "0x" + pc.toString(16);
   }
 
-  run(stackPush: () => void, stackPop: () => void, setText: (str: string) => void): void {
+  run(setText: (str: string) => void): void {
     this.setText = setText;
-    this.stackPush = stackPush;
-    this.stackPop = stackPop;
     this.exports.emulate();
     this.instructions++;
     if (this.instructions > INSTRUCTION_LIMIT) {

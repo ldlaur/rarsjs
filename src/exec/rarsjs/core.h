@@ -144,7 +144,12 @@ typedef enum Error : u32 {
     ERROR_FETCH = 1,
     ERROR_LOAD = 2,
     ERROR_STORE = 3,
-    ERROR_UNHANDLED_INSN = 4
+    ERROR_UNHANDLED_INSN = 4,
+    ERROR_CALLSAN_CANTREAD = 5,
+    ERROR_CALLSAN_NOT_SAVED = 6,
+    ERROR_CALLSAN_SP_MISMATCH = 7,
+    ERROR_CALLSAN_RA_MISMATCH = 8,
+    ERROR_CALLSAN_RET_EMPTY = 9
 } Error;
 
 extern export Section g_text;
@@ -183,3 +188,38 @@ void prepare_runtime_sections();
 void prepare_stack();
 void free_runtime();
 u32 LOAD(u32 addr, int size, bool *err);
+
+enum Reg {
+    REG_ZERO = 0,
+    REG_RA,
+    REG_SP,
+    REG_GP,
+    REG_TP,
+    REG_T0,
+    REG_T1,
+    REG_T2,
+    REG_FP,
+    REG_S1,
+    REG_A0,
+    REG_A1,
+    REG_A2,
+    REG_A3,
+    REG_A4,
+    REG_A5, 
+    REG_A6, 
+    REG_A7,
+    REG_S2,
+    REG_S3,
+    REG_S4, 
+    REG_S5,
+    REG_S6,
+    REG_S7,
+    REG_S8,
+    REG_S9,
+    REG_S10,
+    REG_S11,
+    REG_T3,
+    REG_T4,
+    REG_T5,
+    REG_T6
+};

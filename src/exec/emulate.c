@@ -1,5 +1,4 @@
 #include "rarsjs/core.h"
-#include <stddef.h>
 
 extern u32 g_regs[32];
 extern u32 g_pc;
@@ -10,6 +9,11 @@ extern u32 g_error_line;
 
 extern u32 g_runtime_error_addr;
 extern Error g_runtime_error_type;
+
+void callsan_store(int reg);
+void callsan_call();
+bool callsan_ret();
+bool callsan_can_load(int reg);
 
 // end is inclusive, like in Verilog
 static inline u32 extr(u32 val, u32 end, u32 start) {
@@ -154,13 +158,19 @@ void emulate() {
 
     u32 opcode = extr(inst, 6, 0);
 
-    if (inst == 0x73) { do_syscall(); g_pc += 4; g_reg_written = 0; return; }
+    if (inst == 0x73) {
+        do_syscall();
+        g_pc += 4;
+        g_reg_written = 0;
+        return;
+    }
 
     // LUI
     if (opcode == 0b0110111) {
         *D = utype;
         g_pc += 4;
         g_reg_written = rd;
+        callsan_store(rd);
         return;
     }
 
@@ -169,6 +179,7 @@ void emulate() {
         *D = g_pc + utype;
         g_pc += 4;
         g_reg_written = rd;
+        callsan_store(rd);
         return;
     }
 
@@ -176,26 +187,31 @@ void emulate() {
     if (opcode == 0b1101111) {
         *D = g_pc + 4;
         g_pc += jtype;
-        if (rd == 1) {
-            shadowstack_push();
-        }
         g_reg_written = rd;
+        callsan_store(rd);
+        if (rd == 1) callsan_call();
         return;
     }
 
     // JALR
     if (opcode == 0b1100111) {
+        if (!callsan_can_load(rs1)) return;
+        callsan_store(rd);
         *D = g_pc + 4;
+        // this has to be checked before updating pc so that the highlighted pc is correct
+        if (rd == 0 && rs1 == 1) {  // jr ra/ret
+            if (!callsan_ret()) return;
+        }
         g_pc = (S1 + itype) & ~1;
-        // TODO: on pop, check that the addresses match
-        if (rd == 1) shadowstack_push();
-        if (rd == 0 && rs1 == 1) shadowstack_pop();  // jr ra/ret
+        if (rd == 1) callsan_call();
         g_reg_written = rd;
         return;
     }
 
     // BEQ/BNE/BLT/BGE/BLTU/BGEU
     if (opcode == 0b1100011) {
+        if (!callsan_can_load(rs1)) return;
+        if (!callsan_can_load(rs2)) return;
         bool T = false;
         if ((funct3 >> 1) == 0) T = S1 == S2;
         else if ((funct3 >> 1) == 2) T = (i32)S1 < (i32)S2;
@@ -212,6 +228,7 @@ void emulate() {
 
     // LB/LH/LW/LBU/LHU
     if (opcode == 0b0000011) {
+        if (!callsan_can_load(rs1)) return;
         if (funct3 == 0b000) *D = sext(LOAD(S1 + itype, 1, &err), 8);
         else if (funct3 == 0b001) *D = sext(LOAD(S1 + itype, 2, &err), 16);
         else if (funct3 == 0b010) *D = LOAD(S1 + itype, 4, &err);
@@ -229,11 +246,14 @@ void emulate() {
         }
         g_pc += 4;
         g_reg_written = rd;
+        callsan_store(rd);
         return;
     }
 
     // SB/SH/SW
     if (opcode == 0b0100011) {
+        if (!callsan_can_load(rs1)) return;
+        if (!callsan_can_load(rs2)) return;
         if (funct3 == 0b000) STORE(S1 + stype, S2, 1, &err);
         else if (funct3 == 0b001) STORE(S1 + stype, S2, 2, &err);
         else if (funct3 == 0b010) STORE(S1 + stype, S2, 4, &err);
@@ -253,6 +273,7 @@ void emulate() {
 
     // non-Load I-type
     if (opcode == 0b0010011) {
+        if (!callsan_can_load(rs1)) return;
         u32 shamt = itype & 31;
         if (funct3 == 0b000) *D = S1 + itype;                       // ADDI
         else if (funct3 == 0b010) *D = (i32)S1 < itype;             // SLTI
@@ -271,11 +292,14 @@ void emulate() {
         }
         g_pc += 4;
         g_reg_written = rd;
+        callsan_store(rd);
         return;
     }
 
     // R-type
     if (opcode == 0b0110011) {
+        if (!callsan_can_load(rs1)) return;
+        if (!callsan_can_load(rs2)) return;
         u32 shamt = S2 & 31;
         if (funct3 == 0b000 && funct7 == 0) *D = S1 + S2;                 // ADD
         else if (funct3 == 0b000 && funct7 == 32) *D = S1 - S2;           // SUB
@@ -305,6 +329,7 @@ void emulate() {
         }
         g_pc += 4;
         g_reg_written = rd;
+        callsan_store(rd);
         return;
     }
 

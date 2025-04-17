@@ -108,20 +108,7 @@ function updateCss(colors: Colors): void {
 `;
 }
 
-const [shadowStack, setShadowStack] = createSignal<{ name: string, args: number[], sp: number }[]>(new Array());
-function stackPush() {
-  let pc = wasmInterface.pc[0];
-  let name = wasmInterface.getStringFromPc(pc);
-  let sp = wasmInterface.regsArr[2 - 1];
-  let args = Array.from(wasmInterface.regsArr.slice(10 - 1, 18 - 1));
-  setShadowStack([...shadowStack(), { name: name, args: args, sp: sp }]);
-  console.log(shadowStack());
-}
-
-function stackPop() {
-  setShadowStack(shadowStack().slice(0, -1));
-  console.log(shadowStack());
-}
+const [shadowStack, setShadowStack] = createSignal<{ name: string, args: number[], sp: number }[]>([]);
 
 window.addEventListener("DOMContentLoaded", () => {
   themeStyle = document.createElement("style");
@@ -279,7 +266,6 @@ function setBreakpoints(): void {
 }
 
 function updateLineNumber() {
-  console.log(debugMode(), hasError());
   let linenoIdx = (wasmInterface.pc[0] - 0x00400000) / 4;
   if (linenoIdx < wasmInterface.textByLinenumLen[0] && (debugMode() || hasError())) {
     let lineno = wasmInterface.textByLinenum[linenoIdx];
@@ -288,9 +274,23 @@ function updateLineNumber() {
     });
   } else {
     view.dispatch({
-      effects: lineHighlightEffect.of(0), // disable the line highlight, as line numbering starts from1 
+      effects: lineHighlightEffect.of(0), // disable the line highlight, as line numbering starts from 1 
     });
   }
+}
+
+function updateShadowStack() {
+  let len = wasmInterface.shadowStackLen[0];
+  let st: { name: string, args: number[], sp: number }[] = new Array(len);
+  let shadowStack = wasmInterface.getShadowStack();
+  for (let i = 0; i < wasmInterface.shadowStackLen[0]; i++) {
+    let pc = shadowStack[i * (96/4) + 0];
+    let sp = shadowStack[i * (96/4) + 1];
+    console.log(pc, sp);
+    let args = shadowStack.slice(i * (96/4) + 2).slice(0, 8);
+    st[i] = { name: wasmInterface.getStringFromPc(pc), args: [...args], sp: sp };
+  }
+  setShadowStack(st);
 }
 
 async function runRiscV(): Promise<void> {
@@ -307,7 +307,7 @@ async function runRiscV(): Promise<void> {
   setConsoleText("");
 
   while (1) {
-    wasmInterface.run(null, null, setConsoleText);
+    wasmInterface.run(setConsoleText);
     if (wasmInterface.successfulExecution || wasmInterface.hasError) break;
   }
   if (wasmInterface.successfulExecution || wasmInterface.hasError) setDebugMode(false);
@@ -316,6 +316,8 @@ async function runRiscV(): Promise<void> {
   setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
   setDummy(dummy() + 1);
   updateLineNumber();
+  if (wasmInterface.hasError) updateShadowStack();
+  if (wasmInterface.successfulExecution) setShadowStack([]);
 }
 
 async function startStepRiscV(): Promise<void> {
@@ -333,16 +335,18 @@ async function startStepRiscV(): Promise<void> {
   setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
   setDummy(dummy() + 1);
   updateLineNumber();
+  setShadowStack([]);
 }
 
 function singleStepRiscV(): void {
-  wasmInterface.run(stackPush, stackPop, setConsoleText);
+  wasmInterface.run(setConsoleText);
   if (wasmInterface.successfulExecution || wasmInterface.hasError) setDebugMode(false);
   setWasmPc(wasmInterface.pc[0]);
   setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
 
   setDummy(dummy() + 1);
   updateLineNumber();
+  updateShadowStack();
 }
 
 let temporaryBreakpoint: number | null = null;
@@ -350,7 +354,7 @@ let temporaryBreakpoint: number | null = null;
 function continueStepRiscV(): void {
   setBreakpoints();
   while (1) {
-    wasmInterface.run(stackPush, stackPop, setConsoleText);
+    wasmInterface.run(setConsoleText);
     if (temporaryBreakpoint == wasmInterface.pc[0]) { temporaryBreakpoint = null; break; }
     if (breakpointSet.has(wasmInterface.pc[0])) break;
     if (wasmInterface.successfulExecution || wasmInterface.hasError) break;
@@ -362,6 +366,7 @@ function continueStepRiscV(): void {
   setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
   setDummy(dummy() + 1);
   updateLineNumber();
+  updateShadowStack();
 }
 
 function quitRiscV(): void {
@@ -369,6 +374,7 @@ function quitRiscV(): void {
   setDebugMode(false);
   setDummy(dummy() + 1);
   updateLineNumber();
+  setShadowStack([]);
 }
 
 

@@ -4,9 +4,9 @@ CFLAGS ?= -g
 LIBFUZZER_FLAGS ?= -fsanitize=address -fsanitize=fuzzer
 AFL_FLAGS ?= -O2 -fsanitize=memory
 
-SRC = src/exec/core.c src/exec/emulate.c src/exec/vendor/commander.c src/exec/cli.c src/exec/elf.c
-AFLSRC = src/exec/core.c src/exec/emulate.c src/exec/afl.c
-FUZZER_SRC = src/exec/core.c src/exec/emulate.c src/exec/libfuzzer.c
+SRC = src/exec/core.c src/exec/emulate.c src/exec/vendor/commander.c src/exec/cli.c src/exec/elf.c src/exec/callsan.c
+AFLSRC = src/exec/core.c src/exec/emulate.c src/exec/callsan.c src/exec/afl.c
+FUZZER_SRC = src/exec/core.c src/exec/emulate.c src/exec/callsan.c src/exec/libfuzzer.c
 
 rarsjs: $(SRC)
 	$(CC) $(SRC) $(CFLAGS) -o rarsjs
