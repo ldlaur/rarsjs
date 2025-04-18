@@ -180,6 +180,11 @@ extern export Error g_runtime_error_type;
 extern export bool g_exited;
 extern export int g_exit_code;
 
+extern export u32 *g_text_by_linenum;
+extern export size_t g_text_by_linenum_len, g_text_by_linenum_cap;
+
+extern const char *const REGISTER_NAMES[];
+
 void assemble(const char *str, size_t len, bool allow_externs);
 void emulate();
 bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
@@ -188,6 +193,7 @@ void prepare_runtime_sections();
 void prepare_stack();
 void free_runtime();
 u32 LOAD(u32 addr, int size, bool *err);
+bool pc_to_label_r(u32 pc, LabelData **ret, u32 *off);
 
 enum Reg {
     REG_ZERO = 0,
@@ -205,12 +211,12 @@ enum Reg {
     REG_A2,
     REG_A3,
     REG_A4,
-    REG_A5, 
-    REG_A6, 
+    REG_A5,
+    REG_A6,
     REG_A7,
     REG_S2,
     REG_S3,
-    REG_S4, 
+    REG_S4,
     REG_S5,
     REG_S6,
     REG_S7,
