@@ -28,7 +28,7 @@ export u32 g_reg_written;
 export u32 g_error_line;
 export const char *g_error;
 
-export u32 g_runtime_error_addr;
+export u32 g_runtime_error_params[2];
 export Error g_runtime_error_type;
 
 LabelData *g_labels;
@@ -329,7 +329,7 @@ int parse_reg(Parser *p) {
         }
     }
     char *names[] = {"zero", "ra", "sp",  "gp",  "tp", "t0", "t1", "t2",
-                     "fp",   "s1", "a0",  "a1",  "a2", "a3", "a4", "a5",
+                     "fp/s0",   "s1", "a0",  "a1",  "a2", "a3", "a4", "a5",
                      "a6",   "a7", "s2",  "s3",  "s4", "s5", "s6", "s7",
                      "s8",   "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
     for (int i = 0; i < 32; i++) {
@@ -961,7 +961,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
     g_error_line = 0;
     g_error = NULL;
 
-    g_runtime_error_addr = 0;
+    memset(g_runtime_error_params, 0, sizeof(g_runtime_error_params));
     g_runtime_error_type = 0;
 
     g_labels = NULL;

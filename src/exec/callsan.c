@@ -36,7 +36,7 @@ bool callsan_can_load(int reg) {
     if (reg == 0) return true;
     if (((g_reg_bitmap >> reg) & 1) == 0) {
         g_runtime_error_type = ERROR_CALLSAN_CANTREAD;
-        g_runtime_error_addr = reg;
+        g_runtime_error_params[0] = reg;
         return false;
     }
     return true;
@@ -84,11 +84,13 @@ bool callsan_ret() {
 
     if (g_regs[REG_SP] != e->sp) {
         g_runtime_error_type = ERROR_CALLSAN_SP_MISMATCH;
+        g_runtime_error_params[1] = e->sp;
         return false;
     }
 
     if (g_regs[REG_RA] != e->ra) {
         g_runtime_error_type = ERROR_CALLSAN_RA_MISMATCH;
+        g_runtime_error_params[1] = e->ra;
         return false;
     }
 
@@ -99,7 +101,10 @@ bool callsan_ret() {
     for (int i = 0; i < 12; i++) {
         if (sregs[i] != e->sregs[i]) {
             g_runtime_error_type = ERROR_CALLSAN_NOT_SAVED;
-            g_runtime_error_addr = i;
+            if (i == 0) g_runtime_error_params[0] = REG_FP;
+            else if (i == 1) g_runtime_error_params[0] = REG_S1;
+            else g_runtime_error_params[0] = REG_S2 + (i - 2);
+            g_runtime_error_params[1] = e->sregs[i];
             return false;
         }
     }

@@ -46,10 +46,35 @@ export const [consoleText, setConsoleText] = createSignal<string>("");
 let breakpointSet: Set<number> = new Set();
 let view: EditorView;
 let cmTheme: Compartment = new Compartment();
-let themeStyle: HTMLStyleElement | null = null;
+
+
+const TEXT_BASE = 0x00400000;
+const TEXT_END = 0x10000000;
+const DATA_BASE = 0x10000000;
+const STACK_TOP = 0x7FFFF000;
+const STACK_LEN = 4096;
+const DATA_END = 0x70000000;
+
+export function toUnsigned(x: number): number {
+    return x >>> 0;
+}
+
+export function convertNumber(x: number, decimal: boolean): string {
+    let ptr = false;
+    if (decimal) {
+        if (x >= TEXT_BASE && x < TEXT_END) ptr = true;
+        else if (x >= STACK_TOP-STACK_LEN && x < STACK_TOP) ptr = true;
+        else if (x >= DATA_BASE && x < DATA_END) ptr = true;
+        if (ptr) return "0x"+toUnsigned(x).toString(16);
+        else return toUnsigned(x).toString();
+    } else {
+        return toUnsigned(x).toString(16).padStart(8, "0");
+    }
+}
+
 
 function updateCss(colors: Colors): void {
-  themeStyle.innerHTML = `
+  document.getElementById('themestyle').innerHTML = `
 .theme-bg {
   background-color: ${colors.base0};
 }
@@ -111,8 +136,6 @@ function updateCss(colors: Colors): void {
 export const [shadowStack, setShadowStack] = createSignal<{ name: string, args: number[], sp: number }[]>([]);
 
 window.addEventListener("DOMContentLoaded", () => {
-  themeStyle = document.createElement("style");
-  document.head.appendChild(themeStyle);
   updateCss(currentTheme.colors);
 });
 
@@ -393,7 +416,13 @@ const dummyIndent = indentService.of((context, pos) => {
   if (line.from === 0) return 0;
   let prevLine = context.lineAt(line.from - 1);
   let match = /^\s*/.exec(prevLine.text);
-  return match ? match[0].length : 0;
+  if (!match) return 0;
+  let cnt = 0;
+  for (let i = 0; i < match[0].length; i++) {
+    if (match[0][i] == '\t') cnt = cnt + 4 - cnt % 4;
+    else cnt += 1; 
+  }
+  return cnt;
 });
 
 const tabKeymap = keymap.of([{
@@ -401,9 +430,8 @@ const tabKeymap = keymap.of([{
   run(view) {
     const { state, dispatch } = view;
     const { from, to } = state.selection.main;
-    const line = state.doc.lineAt(from);
-    // if selection or not at start of line, insert tab
-    if (from !== to || from > line.from) {
+    // insert tab instead of indenting if it's a single line selection
+    if (from == to || state.doc.lineAt(from).number == state.doc.lineAt(to).number) {
       dispatch(state.update(state.replaceSelection("\t"), {
         scrollIntoView: true,
         userEvent: "input"

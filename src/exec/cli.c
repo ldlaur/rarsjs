@@ -56,19 +56,19 @@ static void emulate_safe(void) {
             case ERROR_FETCH:
                 fprintf(stderr,
                         "emulator: fetch error at pc=0x%08x on addr=0x%08x\n",
-                        g_pc, g_runtime_error_addr);
+                        g_pc, g_runtime_error_params[0]);
                 return;
 
             case ERROR_LOAD:
                 fprintf(stderr,
                         "emulator: load error at pc=0x%08x on addr=0x%08x\n",
-                        g_pc, g_runtime_error_addr);
+                        g_pc, g_runtime_error_params[0]);
                 return;
 
             case ERROR_STORE:
                 fprintf(stderr,
                         "emulator: store error at pc=0x%08x on addr=0x%08x\n",
-                        g_pc, g_runtime_error_addr);
+                        g_pc, g_runtime_error_params[0]);
                 return;
 
             case ERROR_UNHANDLED_INSN:

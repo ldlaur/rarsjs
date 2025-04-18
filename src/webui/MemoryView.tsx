@@ -1,7 +1,7 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { Component, createSignal, onMount, createEffect, For, Show } from "solid-js";
 import { TabSelector } from "./TabSelector";
-import { shadowStack, wasmInterface } from './App';
+import { convertNumber, shadowStack, wasmInterface } from './App';
 const ROW_HEIGHT: number = 24;
 
 // FIXME: dummy is a nuclear solution to force a reload
@@ -72,26 +72,31 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
     return (
         <div class="h-full flex flex-col" style={{ contain: "strict" }}>
             <TabSelector tab={activeTab()} setTab={setActiveTab} tabs={[".text", ".data", "stack", "frames"]} />
-            <Show when={activeTab() == "frames"}>
-                <For each={[...shadowStack()].reverse()}>
-                    {(elem, idx) => {
-                        let realIdx = shadowStack().length - 1 - idx();
-                        let startSp = idx() == 0 ? wasmInterface.regsArr[2-1] : shadowStack()[realIdx + 1].sp;
-                        let elems = [];
-                        for (let ptr = elem.sp - 4; ptr >= startSp; ptr -= 4) {
-                            let text = props.load ? props.load(ptr, 4).toString(16).padStart(8, "0") : "00000000";
-                            elems.push(<div>{text}</div>);
-                        }
-                        return <div class="flex flex-col">
-                            <div>{elem.name}</div>
-                            {elems}
-                        </div>
-                    }}
-                </For>
-            </Show>
-            <Show when={activeTab() != "frames"}>
-                <div ref={parentRef} class="font-mono text-lg overflow-auto theme-scrollbar ml-2" >
-                    <div ref={dummyChunk} class="invisible absolute ">{"000000000"}</div>
+            <div ref={parentRef} class="font-mono text-lg overflow-auto theme-scrollbar ml-2">
+                <div ref={dummyChunk} class="invisible absolute ">{"000000000"}</div>
+                <Show when={activeTab() == "frames"}>
+                    <For each={[...shadowStack()].reverse()}>
+                        {(elem, idx) => {
+                            let realIdx = shadowStack().length - 1 - idx();
+                            let startSp = idx() == 0 ? wasmInterface.regsArr[2 - 1] : shadowStack()[realIdx + 1].sp;
+                            let elems = [];
+                            for (let ptr = elem.sp - 4; ptr >= startSp; ptr -= 4) {
+                                let text = props.load ? convertNumber(props.load(ptr, 4), true) : "0";
+                                elems.push(<div class="flex flex-row">
+                                    <a class="theme-fg2 pr-2">
+                                        {ptr.toString(16)}
+                                    </a>
+                                    <div>{text}</div>
+                                </div>);
+                            }
+                            return <div class="flex flex-col">
+                                <div >{elem.name}</div>
+                                {elems}
+                            </div>
+                        }}
+                    </For>
+                </Show>
+                <Show when={activeTab() != "frames"}>
                     <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
                         <For each={rowVirtualizer.getVirtualItems()}>
                             {(virtRow) => (
@@ -130,8 +135,8 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
                             )}
                         </For>
                     </div>
-                </div>
-            </Show>
+                </Show>
+            </div>
         </div>
     );
 };

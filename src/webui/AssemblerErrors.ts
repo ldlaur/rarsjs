@@ -3,7 +3,7 @@ import { WasmInterface } from "./RiscV";
 import { setDummy, setWasmPc, dummy, debugMode, setConsoleText, hasError } from "./App";
 
 export const createAsmLinter = (wasmInterface: WasmInterface) => {
-  let delay: number = 750;
+  let delay: number = 100;
   return linter(
     async (ev) => {
       if (!debugMode() && !hasError()) {

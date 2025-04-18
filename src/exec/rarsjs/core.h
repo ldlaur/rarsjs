@@ -174,7 +174,7 @@ extern size_t g_externs_len, g_externs_cap;
 extern export u32 g_error_line;
 extern export const char *g_error;
 
-extern export u32 g_runtime_error_addr;
+extern export u32 g_runtime_error_params[2];
 extern export Error g_runtime_error_type;
 
 extern export bool g_exited;

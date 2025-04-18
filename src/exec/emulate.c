@@ -7,7 +7,7 @@ extern u32 g_mem_written_addr;
 extern u32 g_reg_written;
 extern u32 g_error_line;
 
-extern u32 g_runtime_error_addr;
+extern u32 g_runtime_error_params[2];
 extern Error g_runtime_error_type;
 
 void callsan_store(int reg);
@@ -131,7 +131,7 @@ void emulate() {
 
     u32 inst = LOAD(g_pc, 4, &err);
     if (err) {
-        g_runtime_error_addr = g_pc;
+        g_runtime_error_params[0] = g_pc;
         g_runtime_error_type = ERROR_FETCH;
         return;
     }
@@ -217,7 +217,7 @@ void emulate() {
         else if ((funct3 >> 1) == 2) T = (i32)S1 < (i32)S2;
         else if ((funct3 >> 1) == 3) T = S1 < S2;
         else {
-            g_runtime_error_addr = g_pc;
+            g_runtime_error_params[0] = g_pc;
             g_runtime_error_type = ERROR_UNHANDLED_INSN;
             return;
         }
@@ -235,12 +235,12 @@ void emulate() {
         else if (funct3 == 0b100) *D = LOAD(S1 + itype, 1, &err);
         else if (funct3 == 0b101) *D = LOAD(S1 + itype, 2, &err);
         else {
-            g_runtime_error_addr = g_pc;
+            g_runtime_error_params[0] = g_pc;
             g_runtime_error_type = ERROR_UNHANDLED_INSN;
             return;
         }
         if (err) {
-            g_runtime_error_addr = S1 + itype;
+            g_runtime_error_params[0] = S1 + itype;
             g_runtime_error_type = ERROR_LOAD;
             return;
         }
@@ -258,12 +258,12 @@ void emulate() {
         else if (funct3 == 0b001) STORE(S1 + stype, S2, 2, &err);
         else if (funct3 == 0b010) STORE(S1 + stype, S2, 4, &err);
         else {
-            g_runtime_error_addr = g_pc;
+            g_runtime_error_params[0] = g_pc;
             g_runtime_error_type = ERROR_UNHANDLED_INSN;
             return;
         }
         if (err) {
-            g_runtime_error_addr = S1 + stype;
+            g_runtime_error_params[0] = S1 + stype;
             g_runtime_error_type = ERROR_STORE;
             return;
         }
@@ -286,7 +286,7 @@ void emulate() {
         else if (funct3 == 0b101 && funct7 == 32)
             *D = (i32)S1 >> shamt;  // SRAI
         else {
-            g_runtime_error_addr = g_pc;
+            g_runtime_error_params[0] = g_pc;
             g_runtime_error_type = ERROR_UNHANDLED_INSN;
             return;
         }
@@ -323,7 +323,7 @@ void emulate() {
         else if (funct3 == 0b110 && funct7 == 1) *D = rem32(S1, S2);   // REM
         else if (funct3 == 0b111 && funct7 == 1) *D = remu32(S1, S2);  // REMU
         else {
-            g_runtime_error_addr = g_pc;
+            g_runtime_error_params[0] = g_pc;
             g_runtime_error_type = ERROR_UNHANDLED_INSN;
             return;
         }
@@ -334,7 +334,7 @@ void emulate() {
     }
 
     // if i reached here, it's an unhandled instruction
-    g_runtime_error_addr = g_pc;
+    g_runtime_error_params[0] = g_pc;
     g_runtime_error_type = ERROR_UNHANDLED_INSN;
     return;
 }

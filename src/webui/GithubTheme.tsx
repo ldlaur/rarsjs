@@ -35,7 +35,7 @@ export interface Theme {
 const darkColors: Colors = {
     base0: "#0d1117",
     base1: "#161b22",
-    base2: "#21262d",
+    base2: "#444d56",
     base3: "#89929b",
     base4: "#c6cdd5",
     base5: "#ecf2f8",
@@ -47,7 +47,7 @@ const darkColors: Colors = {
     lightblue: "#a2d2fb",
     blue: "#77bdfb",
     purp: "#cea5fb",
-    bggreen: "#116329"
+    bggreen: "#278339"
 };
 
 const lightColors = {
@@ -66,7 +66,7 @@ const lightColors = {
     green: "#116329",
     bgorange: "#fac080",
     bgorange2: "#faa356",
-    bggreen: "#7ce38b"
+    bggreen: "#8cf39b"
 };
 
 const cssTheme = (dark: boolean) => {
@@ -100,7 +100,7 @@ const cssTheme = (dark: boolean) => {
             backgroundColor: "#6199ff2f"
         },
 
-        ".cm-selectionMatch": { backgroundColor: "#aafe661a" },
+        ".cm-selectionMatch": { backgroundColor: colors.bggreen+"90" },
 
         "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
             backgroundColor: "#bad0f847"

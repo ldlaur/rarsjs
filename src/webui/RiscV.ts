@@ -1,11 +1,11 @@
 import wasmUrl from "../main.wasm?url";
+import { convertNumber } from "./App";
 
 interface WasmExports {
   emulate(): void;
   assemble: (offset: number, len: number, allow_externs: boolean) => void;
   pc_to_label: (pc: number) => void;
   emu_load: (addr: number, size: number) => number;
-  
   __heap_base: number;
   g_regs: number;
   g_heap_size: number;
@@ -18,7 +18,7 @@ interface WasmExports {
   g_error: number;
   g_error_line: number;
   g_runtime_error_pc: number;
-  g_runtime_error_addr: number;
+  g_runtime_error_params: number;
   g_runtime_error_type: number;
   g_pc_to_label_txt: number;
   g_pc_to_label_len: number;
@@ -44,7 +44,7 @@ export class WasmInterface {
   public pc?: Uint32Array;
   public textByLinenum?: Uint32Array;
   public textByLinenumLen?: Uint32Array;
-  public runtimeErrorAddr?: Uint32Array;
+  public runtimeErrorParams?: Uint32Array;
   public runtimeErrorType?: Uint32Array;
   public hasError: boolean = false;
   public instructions: number;
@@ -58,10 +58,12 @@ export class WasmInterface {
     this.memory = new WebAssembly.Memory({ initial: 7 });
   }
 
-
-  createU8(off: number) { return new Uint8Array(this.memory.buffer, off) }
-  createU32(off: number) { return new Uint32Array(this.memory.buffer, off) }
-
+  createU8(off: number) {
+    return new Uint8Array(this.memory.buffer, off);
+  }
+  createU32(off: number) {
+    return new Uint32Array(this.memory.buffer, off);
+  }
 
   async loadModule(): Promise<void> {
     if (this.loadedPromise) return this.loadedPromise;
@@ -119,11 +121,11 @@ export class WasmInterface {
     this.regWritten = this.createU32(this.exports.g_reg_written);
     this.pc = this.createU32(this.exports.g_pc);
     this.regsArr = this.createU32(this.exports.g_regs + 4);
-    this.runtimeErrorAddr = this.createU32(this.exports.g_runtime_error_addr);
+    this.runtimeErrorParams = this.createU32(this.exports.g_runtime_error_params);
     this.runtimeErrorType = this.createU32(this.exports.g_runtime_error_type);
     this.shadowStackLen = this.createU32(this.exports.g_shadow_stack_len);
     this.shadowStackPtr = this.createU32(this.exports.g_shadow_stack);
-    
+
     if (offset + strLen > this.memory.buffer.byteLength) {
       const pages = Math.ceil(
         (offset + strLen - this.memory.buffer.byteLength) / 65536,
@@ -132,7 +134,7 @@ export class WasmInterface {
     }
 
     this.createU8(offset).set(strBytes);
-    this.createU32(this.exports.g_heap_size)[0] = (strLen + 7) & (~7); // align up to 8
+    this.createU32(this.exports.g_heap_size)[0] = (strLen + 7) & ~7; // align up to 8
     this.exports.assemble(offset, strLen, false);
     const textByLinenumPtr = this.createU32(this.exports.g_text_by_linenum)[0];
     this.textByLinenum = this.createU32(textByLinenumPtr);
@@ -165,6 +167,43 @@ export class WasmInterface {
     return "0x" + pc.toString(16);
   }
 
+  getRegisterName(idx: number): string {
+    const regnames = [
+      "zero",
+      "ra",
+      "sp",
+      "gp",
+      "tp",
+      "t0",
+      "t1",
+      "t2",
+      "fp/s0",
+      "s1",
+      "a0",
+      "a1",
+      "a2",
+      "a3",
+      "a4",
+      "a5",
+      "a6",
+      "a7",
+      "s2",
+      "s3",
+      "s4",
+      "s5",
+      "s6",
+      "s7",
+      "s8",
+      "s9",
+      "s10",
+      "s11",
+      "t3",
+      "t4",
+      "t5",
+      "t6",
+    ];
+    return regnames[idx];
+  }
   run(setText: (str: string) => void): void {
     this.setText = setText;
     this.exports.emulate();
@@ -175,18 +214,69 @@ export class WasmInterface {
       this.hasError = true;
     } else if (this.runtimeErrorType[0] != 0) {
       const errorType = this.runtimeErrorType[0];
+      const pcString = `PC=0x${this.pc[0].toString(16)}`;
+      const runtimeParam1 = this.runtimeErrorParams[0];
+      const runtimeParam2 = this.runtimeErrorParams[1];
+      let regname = "";
+      let oldVal = "";
+      let newVal = "";
+      let str = "";
       switch (errorType) {
-        case 1: this.textBuffer += `ERROR: cannot fetch instruction from PC=0x${this.pc[0].toString(16)}\n`; break;
-        case 2: this.textBuffer += `ERROR: cannot load from address 0x${this.runtimeErrorAddr[0].toString(16)} at PC=0x${this.pc[0].toString(16)}\n`; break;
-        case 3: this.textBuffer += `ERROR: cannot store to address 0x${this.runtimeErrorAddr[0].toString(16)} at PC=0x${this.pc[0].toString(16)}\n`; break;
-        case 4: this.textBuffer += `ERROR: unhandled instruction at PC=0x${this.pc[0].toString(16)}\n`; break;
-        default: this.textBuffer += `ERROR${errorType}: PC=0x${this.pc[0].toString(16)} ${this.runtimeErrorAddr[0].toString(16)}\n`; break;
+        case 1:
+          this.textBuffer += `ERROR: cannot fetch instruction from ${pcString}\n`;
+          break;
+        case 2:
+          str = convertNumber(runtimeParam1, false);
+          this.textBuffer += `ERROR: cannot load from address 0x${str} at ${pcString}\n`;
+          break;
+        case 3:
+          str = convertNumber(runtimeParam1, false);
+          this.textBuffer += `ERROR: cannot store to address 0x${str} at ${pcString}\n`;
+          break;
+        case 4:
+          this.textBuffer += `ERROR: unhandled instruction at ${pcString}\n`;
+          break;
+        case 5:
+          regname = this.getRegisterName(runtimeParam1);
+          this.textBuffer += `CallSan: ${pcString}\nAttempted to read from uninitialized register ${regname}. Check the calling convention!\n`;
+          break;
+        case 6:
+          regname = this.getRegisterName(runtimeParam1);
+          oldVal = convertNumber(runtimeParam2, false);
+          newVal = convertNumber(this.regsArr[runtimeParam1 - 1], false);
+          this.textBuffer += `CallSan: ${pcString}\nCallee-saved register ${regname} has different value at the beginning and end of the function.\nPrev: ${oldVal}\nCurr: ${newVal}\nCheck the calling convention!\n`;
+          break;
+        case 7:
+          oldVal = convertNumber(runtimeParam2, false);
+          newVal = convertNumber(this.regsArr[2 - 1], false);
+          this.textBuffer += `CallSan: ${pcString}\nRegister sp has different value at the beginning and end of the function.\nPrev: ${oldVal}\nCurr: ${newVal}\nCheck the calling convention!\n`;
+          break;
+        case 8:
+          oldVal = convertNumber(runtimeParam2, false);
+          newVal = convertNumber(this.regsArr[1 - 1], false);
+          this.textBuffer += `CallSan: ${pcString}\nRegister ra has different value at the beginning and end of the function.\nPrev: ${oldVal}\nCurr: ${newVal}\nCheck the calling convention!\n`;
+          break;
+        case 9:
+          this.textBuffer += `CallSan: ${pcString}\nReturn without matching call!\n`;
+          break;
+        default:
+          this.textBuffer += `ERROR${errorType}: ${pcString} ${this.runtimeErrorParams[0].toString(
+            16,
+          )}\n`;
+          break;
       }
       setText(this.textBuffer);
       this.hasError = true;
     } else if (this.successfulExecution) {
-      const needsNewline = this.textBuffer.length && this.textBuffer[this.textBuffer.length-1] != '\n';
-      setText(this.textBuffer + (needsNewline ? "\nExecuted successfully." : "Executed successfully."));
+      const needsNewline =
+        this.textBuffer.length &&
+        this.textBuffer[this.textBuffer.length - 1] != "\n";
+      setText(
+        this.textBuffer +
+          (needsNewline
+            ? "\nExecuted successfully."
+            : "Executed successfully."),
+      );
     }
   }
 }
