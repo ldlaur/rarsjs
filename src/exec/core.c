@@ -237,28 +237,50 @@ bool parse_numeric(Parser *p, i32 *out) {
 
     if (consume_if(p, '-')) negative = true;
 
-    if (peek(p) == '0') {
-        char prefix = peek_n(p, 1);
-        if (prefix == 'x' || prefix == 'X') base = 16;
-        else if (prefix == 'b' || prefix == 'B') base = 2;
-        if (base != 10) advance_n(p, 2);
-    }
+    if (consume_if(p, '\'')) {
+        char c;
+        if (!consume(p, &c)) return false;
+        if (c == '\\') {
+            if (!consume(p, &c)) return false;
+            if (c == 'n') c = '\n';
+            else if (c == 't') c = '\t';
+            else if (c == 'r') c = '\r';
+            else if (c == 'b') c = '\b';
+            else if (c == 'f') c = '\f';
+            else if (c == 'a') c = '\a';
+            else if (c == 'b') c = '\b';
+            else if (c == '\\') c = '\\';
+            else if (c == '\'') c = '\'';
+            else if (c == '"') c = '"';
+            else if (c == '0') c = 0;
+            else return false;
+        }
+        value = c;
+        if (!consume_if(p, '\'')) return false;
+    } else {
+        if (peek(p) == '0') {
+            char prefix = peek_n(p, 1);
+            if (prefix == 'x' || prefix == 'X') base = 16;
+            else if (prefix == 'b' || prefix == 'B') base = 2;
+            if (base != 10) advance_n(p, 2);
+        }
 
-    // TODO: handle overflow
-    for (char c; (c = peek(p));) {
-        int digit = base;
-        if (c >= '0' && c <= '9') digit = c - '0';
-        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
-        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
-        if (digit >= base) break;
-        parsed_digit = true;
-        value = value * base + digit;
-        advance(p);
-    }
+        // TODO: handle overflow
+        for (char c; (c = peek(p));) {
+            int digit = base;
+            if (c >= '0' && c <= '9') digit = c - '0';
+            else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+            else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+            if (digit >= base) break;
+            parsed_digit = true;
+            value = value * base + digit;
+            advance(p);
+        }
 
-    if (!parsed_digit) {
-        *p = start;
-        return false;
+        if (!parsed_digit) {
+            *p = start;
+            return false;
+        }
     }
     if (negative) value = -value;
     *out = value;
@@ -328,10 +350,10 @@ int parse_reg(Parser *p) {
             return num;
         }
     }
-    char *names[] = {"zero", "ra", "sp",  "gp",  "tp", "t0", "t1", "t2",
-                     "fp/s0",   "s1", "a0",  "a1",  "a2", "a3", "a4", "a5",
-                     "a6",   "a7", "s2",  "s3",  "s4", "s5", "s6", "s7",
-                     "s8",   "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
+    char *names[] = {"zero",  "ra", "sp",  "gp",  "tp", "t0", "t1", "t2",
+                     "fp/s0", "s1", "a0",  "a1",  "a2", "a3", "a4", "a5",
+                     "a6",    "a7", "s2",  "s3",  "s4", "s5", "s6", "s7",
+                     "s8",    "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
     for (int i = 0; i < 32; i++) {
         if (str_eq(str, len, names[i])) return i;
     }
@@ -1185,7 +1207,6 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
     resolve_symbol("_start", strlen("_start"), true, &g_pc, NULL);
 }
 
-
 void do_syscall() {
     u32 param = g_regs[10];
     if (g_regs[17] == 1) {
@@ -1207,7 +1228,7 @@ void do_syscall() {
         while (1) {
             bool err = false;
             u8 ch = LOAD(param + i, 1, &err);
-            if (err) return; // TODO: return an error?
+            if (err) return;  // TODO: return an error?
             if (ch == 0) break;
             i++;
             putchar(ch);
@@ -1250,7 +1271,6 @@ void pc_to_label(u32 pc) {
     g_pc_to_label_txt = NULL;
     g_pc_to_label_len = 0;
 }
-
 
 bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
                     Section **sec) {
