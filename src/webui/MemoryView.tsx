@@ -77,16 +77,18 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
                 <Show when={activeTab() == "frames"}>
                     <For each={[...shadowStack()].reverse()}>
                         {(elem, idx) => {
+                            props.dummy();
                             let realIdx = shadowStack().length - 1 - idx();
                             let startSp = idx() == 0 ? wasmInterface.regsArr[2 - 1] : shadowStack()[realIdx + 1].sp;
                             let elems = [];
                             for (let ptr = elem.sp - 4; ptr >= startSp; ptr -= 4) {
                                 let text = props.load ? convertNumber(props.load(ptr, 4), true) : "0";
+                                let isAnimated = ptr >= props.writeAddr && ptr < props.writeAddr + props.writeLen;
                                 elems.push(<div class="flex flex-row">
                                     <a class="theme-fg2 pr-2">
                                         {ptr.toString(16)}
                                     </a>
-                                    <div>{text}</div>
+                                    <div class={isAnimated ? "animate-fade-highlight" : ""}>{text}</div>
                                 </div>);
                             }
                             return <div class="flex flex-col">

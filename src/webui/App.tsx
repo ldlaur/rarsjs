@@ -65,7 +65,7 @@ export function convertNumber(x: number, decimal: boolean): string {
         if (x >= TEXT_BASE && x < TEXT_END) ptr = true;
         else if (x >= STACK_TOP-STACK_LEN && x < STACK_TOP) ptr = true;
         else if (x >= DATA_BASE && x < DATA_END) ptr = true;
-        if (ptr) return "0x"+toUnsigned(x).toString(16);
+        if (ptr) return "0x"+(toUnsigned(x).toString(16).padStart(8, "0"));
         else return toUnsigned(x).toString();
     } else {
         return toUnsigned(x).toString(16).padStart(8, "0");
@@ -281,7 +281,7 @@ function setBreakpoints(): void {
     const line = view.state.doc.lineAt(from);
     const lineNum = line.number;
     for (let i = 0; i < 65536; i++) {
-      if (wasmInterface.textByLinenum[i] == lineNum) {
+      if (wasmInterface.textByLinenum[i] >= lineNum) {
         breakpointSet.add(0x00400000 + i * 4);
       }
     }
