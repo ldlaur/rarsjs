@@ -1,8 +1,73 @@
-@top File { (Instruction | Label | Number | Register | Directive | String)* }
+@top File { (Instruction | Label | Number | RegisterExpression | Directive | String)* }
 
-@external specialize {Identifier} specializeIdentifier from "./tokens" {
-  Register
+Register {
+  @extend<Identifier, "x0"> |
+  @extend<Identifier, "x1"> |
+  @extend<Identifier, "x2"> |
+  @extend<Identifier, "x3"> |
+  @extend<Identifier, "x4"> |
+  @extend<Identifier, "x5"> |
+  @extend<Identifier, "x6"> |
+  @extend<Identifier, "x7"> |
+  @extend<Identifier, "x8"> |
+  @extend<Identifier, "x9"> |
+  @extend<Identifier, "x10"> |
+  @extend<Identifier, "x11"> |
+  @extend<Identifier, "x12"> |
+  @extend<Identifier, "x13"> |
+  @extend<Identifier, "x14"> |
+  @extend<Identifier, "x15"> |
+  @extend<Identifier, "x16"> |
+  @extend<Identifier, "x17"> |
+  @extend<Identifier, "x18"> |
+  @extend<Identifier, "x19"> |
+  @extend<Identifier, "x20"> |
+  @extend<Identifier, "x21"> |
+  @extend<Identifier, "x22"> |
+  @extend<Identifier, "x23"> |
+  @extend<Identifier, "x24"> |
+  @extend<Identifier, "x25"> |
+  @extend<Identifier, "x26"> |
+  @extend<Identifier, "x27"> |
+  @extend<Identifier, "x28"> |
+  @extend<Identifier, "x29"> |
+  @extend<Identifier, "x30"> |
+  @extend<Identifier, "x31"> |
+  @extend<Identifier, "zero"> |
+  @extend<Identifier, "ra"> |
+  @extend<Identifier, "sp"> |
+  @extend<Identifier, "gp"> |
+  @extend<Identifier, "tp"> |
+  @extend<Identifier, "t0"> |
+  @extend<Identifier, "t1"> |
+  @extend<Identifier, "t2"> |
+  @extend<Identifier, "fp"> |
+  @extend<Identifier, "s0"> |
+  @extend<Identifier, "s1"> |
+  @extend<Identifier, "a0"> |
+  @extend<Identifier, "a1"> |
+  @extend<Identifier, "a2"> |
+  @extend<Identifier, "a3"> |
+  @extend<Identifier, "a4"> |
+  @extend<Identifier, "a5"> |
+  @extend<Identifier, "a6"> |
+  @extend<Identifier, "a7"> |
+  @extend<Identifier, "s2"> |
+  @extend<Identifier, "s3"> |
+  @extend<Identifier, "s4"> |
+  @extend<Identifier, "s5"> |
+  @extend<Identifier, "s6"> |
+  @extend<Identifier, "s7"> |
+  @extend<Identifier, "s8"> |
+  @extend<Identifier, "s9"> |
+  @extend<Identifier, "s10"> |
+  @extend<Identifier, "s11"> |
+  @extend<Identifier, "t3"> |
+  @extend<Identifier, "t4"> |
+  @extend<Identifier, "t5"> |
+  @extend<Identifier, "t6">
 }
+
 
 @skip { spaces | newline | LineComment | BlockComment }
 
@@ -18,6 +83,9 @@
 
 Label {
   Identifier ":"  // only this pattern is treated as a label
+}
+RegisterExpression {
+  Register ","
 }
 
 @tokens {
