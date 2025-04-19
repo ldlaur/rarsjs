@@ -56,20 +56,20 @@ const STACK_LEN = 4096;
 const DATA_END = 0x70000000;
 
 export function toUnsigned(x: number): number {
-    return x >>> 0;
+  return x >>> 0;
 }
 
 export function convertNumber(x: number, decimal: boolean): string {
-    let ptr = false;
-    if (decimal) {
-        if (x >= TEXT_BASE && x < TEXT_END) ptr = true;
-        else if (x >= STACK_TOP-STACK_LEN && x < STACK_TOP) ptr = true;
-        else if (x >= DATA_BASE && x < DATA_END) ptr = true;
-        if (ptr) return "0x"+(toUnsigned(x).toString(16).padStart(8, "0"));
-        else return toUnsigned(x).toString();
-    } else {
-        return toUnsigned(x).toString(16).padStart(8, "0");
-    }
+  let ptr = false;
+  if (decimal) {
+    if (x >= TEXT_BASE && x <= TEXT_END) ptr = true;
+    else if (x >= STACK_TOP - STACK_LEN && x <= STACK_TOP) ptr = true;
+    else if (x >= DATA_BASE && x <= DATA_END) ptr = true;
+    if (ptr) return "0x" + (toUnsigned(x).toString(16).padStart(8, "0"));
+    else return toUnsigned(x).toString();
+  } else {
+    return toUnsigned(x).toString(16).padStart(8, "0");
+  }
 }
 
 
@@ -177,10 +177,6 @@ window.addEventListener('keydown', (event) => {
     event.preventDefault();
     nextStepRiscV();
   }
-  else if (debugMode() && event.altKey && event.key.toUpperCase() == 'F') {
-    event.preventDefault();
-    finishStepRiscV();
-  }
   else if (debugMode() && event.altKey && event.key.toUpperCase() == 'C') {
     event.preventDefault();
     continueStepRiscV();
@@ -211,13 +207,6 @@ const Navbar: Component = () => {
           <div class="flex-shrink-0 mx-auto"></div>
           <Show when={debugMode()}>
             <button
-              on:click={nextStepRiscV}
-              class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-              title="Step over/Next (Alt-N)"
-            >
-              step_over
-            </button>
-            <button
               on:click={singleStepRiscV}
               class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
               title="Step into (Alt-S)"
@@ -225,11 +214,11 @@ const Navbar: Component = () => {
               step_into
             </button>
             <button
-              on:click={singleStepRiscV}
+              on:click={nextStepRiscV}
               class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-              title="Step out/Finish (Alt-F)"
+              title="Step over/Next (Alt-N)"
             >
-              step_out
+              step_over
             </button>
             <button
               on:click={continueStepRiscV}
@@ -307,9 +296,9 @@ function updateShadowStack() {
   let st: { name: string, args: number[], sp: number }[] = new Array(len);
   let shadowStack = wasmInterface.getShadowStack();
   for (let i = 0; i < wasmInterface.shadowStackLen[0]; i++) {
-    let pc = shadowStack[i * (96/4) + 0];
-    let sp = shadowStack[i * (96/4) + 1];
-    let args = shadowStack.slice(i * (96/4) + 2).slice(0, 8);
+    let pc = shadowStack[i * (96 / 4) + 0];
+    let sp = shadowStack[i * (96 / 4) + 1];
+    let args = shadowStack.slice(i * (96 / 4) + 2).slice(0, 8);
     st[i] = { name: wasmInterface.getStringFromPc(pc), args: [...args], sp: sp };
   }
   setShadowStack(st);
@@ -372,12 +361,13 @@ function singleStepRiscV(): void {
 }
 
 let temporaryBreakpoint: number | null = null;
+let savedSp: number;
 
 function continueStepRiscV(): void {
   setBreakpoints();
   while (1) {
     wasmInterface.run(setConsoleText);
-    if (temporaryBreakpoint == wasmInterface.pc[0]) { temporaryBreakpoint = null; break; }
+    if (temporaryBreakpoint == wasmInterface.pc[0] && savedSp == wasmInterface.regsArr[2 - 1]) { temporaryBreakpoint = null; break; }
     if (breakpointSet.has(wasmInterface.pc[0])) break;
     if (wasmInterface.successfulExecution || wasmInterface.hasError) break;
   }
@@ -402,11 +392,7 @@ function quitRiscV(): void {
 
 function nextStepRiscV(): void {
   temporaryBreakpoint = wasmInterface.pc[0] + 4; // TODO: fix for 8byte pseudoinsns
-  continueStepRiscV();
-}
-
-function finishStepRiscV(): void {
-  temporaryBreakpoint = wasmInterface.regsArr[1 - 1]; // ra
+  savedSp = wasmInterface.regsArr[2 - 1];
   continueStepRiscV();
 }
 
@@ -420,7 +406,7 @@ const dummyIndent = indentService.of((context, pos) => {
   let cnt = 0;
   for (let i = 0; i < match[0].length; i++) {
     if (match[0][i] == '\t') cnt = cnt + 4 - cnt % 4;
-    else cnt += 1; 
+    else cnt += 1;
   }
   return cnt;
 });
@@ -515,7 +501,7 @@ const App: Component = () => {
       <Navbar />
       <div class="grow flex overflow-hidden">
         <PaneResize firstSize={0.5} direction="horizontal" disableSecond={false}>
-          {() => <PaneResize firstSize={0.85} direction="vertical" disableSecond={!debugMode()}>
+          {() => <PaneResize firstSize={0.85} direction="vertical" disableSecond={!(debugMode() && shadowStack().length > 0)}>
             {() => <Editor />}
             {() => <BacktraceView />}
           </PaneResize>}

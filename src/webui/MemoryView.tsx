@@ -91,7 +91,7 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
                                     <div class={isAnimated ? "animate-fade-highlight" : ""}>{text}</div>
                                 </div>);
                             }
-                            return <div class="flex flex-col">
+                            return <div class="flex flex-col pb-4">
                                 <div >{elem.name}</div>
                                 {elems}
                             </div>
