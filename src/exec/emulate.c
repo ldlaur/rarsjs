@@ -14,6 +14,7 @@ void callsan_store(int reg);
 void callsan_call();
 bool callsan_ret();
 bool callsan_can_load(int reg);
+void callsan_report_store(u32 addr, u32 size, int reg);
 
 // end is inclusive, like in Verilog
 static inline u32 extr(u32 val, u32 end, u32 start) {
@@ -267,6 +268,7 @@ void emulate() {
             g_runtime_error_type = ERROR_STORE;
             return;
         }
+        callsan_report_store(S1 + stype, 1 << funct3, rs2);
         g_pc += 4;
         return;
     }

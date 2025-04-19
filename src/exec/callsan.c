@@ -19,8 +19,10 @@ typedef struct {
 export u32 g_reg_bitmap;
 export ShadowStackEnt *g_shadow_stack;
 export size_t g_shadow_stack_len, g_shadow_stack_cap;
+export u8 g_callsan_stack_written_by[STACK_LEN / 4];
 
 void callsan_init() {
+    memset(g_callsan_stack_written_by, 0xFF, sizeof(g_callsan_stack_written_by));
     g_reg_bitmap = (1ul << REG_ZERO) | (1ul << REG_SP) | (1ul << REG_TP) |
                    (1ul << REG_GP) | (1u << REG_FP) | (1u << REG_S1) |
                    (1u << REG_S2) | (1u << REG_S3) | (1u << REG_S4) |
@@ -112,5 +114,19 @@ bool callsan_ret() {
     // after a function return you cannot read the A (except A0 and A1) and T
     // registers since the function hypothetically may have clobbered them
     g_reg_bitmap = e->reg_bitmap & ~CALLSAN_CALL_CLOBBERED;
+
+    // rest of the stack is all poisoned
+    u32 endidx = (e->sp - (STACK_TOP - STACK_LEN)) / 4;
+    for (int i = 0; i < endidx; i++) g_callsan_stack_written_by[i] = -1;
     return true;
+}
+
+void callsan_report_store(u32 addr, u32 size, int reg) {
+    bool in_stack = addr >= STACK_TOP - STACK_LEN && addr + size <= STACK_TOP;
+    if (!in_stack) return;
+    u32 off = addr - (STACK_TOP - STACK_LEN);
+    u32 startidx = off / 4;
+    u32 endidx = (off + size - 1) / 4;
+    g_callsan_stack_written_by[startidx] = reg;
+    if (endidx != startidx) g_callsan_stack_written_by[endidx] = reg;
 }

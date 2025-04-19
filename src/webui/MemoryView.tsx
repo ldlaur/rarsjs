@@ -83,6 +83,12 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
                             let elems = [];
                             for (let ptr = elem.sp - 4; ptr >= startSp; ptr -= 4) {
                                 let text = props.load ? convertNumber(props.load(ptr, 4), true) : "0";
+                                if (wasmInterface.callsanWrittenBy) {
+                                    let off = (ptr - (0x7FFFF000 - 4096)) / 4;
+                                    let regidx = wasmInterface.callsanWrittenBy[off];
+                                    if (regidx == 0xff) text = "??";
+                                    else if (regidx != 0) text += " (" + wasmInterface.getRegisterName(regidx) + ")";
+                                }
                                 let isAnimated = ptr >= props.writeAddr && ptr < props.writeAddr + props.writeLen;
                                 elems.push(<div class="flex flex-row">
                                     <a class="theme-fg2 pr-2">

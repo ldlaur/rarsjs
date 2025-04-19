@@ -24,6 +24,7 @@ interface WasmExports {
   g_pc_to_label_len: number;
   g_shadow_stack: number;
   g_shadow_stack_len: number;
+  g_callsan_stack_written_by: number;
 }
 
 const INSTRUCTION_LIMIT: number = 100 * 1000;
@@ -51,6 +52,7 @@ export class WasmInterface {
   public shadowStackPtr?: Uint32Array;
   public shadowStack?: Uint32Array;
   public shadowStackLen?: Uint32Array;
+  public callsanWrittenBy?: Uint8Array;
 
   public emu_load: (addr: number, size: number) => number;
 
@@ -125,7 +127,7 @@ export class WasmInterface {
     this.runtimeErrorType = this.createU32(this.exports.g_runtime_error_type);
     this.shadowStackLen = this.createU32(this.exports.g_shadow_stack_len);
     this.shadowStackPtr = this.createU32(this.exports.g_shadow_stack);
-
+    this.callsanWrittenBy = this.createU8(this.exports.g_callsan_stack_written_by);
     if (offset + strLen > this.memory.buffer.byteLength) {
       const pages = Math.ceil(
         (offset + strLen - this.memory.buffer.byteLength) / 65536,
