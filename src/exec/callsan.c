@@ -130,3 +130,12 @@ void callsan_report_store(u32 addr, u32 size, int reg) {
     g_callsan_stack_written_by[startidx] = reg;
     if (endidx != startidx) g_callsan_stack_written_by[endidx] = reg;
 }
+
+bool callsan_check_load(u32 addr, u32 size) {
+    bool in_stack = addr >= STACK_TOP - STACK_LEN && addr + size <= STACK_TOP;
+    if (!in_stack) return true;
+    u32 off = addr - (STACK_TOP - STACK_LEN);
+    u32 startidx = off / 4;
+    u32 endidx = (off + size - 1) / 4;
+    return g_callsan_stack_written_by[startidx] != 0xFF && g_callsan_stack_written_by[endidx] != 0xFF;
+}

@@ -123,11 +123,15 @@ export class WasmInterface {
     this.regWritten = this.createU32(this.exports.g_reg_written);
     this.pc = this.createU32(this.exports.g_pc);
     this.regsArr = this.createU32(this.exports.g_regs + 4);
-    this.runtimeErrorParams = this.createU32(this.exports.g_runtime_error_params);
+    this.runtimeErrorParams = this.createU32(
+      this.exports.g_runtime_error_params,
+    );
     this.runtimeErrorType = this.createU32(this.exports.g_runtime_error_type);
     this.shadowStackLen = this.createU32(this.exports.g_shadow_stack_len);
     this.shadowStackPtr = this.createU32(this.exports.g_shadow_stack);
-    this.callsanWrittenBy = this.createU8(this.exports.g_callsan_stack_written_by);
+    this.callsanWrittenBy = this.createU8(
+      this.exports.g_callsan_stack_written_by,
+    );
     if (offset + strLen > this.memory.buffer.byteLength) {
       const pages = Math.ceil(
         (offset + strLen - this.memory.buffer.byteLength) / 65536,
@@ -260,6 +264,10 @@ export class WasmInterface {
           break;
         case 9:
           this.textBuffer += `CallSan: ${pcString}\nReturn without matching call!\n`;
+          break;
+        case 10:
+          str = convertNumber(runtimeParam1, false);
+          this.textBuffer += `CallSan: ${pcString}\nAttempted to read from stack address 0x${str}, which hasn't been written to in the current function.\n`;
           break;
         default:
           this.textBuffer += `ERROR${errorType}: ${pcString} ${this.runtimeErrorParams[0].toString(

@@ -149,7 +149,8 @@ typedef enum Error : u32 {
     ERROR_CALLSAN_NOT_SAVED = 6,
     ERROR_CALLSAN_SP_MISMATCH = 7,
     ERROR_CALLSAN_RA_MISMATCH = 8,
-    ERROR_CALLSAN_RET_EMPTY = 9
+    ERROR_CALLSAN_RET_EMPTY = 9,
+    ERROR_CALLSAN_LOAD_STACK = 10
 } Error;
 
 extern export Section g_text;

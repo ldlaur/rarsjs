@@ -15,6 +15,7 @@ void callsan_call();
 bool callsan_ret();
 bool callsan_can_load(int reg);
 void callsan_report_store(u32 addr, u32 size, int reg);
+bool callsan_check_load(u32 addr, u32 size);
 
 // end is inclusive, like in Verilog
 static inline u32 extr(u32 val, u32 end, u32 start) {
@@ -230,13 +231,13 @@ void emulate() {
     // LB/LH/LW/LBU/LHU
     if (opcode == 0b0000011) {
         if (!callsan_can_load(rs1)) return;
+
         if (funct3 == 0b000) *D = sext(LOAD(S1 + itype, 1, &err), 8);
         else if (funct3 == 0b001) *D = sext(LOAD(S1 + itype, 2, &err), 16);
         else if (funct3 == 0b010) *D = LOAD(S1 + itype, 4, &err);
         else if (funct3 == 0b100) *D = LOAD(S1 + itype, 1, &err);
         else if (funct3 == 0b101) *D = LOAD(S1 + itype, 2, &err);
         else {
-            g_runtime_error_params[0] = g_pc;
             g_runtime_error_type = ERROR_UNHANDLED_INSN;
             return;
         }
@@ -245,6 +246,12 @@ void emulate() {
             g_runtime_error_type = ERROR_LOAD;
             return;
         }
+        if (!callsan_check_load(S1 + itype, 1 << (funct3 & 0b11))) {
+            g_runtime_error_params[0] = S1 + itype;
+            g_runtime_error_type = ERROR_CALLSAN_LOAD_STACK;
+            return;
+        }
+
         g_pc += 4;
         g_reg_written = rd;
         callsan_store(rd);
