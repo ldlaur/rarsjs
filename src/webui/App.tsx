@@ -417,7 +417,17 @@ const tabKeymap = keymap.of([{
     const { state, dispatch } = view;
     const { from, to } = state.selection.main;
     // insert tab instead of indenting if it's a single line selection
-    if (from == to || state.doc.lineAt(from).number == state.doc.lineAt(to).number) {
+    // messy code for indenting the start of the line with spaces, but keep tabs for the tabulation inside the line
+    let lineIsEmpty = true;
+    let str = state.doc.toString();
+    for (let i = state.doc.lineAt(from).from; i < from; i++) {
+      if (str[i] != '\t' && str[i] != ' ' && str[i] != '\n') {
+        lineIsEmpty = false;
+        break;
+      }
+    }
+    if (!lineIsEmpty && (from == to || state.doc.lineAt(from).number == state.doc.lineAt(to).number)) {
+      console.log("insert tab");
       dispatch(state.update(state.replaceSelection("\t"), {
         scrollIntoView: true,
         userEvent: "input"

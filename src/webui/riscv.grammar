@@ -1,5 +1,9 @@
 @top File { (Instruction | Label | Number | Register | Directive | String)* }
 
+@external specialize {Identifier} specializeIdentifier from "./tokens" {
+  Register
+}
+
 @skip { spaces | newline | LineComment | BlockComment }
 
 @skip {} {
@@ -40,13 +44,8 @@ Label {
   }
 
   Identifier { $[_a-zA-Z] $[_a-zA-Z0-9]* }
-  @precedence { Instruction, Register, Identifier, Number }
+  @precedence { Instruction, Identifier, Number }
 
-  Register {
-    "x"$[0-9] | "x"$[1-2]$[0-9] | "x3"$[0-1] |
-    "zero" | "ra" | "sp" | "gp" | "tp" | "fp" |
-    "t"$[0-6] | "s"$[0-9] | "s1"$[0-1] | "a"$[0-7]
-  }
   spaces[@export] { $[\u0009 \u000b\u00a0]+ }
   newline[@export] { $[\r\n] }
   LineComment { ("//" ![\n]*) | ("#" ![\n]*) }
