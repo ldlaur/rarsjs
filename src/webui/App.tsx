@@ -44,7 +44,7 @@ export const [hasError, setHasError] = createSignal<boolean>(false);
 export const [consoleText, setConsoleText] = createSignal<string>("");
 
 let breakpointSet: Set<number> = new Set();
-let view: EditorView;
+export let view: EditorView;
 let cmTheme: Compartment = new Compartment();
 
 
