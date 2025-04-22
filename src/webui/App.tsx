@@ -396,9 +396,19 @@ function quitRiscV(): void {
 
 
 function nextStepRiscV(): void {
-  temporaryBreakpoint = wasmInterface.pc[0] + 4; // TODO: fix for 8byte pseudoinsns
-  savedSp = wasmInterface.regsArr[2 - 1];
-  continueStepRiscV();
+  let inst = wasmInterface.emu_load(wasmInterface.pc[0], 4);
+  let opcode = inst & 127;
+  let funct3 = (inst >> 12) & 7;
+  let rd = (inst >> 7) & 31;
+  let isJal = opcode == 0x6f;
+  let isJalr = opcode == 0x67 && funct3 == 0;
+  if ((isJal || isJalr) && rd == 1) {
+    temporaryBreakpoint = wasmInterface.pc[0] + 4;
+    savedSp = wasmInterface.regsArr[2 - 1];
+    continueStepRiscV();
+  } else {
+    singleStepRiscV();
+  }
 }
 
 const dummyIndent = indentService.of((context, pos) => {
