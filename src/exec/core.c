@@ -1148,6 +1148,12 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
         skip_trailing(p);
 
         if (consume_if(p, ':')) {
+            for (size_t i = 0; i < g_labels_len; i++) {
+                if (str_eq_2(g_labels[i].txt, g_labels[i].len, ident, ident_len)) {
+                    err = "Multiple definitions for the same label";
+                    break;
+                }
+            }
             u32 addr = g_section->emit_idx + g_section->base;
             *push(g_labels, g_labels_len, g_labels_cap) =
                 (LabelData){.txt = ident,
