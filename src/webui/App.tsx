@@ -167,29 +167,34 @@ function doChangeTheme(): void {
   }
 }
 
+const isMac = navigator.platform.toLowerCase().includes('mac');
+const prefixStr = isMac ? "Ctrl-Shift" : "Ctrl-Alt"
 
 window.addEventListener('keydown', (event) => {
-  if (debugMode() && event.altKey && event.key.toUpperCase() == 'S') {
+  // FIXME: this is deprecated but i'm not sure what is the correct successor
+  const prefix = isMac ? (event.ctrlKey && event.shiftKey) : (event.ctrlKey && event.altKey);
+
+  if (debugMode() && prefix && event.key.toUpperCase() == 'S') {
     event.preventDefault();
     singleStepRiscV();
   }
-  else if (debugMode() && event.altKey && event.key.toUpperCase() == 'N') {
+  else if (debugMode() && prefix && event.key.toUpperCase() == 'N') {
     event.preventDefault();
     nextStepRiscV();
   }
-  else if (debugMode() && event.altKey && event.key.toUpperCase() == 'C') {
+  else if (debugMode() && prefix && event.key.toUpperCase() == 'C') {
     event.preventDefault();
     continueStepRiscV();
   }
-  else if (debugMode() && event.altKey && event.key.toUpperCase() == 'Q') {
+  else if (debugMode() && prefix && event.key.toUpperCase() == 'X') {
     event.preventDefault();
     quitRiscV();
   }
-  else if (event.altKey && event.key.toUpperCase() == 'R') {
+  else if (prefix && event.key.toUpperCase() == 'R') {
     event.preventDefault();
     runRiscV();
   }
-  else if (event.altKey && event.key.toUpperCase() == 'D') {
+  else if (prefix && event.key.toUpperCase() == 'D') {
     event.preventDefault();
     startStepRiscV();
   }
@@ -209,28 +214,28 @@ const Navbar: Component = () => {
             <button
               on:click={singleStepRiscV}
               class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-              title="Step into (Alt-S)"
+              title={`Step into (${prefixStr}-S)`}
             >
               step_into
             </button>
             <button
               on:click={nextStepRiscV}
               class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-              title="Step over/Next (Alt-N)"
+              title={`Step over/Next (${prefixStr}-N)`}
             >
               step_over
             </button>
             <button
               on:click={continueStepRiscV}
               class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-              title="Continue (Alt-C)"
+              title={`Continue (${prefixStr}-C)`}
             >
               resume
             </button>
             <button
               on:click={quitRiscV}
               class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-              title="Quit debugging (Alt-Q)"
+              title={`Exit debugging (${prefixStr}-X)`}
             >
               stop
             </button>
@@ -246,14 +251,14 @@ const Navbar: Component = () => {
           <button
             on:click={runRiscV}
             class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-            title="Run (Alt-R)"
+            title={`Run (${prefixStr}-R)`}
           >
             play_circle
           </button>
           <button
             on:click={startStepRiscV}
             class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-            title="Debug (Alt-D)"
+            title={`Debug (${prefixStr}-D)`}
           >
             arrow_forward
           </button>

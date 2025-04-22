@@ -29,23 +29,26 @@ export default function clangPlugin() {
     name: "vite-plugin-clang",
     enforce: "pre",
 
-    configResolved(config) {
-      isProduction = config.command === "build";
-      if (isProduction) outputDir = config.build.outDir;
-    },
-
 
     async buildStart() {
       try {
-        await compile(path.resolve(__dirname, outputDir), isProduction);
+        await compile(path.resolve(__dirname, outputDir), false);
       } catch (err) {
         throw new Error(err);
       }
     },
 
+    async generateBundle() {
+      try {
+        await compile(path.resolve(__dirname, outputDir), true);
+      } catch (err) {
+        this.error(err);
+      }
+    },
+
     async handleHotUpdate({ file, server }) {
       if (file.endsWith(".c") || file.endsWith(".h")) {
-        await compile(path.resolve(__dirname, outputDir), isProduction);
+        await compile(path.resolve(__dirname, outputDir), false);
         server.ws.send({ type: "full-reload" });
       }
     },
