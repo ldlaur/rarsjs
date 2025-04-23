@@ -1340,12 +1340,10 @@ void prepare_runtime_sections() {
 }
 
 void free_runtime() {
-    // THIS IS COMMENTED BECAUSE SOME SECTION BUFFERS ARE NOT
-    // HEAP ALLOCATED (E.G., THOSE FROM ELF FILES)
-    // for (size_t i = 0; i < g_sections_len; i++) {
-    //     free(g_sections[i]->relocations.buf);
-    //     free(g_sections[i]->buf);
-    // }
+    for (size_t i = 0; i < g_sections_len; i++) {
+        free(g_sections[i]->relocations.buf);
+        free(g_sections[i]->buf);
+    }
     free(g_sections);
     free(g_text_by_linenum);
     free(g_labels);

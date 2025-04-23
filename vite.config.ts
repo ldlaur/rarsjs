@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
-import clangPlugin from "./vite-plugin-clang.js";
+import clangPlugin from "./src/webui/vite-plugin-clang.js";
 import {lezer} from "@lezer/generator/rollup";
 import tailwindcss from 'tailwindcss'
 import autoprefixer from 'autoprefixer'

@@ -1,6 +1,6 @@
 dist
 a.out
-src/main.wasm
+src/webui/main.wasm
 pnpm-lock.yaml
 src/exec/a.bin
 

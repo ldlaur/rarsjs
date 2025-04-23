@@ -1,4 +1,4 @@
-import wasmUrl from "../main.wasm?url";
+import wasmUrl from "./main.wasm?url";
 import { convertNumber } from "./App";
 
 interface WasmExports {

@@ -23,7 +23,6 @@ function compile(outpath, optimize) {
 
 export default function clangPlugin() {
   let isProduction = false;
-  let outputDir = "src"; // Default for dev mode
 
   return {
     name: "vite-plugin-clang",
@@ -32,7 +31,7 @@ export default function clangPlugin() {
 
     async buildStart() {
       try {
-        await compile(path.resolve(__dirname, outputDir), false);
+        await compile(path.resolve(__dirname), false);
       } catch (err) {
         throw new Error(err);
       }
@@ -40,7 +39,7 @@ export default function clangPlugin() {
 
     async generateBundle() {
       try {
-        await compile(path.resolve(__dirname, outputDir), true);
+        await compile(path.resolve(__dirname), true);
       } catch (err) {
         this.error(err);
       }
@@ -48,7 +47,7 @@ export default function clangPlugin() {
 
     async handleHotUpdate({ file, server }) {
       if (file.endsWith(".c") || file.endsWith(".h")) {
-        await compile(path.resolve(__dirname, outputDir), false);
+        await compile(path.resolve(__dirname), false);
         server.ws.send({ type: "full-reload" });
       }
     },
