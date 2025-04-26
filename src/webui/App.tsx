@@ -1,4 +1,5 @@
 import {
+  createEffect,
   createSignal,
   onMount,
   Show,
@@ -46,7 +47,7 @@ export const [consoleText, setConsoleText] = createSignal<string>("");
 let breakpointSet: Set<number> = new Set();
 export let view: EditorView;
 let cmTheme: Compartment = new Compartment();
-
+const lintCompartment = new Compartment();
 
 const TEXT_BASE = 0x00400000;
 const TEXT_END = 0x10000000;
@@ -310,6 +311,11 @@ function updateShadowStack() {
 }
 
 async function runRiscV(): Promise<void> {
+  setDebugMode(false);
+  setHasError(false);
+  setShadowStack([]);
+  updateLineNumber();
+
   let err = await wasmInterface.build(
     view.state.doc.toString(),
   );
@@ -317,10 +323,6 @@ async function runRiscV(): Promise<void> {
     forceLinting(view);
     return;
   }
-
-  setDebugMode(false);
-  setHasError(false);
-  setConsoleText("");
 
   while (1) {
     wasmInterface.run(setConsoleText);
@@ -337,11 +339,18 @@ async function runRiscV(): Promise<void> {
 }
 
 async function startStepRiscV(): Promise<void> {
+  setDebugMode(false);
+  setHasError(false);
+  setShadowStack([]);
+  updateLineNumber();
+
   let err = await wasmInterface.build(
     view.state.doc.toString(),
   );
-  if (err !== null) return;
-  else forceLinting(view);
+  if (err !== null) {
+    forceLinting(view);
+    return;
+  }
 
   setDebugMode(true);
   setConsoleText("");
@@ -359,7 +368,7 @@ function singleStepRiscV(): void {
   if (wasmInterface.successfulExecution || wasmInterface.hasError) setDebugMode(false);
   setWasmPc(wasmInterface.pc[0]);
   setWasmRegs([...wasmInterface.regsArr.slice(0, 31)]);
-
+  setHasError(wasmInterface.hasError);
   setDummy(dummy() + 1);
   updateLineNumber();
   updateShadowStack();
@@ -442,7 +451,6 @@ const tabKeymap = keymap.of([{
       }
     }
     if (!lineIsEmpty && (from == to || state.doc.lineAt(from).number == state.doc.lineAt(to).number)) {
-      console.log("insert tab");
       dispatch(state.update(state.replaceSelection("\t"), {
         scrollIntoView: true,
         userEvent: "input"
@@ -484,7 +492,20 @@ const BacktraceView: Component = () => {
 
 const Editor: Component = () => {
   let editor: HTMLDivElement | undefined;
-
+  // enable and disable linter based on debugMode() and hasError()
+  createEffect(() => {
+    const disable = debugMode() || hasError();
+    if (view == undefined) return;
+    if (disable) {
+      view.dispatch({
+        effects: lintCompartment.reconfigure([])
+      });
+    } else {
+      view.dispatch({
+        effects: lintCompartment.reconfigure(createAsmLinter(wasmInterface))
+      });
+    }
+  })
   onMount(() => {
     const theme = EditorView.theme({
       "&.cm-editor": { height: "100%" },
@@ -496,7 +517,7 @@ const Editor: Component = () => {
       extensions: [
         tabKeymap,
         new LanguageSupport(riscvLanguage, [dummyIndent]),
-        createAsmLinter(wasmInterface),
+        lintCompartment.of(createAsmLinter(wasmInterface)),
         breakpointGutter, // must be first so it's the first gutter
         basicSetup,
         theme,
