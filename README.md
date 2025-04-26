@@ -1,5 +1,7 @@
 # rars.js
-A minimal assembler, editor, simulator and debugger for RISC-V (RV32IM), meant to be a useful tool for computer architecture students, inspired by the original [RARS](https://github.com/TheThirdOne/rars).
+A minimal assembler, editor, simulator and debugger for RISC-V (RV32IM), meant to be a useful tool for computer architecture students.
+This project was inspired by [RARS](https://github.com/TheThirdOne/rars), but it is not affiliated with it in any way.
+
 You can try it now online on [rarsjs.vercel.app](https://rarsjs.vercel.app).
 
 ![Screenshot of the rars.js Web UI, debugging a recursive factorial program](images/webui.png)
@@ -32,7 +34,7 @@ make
 ```
 
 ## Web UI
-Clang with support for WASM (if you're using macOS, make sure you're not using AppleClang), node and npm
+Clang with support for WASM (if you're using macOS, ensure you're not using AppleClang), node and npm
 ```
 npm install
 npm run dev # for a developement live reload server
