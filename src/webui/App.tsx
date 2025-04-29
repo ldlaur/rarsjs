@@ -1,5 +1,5 @@
 import {
-  createEffect,
+  createComputed,
   createSignal,
   onMount,
   Show,
@@ -493,7 +493,7 @@ const BacktraceView: Component = () => {
 const Editor: Component = () => {
   let editor: HTMLDivElement | undefined;
   // enable and disable linter based on debugMode() and hasError()
-  createEffect(() => {
+  createComputed(() => {
     const disable = debugMode() || hasError();
     if (view == undefined) return;
     if (disable) {
