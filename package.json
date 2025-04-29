@@ -11,12 +11,12 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^22.14.1",
+    "@types/node": "^22.15.3",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
-    "vite": "^6.2.6",
+    "vite": "^6.3.3",
     "vite-plugin-solid": "^2.11.6"
   },
   "dependencies": {
@@ -26,10 +26,8 @@
     "@lezer/generator": "^1.7.3",
     "@lezer/highlight": "^1.2.1",
     "@lezer/lr": "^1.4.2",
-    "@solid-primitives/virtual": "^0.2.0",
+    "@solid-primitives/virtual": "^0.2.1",
     "@tanstack/solid-virtual": "^3.13.6",
-    "@uiw/codemirror-theme-gruvbox-dark": "^4.23.10",
-    "@uiw/codemirror-themes": "^4.23.10",
     "codemirror": "^6.0.1",
     "solid-js": "^1.9.5"
   }
