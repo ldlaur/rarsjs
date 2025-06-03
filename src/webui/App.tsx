@@ -32,6 +32,10 @@ export const riscvLanguage = LRLanguage.define({
   parser: parserWithMetadata,
 })
 
+// avoid duplicating work between linter and compilation
+export let latestAsm = {
+  text: ""
+};
 
 let currentTheme: Theme = getDefaultTheme();
 
@@ -315,14 +319,13 @@ async function runRiscV(): Promise<void> {
   setHasError(false);
   setShadowStack([]);
   updateLineNumber();
-
-  let err = await wasmInterface.build(
-    view.state.doc.toString(),
-  );
+  let asm = view.state.doc.toString();
+  let err = await wasmInterface.build(asm);
   if (err !== null) {
     forceLinting(view);
     return;
   }
+  latestAsm["text"] = asm;
 
   while (1) {
     wasmInterface.run(setConsoleText);
@@ -344,13 +347,13 @@ async function startStepRiscV(): Promise<void> {
   setShadowStack([]);
   updateLineNumber();
 
-  let err = await wasmInterface.build(
-    view.state.doc.toString(),
-  );
+  let asm = view.state.doc.toString();
+  let err = await wasmInterface.build(asm);
   if (err !== null) {
     forceLinting(view);
     return;
   }
+  latestAsm["text"] = asm;
 
   setDebugMode(true);
   setConsoleText("");

@@ -7,20 +7,17 @@ import {
   view,
   setConsoleText,
   setHasError,
+  latestAsm,
 } from "./App";
 import { lineHighlightEffect } from "./LineHighlight";
-
-// codemirror linter may be called when the view is reconfigured
-// do our own check to avoid overwriting output
-let oldString = "";
 
 export const createAsmLinter = (wasmInterface: WasmInterface) => {
   let delay: number = 100;
   return linter(
     async (ev) => {
       const code = ev.state.doc.toString();
-      if (oldString == code) return [];
-      oldString = code;
+      if (latestAsm["text"] == code) return [];
+      latestAsm["text"] = code;
       let err = await wasmInterface.build(code);
       setDummy(dummy() + 1);
       setWasmPc(wasmInterface.pc[0]);
