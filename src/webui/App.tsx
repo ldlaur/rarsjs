@@ -280,7 +280,7 @@ function setBreakpoints(): void {
     const line = view.state.doc.lineAt(from);
     const lineNum = line.number;
     for (let i = 0; i < 65536; i++) {
-      if (wasmInterface.textByLinenum[i] >= lineNum) {
+      if (wasmInterface.textByLinenum[i] == lineNum) {
         breakpointSet.add(0x00400000 + i * 4);
       }
     }
