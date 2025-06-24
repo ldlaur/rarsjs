@@ -932,6 +932,26 @@ OpcodeHandling opcode_types[] = {
 
 void callsan_init();
 
+
+// defining _start but not making it global is a VERY common mistake
+// another mistake i've seen is putting _start in .data by accident
+const char* resolve_start(u32* start_pc) {
+    Section* section;
+    if (!resolve_symbol("_start", strlen("_start"), true, start_pc, &section)) {
+        if (resolve_symbol("_start", strlen("_start"), false, start_pc, &section)) {
+            return "_start defined, but without .globl";
+        }
+        // if it's not defined and not global, then there is no _start at all
+        // just assign it to the default
+        *start_pc = TEXT_BASE;
+        return NULL;
+    }
+    if (section != &g_text) {
+        return "_start not in .text section";
+    }
+    return NULL;
+}
+
 export void assemble(const char *txt, size_t s, bool allow_externs) {
     g_allow_externs = allow_externs;
     callsan_init();
@@ -1206,11 +1226,14 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
     if (err) {
         g_error = err;
         g_error_line = p->startline;
+        return;
     }
 
-    // FIXME: should i return a warning if _start is not present
-    // or quietly continue?
-    resolve_symbol("_start", strlen("_start"), true, &g_pc, NULL);
+    err = resolve_start(&g_pc);
+     if (err) {
+        g_error = err;
+        g_error_line = 1;
+    }
 }
 
 void do_syscall() {
