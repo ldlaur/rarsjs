@@ -12,6 +12,7 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
     const [chunkWidth, setChunkWidth] = createSignal<number>(0);
     const [chunksPerLine, setChunksPerLine] = createSignal<number>(1);
     const [lineCount, setLineCount] = createSignal<number>(0);
+    const [addrSelect, setAddrSelect] = createSignal<number>(-1);
 
     onMount(() => {
         if (dummyChunk) {
@@ -70,7 +71,7 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
 
     // FIXME: selecting data should not also select the address column
     return (
-        <div class="h-full flex flex-col" style={{ contain: "strict" }}>
+        <div class="h-full flex flex-col" style={{ contain: "strict" }} onMouseDown={(e) => { setAddrSelect(-1); } }>
             <TabSelector tab={activeTab()} setTab={setActiveTab} tabs={[".text", ".data", "stack", "frames"]} />
             <div ref={parentRef} class="font-mono text-lg overflow-auto theme-scrollbar ml-2">
                 <div ref={dummyChunk} class="invisible absolute ">{"000000000"}</div>
@@ -110,7 +111,7 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
                             {(virtRow) => (
                                 <div style={{ position: "absolute", top: `${virtRow.start}px`, width: "100%" }}>
                                     <Show when={chunksPerLine() > 1}>
-                                        <a class="theme-fg2 pr-2">
+                                        <a class={"theme-fg2 pr-2 " + ((addrSelect() == virtRow.index) ? "select-text" : "select-none")} onMouseDown={(e) => { setAddrSelect(virtRow.index); e.stopPropagation(); }}>
                                             {(getStartAddr() + virtRow.index * (chunksPerLine() - 1) * 4).toString(16).padStart(8, "0")}
                                         </a>
                                     </Show>
@@ -121,9 +122,10 @@ export const MemoryView: Component<{ dummy: () => number, writeAddr: number, wri
                                         let idx = virtRow.index;
                                         if (chunksPerLine() < 2) chunks = 1;
                                         let components = new Array(chunks * 4);
+                                        let select = (addrSelect() == -1) ? "select-text" : "select-none";
                                         for (let i = 0; i < chunks; i++) {
                                             for (let j = 0; j < 4; j++) {
-                                                let style = "";
+                                                let style = select;
                                                 let ptr = start + (idx * chunks + i) * 4 + j;
                                                 if ((idx * chunks + i) * 4 + j >= 65536) break;
                                                 let isAnimated = ptr >= props.writeAddr && ptr < props.writeAddr + props.writeLen;
