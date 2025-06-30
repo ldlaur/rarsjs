@@ -10,7 +10,7 @@ This initial release introduces the following core features:
 ### Web UI version:
 - **modern editing experience**:
   - whole-UI light and dark themes
-  - CodeMirror 6-based editor with RV32IM syntax highighting
+  - CodeMirror 6-based editor with RV32IM syntax highlighting
   - live error reporting
 - **debugging tools**:
   - register and memory visualization with live updates
