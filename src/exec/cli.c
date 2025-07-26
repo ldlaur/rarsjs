@@ -141,7 +141,7 @@ err:
         if (pc_to_label_r(ent->pc, &label, &off)) {
             // TODO: size_t can be > INT_MAX though I think no-one will ever
             // write a string longer than 2.1B chars
-            fprintf(stderr, "(at %.*s+0x%x", label->len, label->txt, off);
+            fprintf(stderr, "(at %.*s+0x%x", (int)label->len, label->txt, off);
             size_t line_idx = (ent->pc - TEXT_BASE) / 4;
 
             if (line_idx < g_text_by_linenum_len) {
@@ -379,24 +379,24 @@ static void c_link(void) {
     ezld_runtime_init(1, fake_argv);
     ezld_config_t cfg = {0};
 
-    cfg.entry_label = "_start";
-    cfg.out_path = g_exec_out;
-    cfg.seg_align = 0x1000;
-    ezld_array_init(cfg.o_files);
-    ezld_array_init(cfg.sections);
-    *ezld_array_push(cfg.sections) =
-        (ezld_sec_cfg_t){.name = ".text", .virt_addr = TEXT_BASE};
-    *ezld_array_push(cfg.sections) =
-        (ezld_sec_cfg_t){.name = ".data", .virt_addr = DATA_BASE};
+    cfg.cfg_entrysym = "_start";
+    cfg.cfg_outpath = g_exec_out;
+    cfg.cfg_segalign = 0x1000;
+    ezld_array_init(cfg.cfg_objpaths);
+    ezld_array_init(cfg.cfg_sections);
+    *ezld_array_push(cfg.cfg_sections) =
+        (ezld_sec_cfg_t){.sc_name = ".text", .sc_vaddr = TEXT_BASE};
+    *ezld_array_push(cfg.cfg_sections) =
+        (ezld_sec_cfg_t){.sc_name = ".data", .sc_vaddr = DATA_BASE};
 
     for (int i = 0; i < g_cmd_args_len; i++) {
         const char *filpath = g_cmd_args[i];
-        *ezld_array_push(cfg.o_files) = filpath;
+        *ezld_array_push(cfg.cfg_objpaths) = filpath;
     }
 
     ezld_link(cfg);
-    ezld_array_free(cfg.o_files);
-    ezld_array_free(cfg.sections);
+    ezld_array_free(cfg.cfg_objpaths);
+    ezld_array_free(cfg.cfg_sections);
 }
 
 static void c_hexdump() {
