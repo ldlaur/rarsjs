@@ -1,3 +1,4 @@
+#include "rarsjs/callsan.h"
 #include "rarsjs/core.h"
 
 extern u32 g_regs[32];
@@ -9,13 +10,6 @@ extern u32 g_error_line;
 
 extern u32 g_runtime_error_params[2];
 extern Error g_runtime_error_type;
-
-void callsan_store(int reg);
-void callsan_call();
-bool callsan_ret();
-bool callsan_can_load(int reg);
-void callsan_report_store(u32 addr, u32 size, int reg);
-bool callsan_check_load(u32 addr, u32 size);
 
 // end is inclusive, like in Verilog
 static inline u32 extr(u32 val, u32 end, u32 start) {
@@ -200,7 +194,8 @@ void emulate() {
         if (!callsan_can_load(rs1)) return;
         callsan_store(rd);
         *D = g_pc + 4;
-        // this has to be checked before updating pc so that the highlighted pc is correct
+        // this has to be checked before updating pc so that the highlighted pc
+        // is correct
         if (rd == 0 && rs1 == 1) {  // jr ra/ret
             if (!callsan_ret()) return;
         }

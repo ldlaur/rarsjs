@@ -1,20 +1,6 @@
+#include "rarsjs/callsan.h"
+
 #include "rarsjs/core.h"
-
-// DO NOT MODIFY THIS STRUCT CARELESSLY
-// THIS IS ACCESSED AS RAW MEMORY FROM WASM
-// (this is really ugly, i know)
-// possible fix: sizeof and offsetof
-// and expose them to JS
-// but that is quite verbose
-typedef struct {
-    u32 pc;       // for backtrace view
-    u32 sp;       // for backtrace view
-    u32 args[8];  // for backtrace view
-
-    u32 sregs[12];
-    u32 ra;
-    u32 reg_bitmap;
-} ShadowStackEnt;
 
 export u32 g_reg_bitmap;
 export ShadowStackEnt *g_shadow_stack;

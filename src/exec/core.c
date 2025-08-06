@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 
+#include "rarsjs/callsan.h"
 #include "rarsjs/elf.h"
 
 export Section g_text, g_data, g_stack;
@@ -43,6 +44,11 @@ Global *g_globals;
 size_t g_globals_len, g_globals_cap;
 
 bool g_allow_externs;
+
+const char *const REGISTER_NAMES[] = {
+    "zero", "ra", "sp", "gp", "tp",  "t0",  "t1", "t2", "fp", "s1", "a0",
+    "a1",   "a2", "a3", "a4", "a5",  "a6",  "a7", "s2", "s3", "s4", "s5",
+    "s6",   "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
 
 // clang-format off
 u32 DS1S2(u32 d, u32 s1, u32 s2) { return (d << 7) | (s1 << 15) | (s2 << 20); }
@@ -350,12 +356,8 @@ int parse_reg(Parser *p) {
             return num;
         }
     }
-    char *names[] = {"zero", "ra", "sp",  "gp",  "tp", "t0", "t1", "t2",
-                     "fp",   "s1", "a0",  "a1",  "a2", "a3", "a4", "a5",
-                     "a6",   "a7", "s2",  "s3",  "s4", "s5", "s6", "s7",
-                     "s8",   "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
     for (int i = 0; i < 32; i++) {
-        if (str_eq(str, len, names[i])) return i;
+        if (str_eq(str, len, REGISTER_NAMES[i])) return i;
     }
     if (str_eq(str, len, "s0")) return 8;  // s0 = fp
     return -1;
@@ -1283,19 +1285,37 @@ void do_syscall() {
     }
 }
 
-// TODO: if a label isn't found precisely
-// instead of showing a raw address
-// show an offset from the preceding label
-// this is so ugly because i'm calling it from JS
+bool pc_to_label_r(u32 pc, LabelData **ret, u32 *off) {
+    LabelData *closest = NULL;
+
+    for (size_t i = 0; i < g_labels_len; i++) {
+        if (g_labels[i].addr <= pc &&
+            (NULL == closest || g_labels[i].addr > closest->addr)) {
+            closest = &g_labels[i];
+        }
+    }
+
+    if (NULL != closest) {
+        *ret = closest;
+        *off = pc - closest->addr;
+        return true;
+    }
+
+    *ret = NULL;
+    *off = 0;
+    return false;
+}
+
+// Ugly because i"m calling it from JS"
 const char *g_pc_to_label_txt;
 size_t g_pc_to_label_len;
+u32 g_pc_to_label_off;
 void pc_to_label(u32 pc) {
-    for (size_t i = 0; i < g_labels_len; i++) {
-        if (g_labels[i].addr == pc) {
-            g_pc_to_label_txt = g_labels[i].txt;
-            g_pc_to_label_len = g_labels[i].len;
-            return;
-        }
+    LabelData *l;
+    if (pc_to_label_r(pc, &l, &g_pc_to_label_off)) {
+        g_pc_to_label_txt = l->txt;
+        g_pc_to_label_len = l->len;
+        return;
     }
     g_pc_to_label_txt = NULL;
     g_pc_to_label_len = 0;

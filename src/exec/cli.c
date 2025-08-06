@@ -7,6 +7,7 @@
 
 #include "ezld/include/ezld/linker.h"
 #include "ezld/include/ezld/runtime.h"
+#include "rarsjs/callsan.h"
 #include "rarsjs/core.h"
 #include "rarsjs/elf.h"
 #include "vendor/commander.h"
@@ -43,6 +44,10 @@ static cmd_func_t g_command = NULL;
 static const char **g_cmd_args;
 static int g_cmd_args_len;
 
+// Flags
+// Set by variout opt_* like --sanitize, --fuzz
+static bool g_flg_callsan = false;
+
 // UTILITY FUNCTIONS
 
 static void emulate_safe(void) {
@@ -72,16 +77,103 @@ static void emulate_safe(void) {
                 return;
 
             case ERROR_UNHANDLED_INSN:
-                fprintf(stderr, "emulator: unhandled insn at pc=0x%08x\n",
-                        g_pc);
-                return;
+                fprintf(stderr,
+                        "emulator: unhandled instruction at pc=0x%08x\n", g_pc);
+                goto err;
 
-            default:
+            case ERROR_CALLSAN_CANTREAD:
+                fprintf(stderr,
+                        "callsan: attempt to read from uninitialized register "
+                        "%s at pc=0x%08x. Check the calling convention!\n",
+                        REGISTER_NAMES[g_runtime_error_params[0]], g_pc);
+                goto err;
+
+            case ERROR_CALLSAN_NOT_SAVED:
+                fprintf(
+                    stderr,
+                    "callsan: attempt to write callee-saved register s%u at "
+                    "pc=0x%08x without saving it first. Check the calling "
+                    "convention!\n",
+                    g_runtime_error_params[0], g_pc);
+                goto err;
+
+            case ERROR_CALLSAN_RA_MISMATCH:
+                fprintf(
+                    stderr,
+                    "callsan: attempt to return from non-leaf function without "
+                    "restoring ra register at pc=0x%08x. Check the calling "
+                    "convention!\n",
+                    g_pc);
+                goto err;
+
+            case ERROR_CALLSAN_SP_MISMATCH:
+                fprintf(
+                    stderr,
+                    "callsan: attempt to return from function with wrong stack "
+                    "pointer value at pc=0x%08x\n",
+                    g_pc);
+                goto err;
+
+            case ERROR_CALLSAN_RET_EMPTY:
+                fprintf(
+                    stderr,
+                    "callsan: attempt to return without a call at pc=0x%08x\n",
+                    g_pc);
+                goto err;
+            
+            case ERROR_CALLSAN_LOAD_STACK:
+                fprintf(
+                    stderr,
+                    "callsan: attempt to read at pc=0x%08x from stack address 0x%08x, which hasn't been written to in the current function\n",
+                    g_pc, g_runtime_error_params[0]);
+                goto err;
+        
             fprintf(stderr, "emulator: unhandled error at pc=0x%08x\n",
                 g_pc);
 
                 return;
         }
+    }
+
+    return;
+
+err:
+    if (!g_flg_callsan) {
+        return;
+    }
+
+    puts("");
+    puts("===================== RARSJS SANITIZER ERROR");
+    for (size_t i = 0; i < g_shadow_stack_len; i++) {
+        ShadowStackEnt *ent = &g_shadow_stack[i];
+        fprintf(stderr, "\t#%zu pc=0x%08x sp=0x%08x ", i, ent->pc, ent->sp);
+        LabelData *label;
+        u32 off;
+        if (pc_to_label_r(ent->pc, &label, &off)) {
+            // TODO: size_t can be > INT_MAX though I think no-one will ever
+            // write a string longer than 2.1B chars
+            fprintf(stderr, "(at %.*s+0x%x", (int)label->len, label->txt, off);
+            size_t line_idx = (ent->pc - TEXT_BASE) / 4;
+
+            if (line_idx < g_text_by_linenum_len) {
+                u32 linenum = g_text_by_linenum[line_idx];
+                fprintf(stderr, ", line %u)", linenum);
+            } else {
+                fprintf(stderr, ")");
+            }
+        }
+        puts("");
+    }
+    puts("");
+    for (size_t i = 0; i < 32; i += 4) {
+        for (size_t j = 0; j < 4; j++) {
+            fprintf(stderr, "x%zu: ", i + j);
+            if (i + j < 10) {
+                fprintf(stderr, " ");
+            }
+            fprintf(stderr, "0x%08x    ", g_regs[i + j]);
+        }
+        puts("");
     }
 }
 
@@ -298,24 +390,24 @@ static void c_link(void) {
     ezld_runtime_init(1, fake_argv);
     ezld_config_t cfg = {0};
 
-    cfg.entry_label = "_start";
-    cfg.out_path = g_exec_out;
-    cfg.seg_align = 0x1000;
-    ezld_array_init(cfg.o_files);
-    ezld_array_init(cfg.sections);
-    *ezld_array_push(cfg.sections) =
-        (ezld_sec_cfg_t){.name = ".text", .virt_addr = TEXT_BASE};
-    *ezld_array_push(cfg.sections) =
-        (ezld_sec_cfg_t){.name = ".data", .virt_addr = DATA_BASE};
+    cfg.cfg_entrysym = "_start";
+    cfg.cfg_outpath = g_exec_out;
+    cfg.cfg_segalign = 0x1000;
+    ezld_array_init(cfg.cfg_objpaths);
+    ezld_array_init(cfg.cfg_sections);
+    *ezld_array_push(cfg.cfg_sections) =
+        (ezld_sec_cfg_t){.sc_name = ".text", .sc_vaddr = TEXT_BASE};
+    *ezld_array_push(cfg.cfg_sections) =
+        (ezld_sec_cfg_t){.sc_name = ".data", .sc_vaddr = DATA_BASE};
 
     for (int i = 0; i < g_cmd_args_len; i++) {
         const char *filpath = g_cmd_args[i];
-        *ezld_array_push(cfg.o_files) = filpath;
+        *ezld_array_push(cfg.cfg_objpaths) = filpath;
     }
 
     ezld_link(cfg);
-    ezld_array_free(cfg.o_files);
-    ezld_array_free(cfg.sections);
+    ezld_array_free(cfg.cfg_objpaths);
+    ezld_array_free(cfg.cfg_sections);
 }
 
 static void c_hexdump() {
@@ -454,6 +546,11 @@ static void opt_ascii(command_t *self) {
     g_command = c_ascii;
 }
 
+static void opt_sanitize(command_t *self) {
+    g_flg_callsan = true;
+    callsan_init();
+}
+
 int main(int argc, char **argv) {
     atexit(free_runtime);
     g_argc = argc;
@@ -485,6 +582,8 @@ int main(int argc, char **argv) {
                    opt_link);
     command_option(&cmd, "-o", "--output <file>", "choose output file name",
                    opt_o);
+    command_option(&cmd, "-s", "--sanitize",
+                   "enable rarsjs sanitizers (callsan)", opt_sanitize);
     command_parse(&cmd, argc, argv);
     g_cmd_args = (const char **)cmd.argv;
     g_cmd_args_len = cmd.argc;
