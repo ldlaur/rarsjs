@@ -57,11 +57,9 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-./rarsjs
+/rarsjs
 .vercel
-rarsjs
 fuzz/
 node_modules
-rarsjs
 rarsjs_afl
 rarsjs_libfuzzer
