@@ -120,16 +120,17 @@ static void emulate_safe(void) {
                     "callsan: attempt to return without a call at pc=0x%08x\n",
                     g_pc);
                 goto err;
-            
+
             case ERROR_CALLSAN_LOAD_STACK:
-                fprintf(
-                    stderr,
-                    "callsan: attempt to read at pc=0x%08x from stack address 0x%08x, which hasn't been written to in the current function\n",
-                    g_pc, g_runtime_error_params[0]);
+                fprintf(stderr,
+                        "callsan: attempt to read at pc=0x%08x from stack "
+                        "address 0x%08x, which hasn't been written to in the "
+                        "current function\n",
+                        g_pc, g_runtime_error_params[0]);
                 goto err;
-        
-            fprintf(stderr, "emulator: unhandled error at pc=0x%08x\n",
-                g_pc);
+
+                fprintf(stderr, "emulator: unhandled error at pc=0x%08x\n",
+                        g_pc);
 
                 return;
         }
@@ -144,8 +145,8 @@ err:
 
     puts("");
     puts("===================== RARSJS SANITIZER ERROR");
-    for (size_t i = 0; i < g_shadow_stack_len; i++) {
-        ShadowStackEnt *ent = &g_shadow_stack[i];
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_shadow_stack); i++) {
+        ShadowStackEnt *ent = RARSJS_ARRAY_GET(&g_shadow_stack, i);
         fprintf(stderr, "\t#%zu pc=0x%08x sp=0x%08x ", i, ent->pc, ent->sp);
         LabelData *label;
         u32 off;
@@ -155,8 +156,8 @@ err:
             fprintf(stderr, "(at %.*s+0x%x", (int)label->len, label->txt, off);
             size_t line_idx = (ent->pc - TEXT_BASE) / 4;
 
-            if (line_idx < g_text_by_linenum_len) {
-                u32 linenum = g_text_by_linenum[line_idx];
+            if (line_idx < RARSJS_ARRAY_LEN(&g_text_by_linenum)) {
+                u32 linenum = *RARSJS_ARRAY_GET(&g_text_by_linenum, line_idx);
                 fprintf(stderr, ", line %u)", linenum);
             } else {
                 fprintf(stderr, ")");

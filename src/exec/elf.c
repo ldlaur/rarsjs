@@ -37,7 +37,8 @@
     memcpy((dst) + *(off), (src), strlen((src)) + 1); \
     *(off) += strlen((src)) + 1
 
-bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, char **error) {
+bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
+              char **error) {
     if (NULL == elf_contents) {
         *error = "null buffer";
         return false;
@@ -52,8 +53,8 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
     ReadElfSection *readable_shdrs = NULL;
     ElfHeader *e_header = (ElfHeader *)elf_contents;
 
-    if (0x7F != e_header->magic[0] || 'E' != e_header->magic[1] || 'L' != e_header->magic[2] ||
-        'F' != e_header->magic[3]) {
+    if (0x7F != e_header->magic[0] || 'E' != e_header->magic[1] ||
+        'L' != e_header->magic[2] || 'F' != e_header->magic[3]) {
         *error = "not an elf file";
         return false;
     }
@@ -65,7 +66,8 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
     if (1 == e_header->bits) {
         out->class = "ELF32";
     } else if (2 == e_header->bits) {
-        out->class = "ELF64 (WARNING: Corrupt content ahead, format not supported)";
+        out->class =
+            "ELF64 (WARNING: Corrupt content ahead, format not supported)";
     } else {
         UNKNOWN(out->class);
     }
@@ -111,12 +113,14 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
     }
 
     if (e_header->phdrs_off >= elf_contents_len ||
-        e_header->phdrs_off + (e_header->phent_sz * e_header->phent_num) > elf_contents_len) {
+        e_header->phdrs_off + (e_header->phent_sz * e_header->phent_num) >
+            elf_contents_len) {
         *error = "program headers offset exceeds buffer size";
         goto fail;
     }
 
-    ElfProgramHeader *phdrs = (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
+    ElfProgramHeader *phdrs =
+        (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
     readable_phdrs = malloc(sizeof(ReadElfSegment) * e_header->phent_num);
     CHK_OOM(readable_phdrs, error);
 
@@ -169,12 +173,14 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, cha
     }
 
     if (e_header->shdrs_off >= elf_contents_len ||
-        e_header->shdrs_off + (e_header->shent_sz * e_header->shent_num) > elf_contents_len) {
+        e_header->shdrs_off + (e_header->shent_sz * e_header->shent_num) >
+            elf_contents_len) {
         *error = "section headers offset exceeds buffer size";
         goto fail;
     }
 
-    ElfSectionHeader *shdrs = (ElfSectionHeader *)(elf_contents + e_header->shdrs_off);
+    ElfSectionHeader *shdrs =
+        (ElfSectionHeader *)(elf_contents + e_header->shdrs_off);
     readable_shdrs = malloc(sizeof(ReadElfSection) * e_header->shent_num);
     CHK_OOM(readable_shdrs, error);
 
@@ -260,20 +266,23 @@ fail:
 // This function assumes that section names are the first strings in the strtab.
 // This function also assumes that name_off points to a value > 0.
 // phdrs_start, shdrs_start, name_off are all byte offsets.
-// This functions also assumes that the names of relocation sections follow those of the relative section
-// withing the string table. E.g., .rela.text comes immediately after .text
-// NOTE: This function changes elf.shidx in each physical section in g_sections with len > 0
-static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_start, size_t *shdrs_start,
-                      size_t *phnum, size_t *shnum, size_t *reloc_idx, size_t *reloc_num, size_t file_off,
-                      size_t rsv_shdrs, size_t symtab_idx, bool use_phdrs, bool use_shdrs, char **error) {
+// This functions also assumes that the names of relocation sections follow
+// those of the relative section withing the string table. E.g., .rela.text
+// comes immediately after .text NOTE: This function changes elf.shidx in each
+// physical section in g_sections with len > 0
+static bool make_core(u8 **out, size_t *out_sz, size_t *name_off,
+                      size_t *phdrs_start, size_t *shdrs_start, size_t *phnum,
+                      size_t *shnum, size_t *reloc_idx, size_t *reloc_num,
+                      size_t file_off, size_t rsv_shdrs, size_t symtab_idx,
+                      bool use_phdrs, bool use_shdrs, char **error) {
     size_t segments_count = 0;
     size_t segments_sz = 0;
     size_t reloc_shdrs_num = 0;
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *s = g_sections[i];
-        if (s->physical && 0 != s->len) {
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
+        Section *s = *RARSJS_ARRAY_GET(&g_sections, i);
+        if (s->physical && 0 != s->contents.len) {
             segments_count++;
-            segments_sz += s->len;
+            segments_sz += s->contents.len;
 
             if (0 != s->relocations.len) {
                 reloc_shdrs_num++;
@@ -339,9 +348,9 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_
 
     // Write program headers, segments, and section headers
     // RELOCATION HEADERS EXCLUDED
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *s = g_sections[i];
-        if (!s->physical || 0 == s->len) {
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
+        Section *s = *RARSJS_ARRAY_GET(&g_sections, i);
+        if (!s->physical || 0 == s->contents.len) {
             continue;
         }
 
@@ -362,8 +371,8 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_
                                         .off = segment_off + file_off,
                                         .virt_addr = s->base,
                                         .phys_addr = s->base,
-                                        .file_sz = s->len,
-                                        .mem_sz = s->len,
+                                        .file_sz = s->contents.len,
+                                        .mem_sz = s->contents.len,
                                         .align = s->align};
 
         // Ugly but avoids UB
@@ -380,7 +389,7 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_
                                        .flags = shdr_flags,
                                        .off = segment_off + file_off,
                                        .virt_addr = s->base,
-                                       .mem_sz = s->len,
+                                       .mem_sz = s->contents.len,
                                        .align = s->align,
                                        .link = 0,
                                        .ent_sz = 0};
@@ -388,7 +397,7 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off, size_t *phdrs_
         if (use_phdrs) {
             WRITE(region, &prog_header, &phdrs_off);
         }
-        WRITE_BUF(region, s->buf, s->len, &segment_off);
+        WRITE_BUF(region, s->contents.buf, s->contents.len, &segment_off);
         if (use_shdrs) {
             s->elf.shidx = shdrs_i;
             *(name_off) += strlen(s->name) + 1;
@@ -427,12 +436,13 @@ fail:
 // Thus, the indices for .startab and .symtab are 1 and 9 respectively
 // Section names start at index 17
 // Then come, in this order, externs and globals (if included)
-static bool make_strtab(char **out, size_t *out_sz, bool inc_externs, bool inc_globs, char **error) {
+static bool make_strtab(char **out, size_t *out_sz, bool inc_externs,
+                        bool inc_globs, char **error) {
     size_t base_len = strlen(".strtab") + 1 + strlen(".symtab") + 1;
     size_t strtab_sz = 1 + base_len;
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *s = g_sections[i];
-        if (s->physical && 0 != s->len) {
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
+        Section *s = *RARSJS_ARRAY_GET(&g_sections, i);
+        if (s->physical && 0 != s->contents.len) {
             strtab_sz += strlen(s->name) + 1;
 
             if (0 != s->relocations.len) {
@@ -441,14 +451,14 @@ static bool make_strtab(char **out, size_t *out_sz, bool inc_externs, bool inc_g
         }
     }
     if (inc_externs) {
-        for (size_t i = 0; i < g_externs_len; i++) {
-            Extern *e = &g_externs[i];
+        for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_externs); i++) {
+            Extern *e = RARSJS_ARRAY_GET(&g_externs, i);
             strtab_sz += e->len + 1;
         }
     }
     if (inc_globs) {
-        for (size_t i = 0; i < g_globals_len; i++) {
-            Global *g = &g_globals[i];
+        for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_globals); i++) {
+            Global *g = RARSJS_ARRAY_GET(&g_globals, i);
             strtab_sz += g->len + 1;
         }
     }
@@ -461,9 +471,9 @@ static bool make_strtab(char **out, size_t *out_sz, bool inc_externs, bool inc_g
 
     WRITE_STR(strtab, ".strtab", &strtab_off);
     WRITE_STR(strtab, ".symtab", &strtab_off);
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *s = g_sections[i];
-        if (s->physical && 0 != s->len) {
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
+        Section *s = *RARSJS_ARRAY_GET(&g_sections, i);
+        if (s->physical && 0 != s->contents.len) {
             WRITE_STR(strtab, s->name, &strtab_off);
 
             if (0 != s->relocations.len) {
@@ -475,16 +485,16 @@ static bool make_strtab(char **out, size_t *out_sz, bool inc_externs, bool inc_g
     }
 
     if (inc_externs) {
-        for (size_t i = 0; i < g_externs_len; i++) {
-            Extern *e = &g_externs[i];
+        for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_externs); i++) {
+            Extern *e = RARSJS_ARRAY_GET(&g_externs, i);
             WRITE_BUF(strtab, e->symbol, e->len, &strtab_off);
             strtab[strtab_off++] = '\0';
         }
     }
 
     if (inc_globs) {
-        for (size_t i = 0; i < g_globals_len; i++) {
-            Global *g = &g_globals[i];
+        for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_globals); i++) {
+            Global *g = RARSJS_ARRAY_GET(&g_globals, i);
             WRITE_BUF(strtab, g->str, g->len, &strtab_off);
             strtab[strtab_off++] = '\0';
         }
@@ -499,8 +509,11 @@ fail:
     return false;
 }
 
-static bool make_symtab(u8 **out, size_t *out_sz, size_t *ent_num, size_t name_off, char **error) {
-    size_t symtab_sz = sizeof(ElfSymtabEntry) * (1 + g_externs_len + g_globals_len);
+static bool make_symtab(u8 **out, size_t *out_sz, size_t *ent_num,
+                        size_t name_off, char **error) {
+    size_t symtab_sz =
+        sizeof(ElfSymtabEntry) *
+        (1 + RARSJS_ARRAY_LEN(&g_externs) + RARSJS_ARRAY_LEN(&g_globals));
     ElfSymtabEntry *symtab = malloc(symtab_sz);
     CHK_OOM(symtab, error);
 
@@ -513,8 +526,8 @@ static bool make_symtab(u8 **out, size_t *out_sz, size_t *ent_num, size_t name_o
 
     size_t symtab_i = 1;
 
-    for (size_t i = 0; i < g_externs_len; i++, symtab_i++) {
-        Extern *e = &g_externs[i];
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_externs); i++, symtab_i++) {
+        Extern *e = RARSJS_ARRAY_GET(&g_externs, i);
         ElfSymtabEntry *sym = &symtab[symtab_i];
         e->elf.stidx = symtab_i;
         sym->name_off = name_off;
@@ -526,8 +539,8 @@ static bool make_symtab(u8 **out, size_t *out_sz, size_t *ent_num, size_t name_o
         name_off += e->len + 1;
     }
 
-    for (size_t i = 0; i < g_globals_len; i++, symtab_i++) {
-        Global *g = &g_globals[i];
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_globals); i++, symtab_i++) {
+        Global *g = RARSJS_ARRAY_GET(&g_globals, i);
         ElfSymtabEntry *sym = &symtab[symtab_i];
         g->elf.stidx = symtab_i;
         sym->name_off = name_off;
@@ -556,11 +569,12 @@ fail:
     return false;
 }
 
-static bool make_rela(u8 **out, size_t *out_sz, size_t file_off, ElfSectionHeader *shdrs, size_t reloc_idx,
+static bool make_rela(u8 **out, size_t *out_sz, size_t file_off,
+                      ElfSectionHeader *shdrs, size_t reloc_idx,
                       ElfSymtabEntry *symtab, char **error) {
     size_t rela_count = 0;
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *s = g_sections[i];
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
+        Section *s = *RARSJS_ARRAY_GET(&g_sections, i);
         rela_count += s->relocations.len;
     }
 
@@ -574,9 +588,9 @@ static bool make_rela(u8 **out, size_t *out_sz, size_t file_off, ElfSectionHeade
     // starting at index reloc_idx and are placed in the same order (excluding
     // sections that do not require relocations)
     size_t rel_i = 0;
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *s = g_sections[i];
-        if (!s->physical || 0 == s->len || 0 == s->relocations.len) {
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
+        Section *s = *RARSJS_ARRAY_GET(&g_sections, i);
+        if (!s->physical || 0 == s->contents.len || 0 == s->relocations.len) {
             continue;
         }
 
@@ -623,27 +637,32 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
     }
 
     CHK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error));
-    CHK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start, &phnum, &shnum, NULL, NULL,
-                       sizeof(ElfHeader), 1, 0, true, true, error));
+    CHK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start,
+                       &phnum, &shnum, NULL, NULL, sizeof(ElfHeader), 1, 0,
+                       true, true, error));
 
-    ElfHeader e_hdr = {.magic = {0x7F, 'E', 'L', 'F'},                // ELF magic
-                       .bits = 1,                                     // 32 bits
-                       .endianness = 1,                               // little endian
-                       .ehdr_ver = 1,                                 // ELF header version 1
-                       .abi = 0,                                      // System V ABI
-                       .type = 2,                                     // Executable
-                       .isa = 0xF3,                                   // Arch = RISC-V
-                       .elf_ver = 1,                                  // ELF version 1
-                       .entry = entrypoint,                           // Program entrypoint
-                       .phdrs_off = sizeof(ElfHeader) + phdrs_start,  // Start offset of program header tabe
-                       .phent_num = phnum,                            // 2 program headers
-                       .phent_sz = sizeof(ElfProgramHeader),          // Size of each program header table entry
-                       .shdrs_off = sizeof(ElfHeader) + shdrs_start,  // Start offset of section header table
-                       .shent_num = shnum,                            // 2 sections (.text, .data)
-                       .shent_sz = sizeof(ElfSectionHeader),          // Size of each section header
-                       .ehdr_sz = sizeof(ElfHeader),                  // Size of the ELF ehader
-                       .flags = 0,                                    // Flags
-                       .shdr_str_idx = 1};
+    ElfHeader e_hdr = {
+        .magic = {0x7F, 'E', 'L', 'F'},  // ELF magic
+        .bits = 1,                       // 32 bits
+        .endianness = 1,                 // little endian
+        .ehdr_ver = 1,                   // ELF header version 1
+        .abi = 0,                        // System V ABI
+        .type = 2,                       // Executable
+        .isa = 0xF3,                     // Arch = RISC-V
+        .elf_ver = 1,                    // ELF version 1
+        .entry = entrypoint,             // Program entrypoint
+        .phdrs_off = sizeof(ElfHeader) +
+                     phdrs_start,  // Start offset of program header tabe
+        .phent_num = phnum,        // 2 program headers
+        .phent_sz = sizeof(
+            ElfProgramHeader),  // Size of each program header table entry
+        .shdrs_off = sizeof(ElfHeader) +
+                     shdrs_start,  // Start offset of section header table
+        .shent_num = shnum,        // 2 sections (.text, .data)
+        .shent_sz = sizeof(ElfSectionHeader),  // Size of each section header
+        .ehdr_sz = sizeof(ElfHeader),          // Size of the ELF ehader
+        .flags = 0,                            // Flags
+        .shdr_str_idx = 1};
 
     ElfSectionHeader *shdrs = (ElfSectionHeader *)(core + shdrs_start);
     shdrs[1] = (ElfSectionHeader){.name_off = 1,
@@ -696,32 +715,36 @@ bool elf_emit_obj(void **out, size_t *len, char **error) {
     size_t relas_sz = 0;
 
     CHK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error));
-    CHK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start, &phnum, &shnum, &reloc_idx, &reloc_num,
+    CHK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start,
+                       &phnum, &shnum, &reloc_idx, &reloc_num,
                        sizeof(ElfHeader), 2, 2, false, true, error));
     CHK_CALL(make_symtab(&symtab, &symtab_sz, &symtab_entnum, name_off, error));
 
     ElfSectionHeader *shdrs = (ElfSectionHeader *)(core + shdrs_start);
-    CHK_CALL(make_rela(&relas, &relas_sz, sizeof(ElfHeader) + core_sz + strtab_sz + symtab_sz, shdrs, reloc_idx,
-                       (ElfSymtabEntry *)symtab, error));
+    CHK_CALL(make_rela(&relas, &relas_sz,
+                       sizeof(ElfHeader) + core_sz + strtab_sz + symtab_sz,
+                       shdrs, reloc_idx, (ElfSymtabEntry *)symtab, error));
 
-    ElfHeader e_hdr = {.magic = {0x7F, 'E', 'L', 'F'},                // ELF magic
-                       .bits = 1,                                     // 32 bits
-                       .endianness = 1,                               // little endian
-                       .ehdr_ver = 1,                                 // ELF header version 1
-                       .abi = 0,                                      // System V ABI
-                       .type = 1,                                     // Executable
-                       .isa = 0xF3,                                   // Arch = RISC-V
-                       .elf_ver = 1,                                  // ELF version 1
-                       .entry = 0,                                    // Program entrypoint
-                       .phdrs_off = 0,                                // Start offset of program header tabe
-                       .phent_num = 0,                                // 2 program headers
-                       .phent_sz = 0,                                 // Size of each program header table entry
-                       .shdrs_off = sizeof(ElfHeader) + shdrs_start,  // Start offset of section header table
-                       .shent_num = shnum,                            // 2 sections (.text, .data)
-                       .shent_sz = sizeof(ElfSectionHeader),          // Size of each section header
-                       .ehdr_sz = sizeof(ElfHeader),                  // Size of the ELF ehader
-                       .flags = 0,                                    // Flags
-                       .shdr_str_idx = 1};
+    ElfHeader e_hdr = {
+        .magic = {0x7F, 'E', 'L', 'F'},  // ELF magic
+        .bits = 1,                       // 32 bits
+        .endianness = 1,                 // little endian
+        .ehdr_ver = 1,                   // ELF header version 1
+        .abi = 0,                        // System V ABI
+        .type = 1,                       // Executable
+        .isa = 0xF3,                     // Arch = RISC-V
+        .elf_ver = 1,                    // ELF version 1
+        .entry = 0,                      // Program entrypoint
+        .phdrs_off = 0,                  // Start offset of program header tabe
+        .phent_num = 0,                  // 2 program headers
+        .phent_sz = 0,  // Size of each program header table entry
+        .shdrs_off = sizeof(ElfHeader) +
+                     shdrs_start,  // Start offset of section header table
+        .shent_num = shnum,        // 2 sections (.text, .data)
+        .shent_sz = sizeof(ElfSectionHeader),  // Size of each section header
+        .ehdr_sz = sizeof(ElfHeader),          // Size of the ELF ehader
+        .flags = 0,                            // Flags
+        .shdr_str_idx = 1};
 
     shdrs[1] = (ElfSectionHeader){.name_off = 1,
                                   .type = SHT_STRTAB,
@@ -732,18 +755,20 @@ bool elf_emit_obj(void **out, size_t *len, char **error) {
                                   .align = 1,
                                   .link = 0,
                                   .ent_sz = 0};
-    shdrs[2] = (ElfSectionHeader){.name_off = 9,
-                                  .type = SHT_SYMTAB,
-                                  .flags = SHF_INFO_LINK,
-                                  .info = 1,
-                                  .off = sizeof(ElfHeader) + core_sz + strtab_sz,
-                                  .virt_addr = 0,
-                                  .mem_sz = symtab_sz,
-                                  .align = 1,
-                                  .link = 1,
-                                  .ent_sz = sizeof(ElfSymtabEntry)};
+    shdrs[2] =
+        (ElfSectionHeader){.name_off = 9,
+                           .type = SHT_SYMTAB,
+                           .flags = SHF_INFO_LINK,
+                           .info = 1,
+                           .off = sizeof(ElfHeader) + core_sz + strtab_sz,
+                           .virt_addr = 0,
+                           .mem_sz = symtab_sz,
+                           .align = 1,
+                           .link = 1,
+                           .ent_sz = sizeof(ElfSymtabEntry)};
 
-    u8 *elf_contents = malloc(sizeof(ElfHeader) + core_sz + strtab_sz + symtab_sz + relas_sz);
+    u8 *elf_contents =
+        malloc(sizeof(ElfHeader) + core_sz + strtab_sz + symtab_sz + relas_sz);
     CHK_OOM(elf_contents, error);
     size_t elf_off = 0;
 
@@ -784,8 +809,8 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
 
     ElfHeader *e_header = (ElfHeader *)elf_contents;
 
-    if (0x7F != e_header->magic[0] || 'E' != e_header->magic[1] || 'L' != e_header->magic[2] ||
-        'F' != e_header->magic[3]) {
+    if (0x7F != e_header->magic[0] || 'E' != e_header->magic[1] ||
+        'L' != e_header->magic[2] || 'F' != e_header->magic[3]) {
         *error = "not an elf file";
         return false;
     }
@@ -805,8 +830,10 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
         return false;
     }
 
-    ElfProgramHeader *phdrs = (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
-    ElfSectionHeader *shdrs = (ElfSectionHeader *)(elf_contents + e_header->shdrs_off);
+    ElfProgramHeader *phdrs =
+        (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
+    ElfSectionHeader *shdrs =
+        (ElfSectionHeader *)(elf_contents + e_header->shdrs_off);
 
     ElfSectionHeader *str_tab_shdr = &shdrs[e_header->shdr_str_idx];
     char *str_tab = (char *)(elf_contents + str_tab_shdr->off);
@@ -823,9 +850,9 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
         s->read = true;
         s->align = s_hdr->align;
         s->base = s_hdr->virt_addr;
-        s->len = s_hdr->mem_sz;
-        s->limit = s->base + s->len;
-        s->buf = elf_contents + s_hdr->off;
+        s->contents.len = s_hdr->mem_sz;
+        s->limit = s->base + s->contents.len;
+        s->contents.buf = elf_contents + s_hdr->off;
 
         if (s_hdr->name_off >= str_tab_len) {
             *error = "section header name offset out of range";
@@ -842,7 +869,7 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
             s->execute = true;
         }
 
-        *push(g_sections, g_sections_len, g_sections_cap) = s;
+        *RARSJS_ARRAY_PUSH(&g_sections) = s;
     }
 
     g_pc = e_header->entry;
@@ -850,11 +877,9 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
     return true;
 
 fail:
-    for (size_t i = 0; i < g_sections_len; i++) {
-        CLEANUP(g_sections[i]);
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
+        CLEANUP(*RARSJS_ARRAY_GET(&g_sections, i));
     }
-    g_sections_len = 0;
-    g_sections_cap = 0;
-    CLEANUP(g_sections);
+    RARSJS_ARRAY_FREE(&g_sections);
     return false;
 }

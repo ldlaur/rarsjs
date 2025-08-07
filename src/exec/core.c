@@ -7,15 +7,16 @@
 
 export Section g_text, g_data, g_stack;
 
-Section **g_sections;
-size_t g_sections_len, g_sections_cap;
+RARSJS_ARRAY(SectionPtr) g_sections = RARSJS_ARRAY_NEW(SectionPtr);
+RARSJS_ARRAY(Extern) g_externs = RARSJS_ARRAY_NEW(Extern);
+RARSJS_ARRAY(LabelData) g_labels = RARSJS_ARRAY_NEW(LabelData);
+RARSJS_ARRAY(Global) g_globals = RARSJS_ARRAY_NEW(Global);
+RARSJS_ARRAY(u32) g_text_by_linenum;
 
-Extern *g_externs;
-size_t g_externs_len, g_externs_cap;
+static RARSJS_ARRAY(DeferredInsn)
+    g_deferred_insn = RARSJS_ARRAY_NEW(DeferredInsn);
 
 Section *g_section;
-export u32 *g_text_by_linenum;
-export size_t g_text_by_linenum_len, g_text_by_linenum_cap;
 
 export bool g_exited;
 export int g_exit_code;
@@ -31,17 +32,6 @@ export const char *g_error;
 
 export u32 g_runtime_error_params[2];
 export Error g_runtime_error_type;
-
-LabelData *g_labels;
-size_t g_labels_len, g_labels_cap;
-DeferredInsn *g_deferred_insns;
-size_t g_deferred_insn_len, g_deferred_insn_cap;
-
-extern Extern *g_externs;
-extern size_t g_externs_len, g_externs_cap;
-
-Global *g_globals;
-size_t g_globals_len, g_globals_cap;
 
 bool g_allow_externs;
 
@@ -294,15 +284,14 @@ bool parse_numeric(Parser *p, i32 *out) {
 }
 
 bool parse_quoted_str(Parser *p, char **out_str, size_t *out_len) {
-    char *buf = NULL;
-    size_t buf_len = 0, buf_cap = 0;
+    RARSJS_ARRAY(char) buf = RARSJS_ARRAY_NEW(char);
 
     bool escape = false;
     if (!consume_if(p, '"')) return false;
     while (true) {
         char c = peek(p);
         if (c == 0) {
-            free(buf);
+            RARSJS_ARRAY_FREE(&buf);
             return false;  // unquoted string
         }
         if (escape) {
@@ -318,10 +307,10 @@ bool parse_quoted_str(Parser *p, char **out_str, size_t *out_len) {
             else if (c == '"') c = '"';
             else if (c == '0') c = 0;
             else {
-                free(buf);
+                RARSJS_ARRAY_FREE(&buf);
                 return false;
             }
-            *push(buf, buf_len, buf_cap) = c;
+            *RARSJS_ARRAY_PUSH(&buf) = c;
             escape = false;
             advance(p);
             continue;
@@ -335,11 +324,12 @@ bool parse_quoted_str(Parser *p, char **out_str, size_t *out_len) {
             advance(p);
             break;
         }
-        *push(buf, buf_len, buf_cap) = c;
+        *RARSJS_ARRAY_PUSH(&buf) = c;
         advance(p);
     }
-    *out_str = buf;
-    *out_len = buf_len;
+
+    *out_str = buf.buf;
+    *out_len = buf.len;
     return true;
 }
 
@@ -365,18 +355,18 @@ int parse_reg(Parser *p) {
 
 void asm_emit_byte(u8 byte, int linenum) {
     if (!g_in_fixup) {
-        *push(g_section->buf, g_section->len, g_section->capacity) = byte;
+        *RARSJS_ARRAY_PUSH(&g_section->contents) = byte;
     } else {
-        g_section->buf[g_section->emit_idx] = byte;
+        *RARSJS_ARRAY_INSERT(&g_section->contents, g_section->emit_idx) = byte;
     }
     g_section->emit_idx++;
 }
 
 void asm_emit(u32 inst, int linenum) {
     if (g_section == &g_text) {
-        *push(g_text_by_linenum, g_text_by_linenum_len, g_text_by_linenum_cap) =
-            linenum;
+        *RARSJS_ARRAY_PUSH(&g_text_by_linenum) = linenum;
     }
+
     asm_emit_byte(inst >> 0, linenum);
     asm_emit_byte(inst >> 8, linenum);
     asm_emit_byte(inst >> 16, linenum);
@@ -384,13 +374,15 @@ void asm_emit(u32 inst, int linenum) {
 }
 
 static Extern *get_extern(const char *sym, size_t sym_len) {
-    for (size_t i = 0; i < g_externs_len; i++) {
-        if (g_externs[i].len == sym_len &&
-            0 == memcmp(sym, g_externs[i].symbol, sym_len)) {
-            return &g_externs[i];
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_externs); i++) {
+        if (RARSJS_ARRAY_GET(&g_externs, i)->len == sym_len &&
+            0 ==
+                memcmp(sym, RARSJS_ARRAY_GET(&g_externs, i)->symbol, sym_len)) {
+            return RARSJS_ARRAY_GET(&g_externs, i);
         }
     }
-    Extern *e = push(g_externs, g_externs_len, g_externs_cap);
+
+    Extern *e = RARSJS_ARRAY_PUSH(&g_externs);
     e->symbol = sym;
     e->len = sym_len;
     return e;
@@ -398,8 +390,7 @@ static Extern *get_extern(const char *sym, size_t sym_len) {
 
 const char *reloc_branch(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
-                         g_section->relocations.cap);
+    Relocation *r = RARSJS_ARRAY_PUSH(&g_section->relocations);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -409,8 +400,7 @@ const char *reloc_branch(const char *sym, size_t sym_len) {
 
 const char *reloc_jal(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
-                         g_section->relocations.cap);
+    Relocation *r = RARSJS_ARRAY_PUSH(&g_section->relocations);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -420,8 +410,8 @@ const char *reloc_jal(const char *sym, size_t sym_len) {
 
 const char *reloc_hi20(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
-                         g_section->relocations.cap);
+    Relocation *r = RARSJS_ARRAY_PUSH(&g_section->relocations);
+
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -431,8 +421,8 @@ const char *reloc_hi20(const char *sym, size_t sym_len) {
 
 const char *reloc_lo12i(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
-                         g_section->relocations.cap);
+    Relocation *r = RARSJS_ARRAY_PUSH(&g_section->relocations);
+
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -442,8 +432,8 @@ const char *reloc_lo12i(const char *sym, size_t sym_len) {
 
 const char *reloc_lo12s(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
-                         g_section->relocations.cap);
+    Relocation *r = RARSJS_ARRAY_PUSH(&g_section->relocations);
+
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -453,14 +443,14 @@ const char *reloc_lo12s(const char *sym, size_t sym_len) {
 
 const char *reloc_hi20lo12i(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
-                         g_section->relocations.cap);
+    Relocation *r = RARSJS_ARRAY_PUSH(&g_section->relocations);
+
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
     r->type = R_RISCV_HI20;
-    r = push(g_section->relocations.buf, g_section->relocations.len,
-             g_section->relocations.cap);
+
+    r = RARSJS_ARRAY_PUSH(&g_section->relocations);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx + 4;
@@ -470,14 +460,14 @@ const char *reloc_hi20lo12i(const char *sym, size_t sym_len) {
 
 const char *reloc_hi20lo12s(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
-                         g_section->relocations.cap);
+    Relocation *r = RARSJS_ARRAY_PUSH(&g_section->relocations);
+
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
     r->type = R_RISCV_HI20;
-    r = push(g_section->relocations.buf, g_section->relocations.len,
-             g_section->relocations.cap);
+
+    r = RARSJS_ARRAY_PUSH(&g_section->relocations);
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx + 4;
@@ -487,8 +477,8 @@ const char *reloc_hi20lo12s(const char *sym, size_t sym_len) {
 
 const char *reloc_abs32(const char *sym, size_t sym_len) {
     Extern *e = get_extern(sym, sym_len);
-    Relocation *r = push(g_section->relocations.buf, g_section->relocations.len,
-                         g_section->relocations.cap);
+    Relocation *r = RARSJS_ARRAY_PUSH(&g_section->relocations);
+
     r->symbol = e;
     r->addend = 0;
     r->offset = g_section->emit_idx;
@@ -615,9 +605,10 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb,
     parse_ident(p, &target, &target_len);
     if (target_len == 0) return "No label";
 
-    for (size_t i = 0; i < g_labels_len; i++) {
-        if (str_eq_2(g_labels[i].txt, g_labels[i].len, target, target_len)) {
-            *out_addr = g_labels[i].addr;
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_labels); i++) {
+        if (str_eq_2(RARSJS_ARRAY_GET(&g_labels, i)->txt,
+                     RARSJS_ARRAY_GET(&g_labels, i)->len, target, target_len)) {
+            *out_addr = RARSJS_ARRAY_GET(&g_labels, i)->addr;
             return NULL;
         }
     }
@@ -627,8 +618,7 @@ const char *label(Parser *p, Parser *orig, DeferredInsnCb *cb,
         *out_addr = 0;
         return reloc(target, target_len);
     }
-    DeferredInsn *insn =
-        push(g_deferred_insns, g_deferred_insn_len, g_deferred_insn_cap);
+    DeferredInsn *insn = RARSJS_ARRAY_PUSH(&g_deferred_insn);
     insn->emit_idx = g_section->emit_idx;
     insn->p = *orig;
     insn->cb = cb;
@@ -934,13 +924,13 @@ OpcodeHandling opcode_types[] = {
 
 void callsan_init();
 
-
 // defining _start but not making it global is a VERY common mistake
 // another mistake i've seen is putting _start in .data by accident
-const char* resolve_start(u32* start_pc) {
-    Section* section;
+const char *resolve_start(u32 *start_pc) {
+    Section *section;
     if (!resolve_symbol("_start", strlen("_start"), true, start_pc, &section)) {
-        if (resolve_symbol("_start", strlen("_start"), false, start_pc, &section)) {
+        if (resolve_symbol("_start", strlen("_start"), false, start_pc,
+                           &section)) {
             return "_start defined, but without .globl";
         }
         // if it's not defined and not global, then there is no _start at all
@@ -961,9 +951,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
     g_text = (Section){.name = ".text",
                        .base = TEXT_BASE,
                        .limit = TEXT_END,
-                       .len = 0,
-                       .capacity = 0,
-                       .buf = NULL,
+                       .contents = RARSJS_ARRAY_NEW(u8),
                        .emit_idx = 0,
                        .align = 4,
                        .relocations = {.buf = NULL, .len = 0, .cap = 0},
@@ -975,9 +963,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
     g_data = (Section){.name = ".data",
                        .base = DATA_BASE,
                        .limit = DATA_END,
-                       .len = 0,
-                       .capacity = 0,
-                       .buf = NULL,
+                       .contents = RARSJS_ARRAY_NEW(u8),
                        .emit_idx = 0,
                        .align = 1,
                        .relocations = {.buf = NULL, .len = 0, .cap = 0},
@@ -985,13 +971,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                        .write = true,
                        .execute = false,
                        .physical = true};
-
-    g_sections = NULL;
-    g_sections_len = 0, g_sections_cap = 0;
-
     g_section = &g_text;
-    g_text_by_linenum = NULL;
-    g_text_by_linenum_len = 0, g_text_by_linenum_cap = 0;
 
     g_exited = false;
     g_exit_code = 0;
@@ -1007,17 +987,6 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
 
     memset(g_runtime_error_params, 0, sizeof(g_runtime_error_params));
     g_runtime_error_type = 0;
-
-    g_labels = NULL;
-    g_labels_len = 0, g_labels_cap = 0;
-    g_deferred_insns = NULL;
-    g_deferred_insn_len = 0, g_deferred_insn_cap = 0;
-
-    g_globals = NULL;
-    g_globals_len = 0, g_globals_cap = 0;
-
-    g_externs = NULL;
-    g_externs_len = 0, g_externs_cap = 0;
 
     prepare_runtime_sections();
 
@@ -1056,7 +1025,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                 const char *ident;
                 size_t ident_len;
                 parse_ident(p, &ident, &ident_len);
-                *push(g_globals, g_globals_len, g_globals_cap) =
+                *RARSJS_ARRAY_PUSH(&g_globals) =
                     (Global){.str = ident, .len = ident_len};
                 continue;
             } else if (str_eq(directive, directive_len, "byte")) {
@@ -1170,18 +1139,19 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
         skip_trailing(p);
 
         if (consume_if(p, ':')) {
-            for (size_t i = 0; i < g_labels_len; i++) {
-                if (str_eq_2(g_labels[i].txt, g_labels[i].len, ident, ident_len)) {
+            for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_labels); i++) {
+                if (str_eq_2(RARSJS_ARRAY_GET(&g_labels, i)->txt,
+                             RARSJS_ARRAY_GET(&g_labels, i)->len, ident,
+                             ident_len)) {
                     err = "Multiple definitions for the same label";
                     break;
                 }
             }
             u32 addr = g_section->emit_idx + g_section->base;
-            *push(g_labels, g_labels_len, g_labels_cap) =
-                (LabelData){.txt = ident,
-                            .len = ident_len,
-                            .addr = addr,
-                            .section = g_section};
+            *RARSJS_ARRAY_PUSH(&g_labels) = (LabelData){.txt = ident,
+                                                        .len = ident_len,
+                                                        .addr = addr,
+                                                        .section = g_section};
             continue;
         }
 
@@ -1215,8 +1185,8 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
 
     if (!err) {
         g_in_fixup = true;
-        for (size_t i = 0; i < g_deferred_insn_len; i++) {
-            struct DeferredInsn *insn = &g_deferred_insns[i];
+        for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_deferred_insn); i++) {
+            struct DeferredInsn *insn = RARSJS_ARRAY_GET(&g_deferred_insn, i);
             g_section = insn->section;
             g_section->emit_idx = insn->emit_idx;
             p = &insn->p;
@@ -1232,7 +1202,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
     }
 
     err = resolve_start(&g_pc);
-     if (err) {
+    if (err) {
         g_error = err;
         g_error_line = 1;
     }
@@ -1288,10 +1258,11 @@ void do_syscall() {
 bool pc_to_label_r(u32 pc, LabelData **ret, u32 *off) {
     LabelData *closest = NULL;
 
-    for (size_t i = 0; i < g_labels_len; i++) {
-        if (g_labels[i].addr <= pc &&
-            (NULL == closest || g_labels[i].addr > closest->addr)) {
-            closest = &g_labels[i];
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_labels); i++) {
+        if (RARSJS_ARRAY_GET(&g_labels, i)->addr <= pc &&
+            (NULL == closest ||
+             RARSJS_ARRAY_GET(&g_labels, i)->addr > closest->addr)) {
+            closest = RARSJS_ARRAY_GET(&g_labels, i);
         }
     }
 
@@ -1324,16 +1295,17 @@ void pc_to_label(u32 pc) {
 bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
                     Section **sec) {
     LabelData *ret = NULL;
-    for (size_t i = 0; i < g_labels_len; i++) {
-        LabelData *l = &g_labels[i];
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_labels); i++) {
+        LabelData *l = RARSJS_ARRAY_GET(&g_labels, i);
         if (str_eq_2(sym, sym_len, l->txt, l->len)) {
             ret = l;
             break;
         }
     }
     if (ret && global) {
-        for (size_t i = 0; i < g_globals_len; i++)
-            if (str_eq_2(sym, sym_len, g_globals[i].str, g_globals[i].len)) {
+        for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_globals); i++)
+            if (str_eq_2(sym, sym_len, RARSJS_ARRAY_GET(&g_globals, i)->str,
+                         RARSJS_ARRAY_GET(&g_globals, i)->len)) {
                 *addr = ret->addr;
                 if (sec) {
                     *sec = ret->section;
@@ -1356,9 +1328,7 @@ void prepare_stack() {
     g_stack = (Section){.name = "RARSJS_STACK",
                         .base = STACK_TOP - STACK_LEN,
                         .limit = STACK_TOP,
-                        .len = STACK_LEN,
-                        .capacity = STACK_LEN,
-                        .buf = NULL,
+                        .contents = RARSJS_ARRAY_PREPARE(u8, STACK_LEN),
                         .emit_idx = 0,
                         .align = 1,
                         .relocations = {.buf = NULL, .len = 0, .cap = 0},
@@ -1367,30 +1337,32 @@ void prepare_stack() {
                         .execute = false,
                         .physical = false};
 
-    g_stack.buf = malloc(g_stack.len);
+    g_stack.contents.buf = malloc(g_stack.contents.len);
     g_regs[2] = STACK_TOP;  // FIXME: now i am diverging from RARS, which
                             // does STACK_TOP - 4
-    *push(g_sections, g_sections_len, g_sections_cap) = &g_stack;
+    *RARSJS_ARRAY_PUSH(&g_sections) = &g_stack;
 }
 
 void prepare_runtime_sections() {
     // TODO: dynamically growing stacks?
     // TODO: handle OOM
 
-    *push(g_sections, g_sections_len, g_sections_cap) = &g_text;
-    *push(g_sections, g_sections_len, g_sections_cap) = &g_data;
+    *RARSJS_ARRAY_PUSH(&g_sections) = &g_text;
+    *RARSJS_ARRAY_PUSH(&g_sections) = &g_data;
     prepare_stack();
 }
 
 void free_runtime() {
-    for (size_t i = 0; i < g_sections_len; i++) {
-        free(g_sections[i]->relocations.buf);
-        free(g_sections[i]->buf);
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
+        Section *s = *RARSJS_ARRAY_GET(&g_sections, i);
+        RARSJS_ARRAY_FREE(&s->relocations);
+        RARSJS_ARRAY_FREE(&s->contents);
     }
-    free(g_sections);
-    free(g_text_by_linenum);
-    free(g_labels);
-    free(g_deferred_insns);
-    free(g_globals);
-    free(g_externs);
+
+    RARSJS_ARRAY_FREE(&g_sections);
+    RARSJS_ARRAY_FREE(&g_text_by_linenum);
+    RARSJS_ARRAY_FREE(&g_labels);
+    RARSJS_ARRAY_FREE(&g_deferred_insn);
+    RARSJS_ARRAY_FREE(&g_globals);
+    RARSJS_ARRAY_FREE(&g_externs);
 }

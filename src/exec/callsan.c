@@ -3,21 +3,19 @@
 #include "rarsjs/core.h"
 
 export u32 g_reg_bitmap;
-export ShadowStackEnt *g_shadow_stack;
-export size_t g_shadow_stack_len, g_shadow_stack_cap;
+RARSJS_ARRAY(ShadowStackEnt) g_shadow_stack;
 export u8 g_callsan_stack_written_by[STACK_LEN / 4];
 
 void callsan_init() {
-    memset(g_callsan_stack_written_by, 0xFF, sizeof(g_callsan_stack_written_by));
+    memset(g_callsan_stack_written_by, 0xFF,
+           sizeof(g_callsan_stack_written_by));
     g_reg_bitmap = (1ul << REG_ZERO) | (1ul << REG_SP) | (1ul << REG_TP) |
                    (1ul << REG_GP) | (1u << REG_FP) | (1u << REG_S1) |
                    (1u << REG_S2) | (1u << REG_S3) | (1u << REG_S4) |
                    (1u << REG_S5) | (1u << REG_S6) | (1u << REG_S7) |
                    (1u << REG_S8) | (1u << REG_S9) | (1u << REG_S10) |
                    (1u << REG_S11);
-    g_shadow_stack = NULL;
-    g_shadow_stack_len = 0;
-    g_shadow_stack_cap = 0;
+    g_shadow_stack = RARSJS_ARRAY_NEW(ShadowStackEnt);
 }
 
 bool callsan_can_load(int reg) {
@@ -29,6 +27,7 @@ bool callsan_can_load(int reg) {
     }
     return true;
 }
+
 void callsan_store(int reg) { g_reg_bitmap |= 1 << reg; }
 
 const u32 CALLSAN_CALL_ACCESSIBLE =
@@ -47,11 +46,11 @@ const u32 CALLSAN_CALL_CLOBBERED =
     (1u << REG_A7);
 
 void callsan_call() {
-    ShadowStackEnt *e =
-        push(g_shadow_stack, g_shadow_stack_len, g_shadow_stack_cap);
+    ShadowStackEnt *e = RARSJS_ARRAY_PUSH(&g_shadow_stack);
     e->sregs[0] = g_regs[REG_FP];
     e->sregs[1] = g_regs[REG_S1];
-    for (int i = REG_S2; i <= REG_S11; i++) e->sregs[2 + i - REG_S2] = g_regs[i];
+    for (int i = REG_S2; i <= REG_S11; i++)
+        e->sregs[2 + i - REG_S2] = g_regs[i];
     for (int i = REG_A0; i <= REG_A7; i++) e->args[i - REG_A0] = g_regs[i];
     e->sp = g_regs[REG_SP];
     e->pc = g_pc;
@@ -63,12 +62,12 @@ void callsan_call() {
 }
 
 bool callsan_ret() {
-    if (g_shadow_stack_len == 0) {
+    if (RARSJS_ARRAY_LEN(&g_shadow_stack) == 0) {
         g_runtime_error_type = ERROR_CALLSAN_RET_EMPTY;
         return false;
     }
-    g_shadow_stack_len--;
-    ShadowStackEnt *e = &g_shadow_stack[g_shadow_stack_len];
+
+    ShadowStackEnt *e = RARSJS_ARRAY_POP(&g_shadow_stack);
 
     if (g_regs[REG_SP] != e->sp) {
         g_runtime_error_type = ERROR_CALLSAN_SP_MISMATCH;
@@ -123,5 +122,6 @@ bool callsan_check_load(u32 addr, u32 size) {
     u32 off = addr - (STACK_TOP - STACK_LEN);
     u32 startidx = off / 4;
     u32 endidx = (off + size - 1) / 4;
-    return g_callsan_stack_written_by[startidx] != 0xFF && g_callsan_stack_written_by[endidx] != 0xFF;
+    return g_callsan_stack_written_by[startidx] != 0xFF &&
+           g_callsan_stack_written_by[endidx] != 0xFF;
 }

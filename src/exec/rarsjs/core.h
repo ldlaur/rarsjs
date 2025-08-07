@@ -27,7 +27,7 @@ extern void shadowstack_pop();
 #else
 
 static inline void shadowstack_push() {}
-static inline void shadowstack_pop() {}
+static inline void shadowstack_pop(){}
 
 #include <assert.h>
 #include <stdio.h>
@@ -44,9 +44,37 @@ static inline void shadowstack_pop() {}
 #define STACK_LEN 4096
 #define DATA_END 0x70000000
 
-#define push(arr, len, cap)                                           \
-    ((len) >= (cap)  ? grow((void **)&(arr), &(cap), sizeof(*(arr))), \
-     (arr) + (len)++ : (arr) + (len)++)
+#define RARSJS_ARRAY_PUSH(arr)                                             \
+    (((arr)->len) >= ((arr)->cap)                                          \
+     ? grow((void **)&((arr)->buf), &((arr)->cap), sizeof(*((arr)->buf))), \
+     (arr)->buf + ((arr)->len)++ : (arr)->buf + ((arr)->len)++)
+
+#define RARSJS_ARRAY_DEF(type) \
+    typedef struct {           \
+        type *buf;             \
+        size_t len;            \
+        size_t cap;            \
+    }
+
+#define RARSJS_ARRAY_TYPE(type) RARSJS_ARRAY_DEF(type) Array_##type
+
+#define RARSJS_ARRAY(alias) Array_##alias
+#define RARSJS_ARRAY_INIT(arr) (arr)->len = 0, (arr)->cap = 0
+#define RARSJS_ARRAY_NEW(type) (RARSJS_ARRAY(type)){NULL, 0, 0}
+#define RARSJS_ARRAY_FREE(arr) free((arr)->buf), (arr)->buf = NULL
+#define RARSJS_ARRAY_INSERT(arr, pos)                                      \
+    ((pos) >= ((arr)->cap)                                                 \
+     ? grow((void **)&((arr)->buf), &((arr)->cap), sizeof(*((arr)->buf))), \
+     (arr)->buf + (pos) : (arr)->buf + (pos))
+#define RARSJS_ARRAY_LEN(arr) (arr)->len
+#define RARSJS_ARRAY_CAP(arr) (arr)->cap
+#define RARSJS_ARRAY_GET(arr, pos) (&(arr)->buf[pos])
+#define RARSJS_ARRAY_PREPARE(type, cap) \
+    (RARSJS_ARRAY(type)) { NULL, (cap), (cap) }
+#define RARSJS_ARRAY_POP(arr) &((arr)->buf[(arr)->len--])
+
+RARSJS_ARRAY_TYPE(u8);
+RARSJS_ARRAY_TYPE(u32);
 
 static void grow(void **arr, size_t *cap, size_t size) {
     size_t oldcap = *cap;
@@ -87,20 +115,19 @@ typedef struct {
     size_t type;
 } Relocation;
 
+RARSJS_ARRAY_TYPE(Relocation);
+
+// It would be preferable not to use dedicated pointer types like SectionPtr,
+// since it is more idiomatic. However, the C preprocessor is limited in this
+// regard, and this allows the existance of dedicated array types
 typedef struct Section {
     const char *name;
     u32 base;
     u32 limit;
-    size_t len;
-    size_t capacity;
-    u8 *buf;
+    RARSJS_ARRAY(u8) contents;
     size_t emit_idx;
     u32 align;
-    struct {
-        Relocation *buf;
-        size_t len;
-        size_t cap;
-    } relocations;
+    RARSJS_ARRAY(Relocation) relocations;
     struct {
         size_t shidx;
     } elf;
@@ -108,14 +135,14 @@ typedef struct Section {
     bool write;
     bool execute;
     bool physical;
-} Section;
+} Section, *SectionPtr;
 
 typedef struct LabelData {
     const char *txt;
     size_t len;
     u32 addr;
     Section *section;
-} LabelData;
+} LabelData, *LabelDataPtr;
 
 typedef const char *DeferredInsnCb(Parser *p, const char *opcode,
                                    size_t opcode_len);
@@ -153,24 +180,25 @@ typedef enum Error : u32 {
     ERROR_CALLSAN_LOAD_STACK = 10
 } Error;
 
+RARSJS_ARRAY_TYPE(SectionPtr);
+RARSJS_ARRAY_TYPE(LabelData);
+RARSJS_ARRAY_TYPE(Global);
+RARSJS_ARRAY_TYPE(Extern);
+RARSJS_ARRAY_TYPE(DeferredInsn);
+RARSJS_ARRAY_TYPE(char);
+
 extern export Section g_text;
 extern export Section g_data;
 extern export Section g_stack;
 
-extern export Section **g_sections;
-extern export size_t g_sections_len, g_sections_cap;
+extern RARSJS_ARRAY(SectionPtr) g_sections;
+extern RARSJS_ARRAY(LabelData) g_labels;
+extern RARSJS_ARRAY(Global) g_globals;
+extern RARSJS_ARRAY(Extern) g_externs;
+export RARSJS_ARRAY(u32) g_text_by_linenum;
 
 extern export u32 g_regs[32];
 extern export u32 g_pc;
-
-extern LabelData *g_labels;
-extern size_t g_labels_len, g_labels_cap;
-
-extern Global *g_globals;
-extern size_t g_globals_len, g_globals_cap;
-
-extern Extern *g_externs;
-extern size_t g_externs_len, g_externs_cap;
 
 extern export u32 g_error_line;
 extern export const char *g_error;
@@ -180,9 +208,6 @@ extern export Error g_runtime_error_type;
 
 extern export bool g_exited;
 extern export int g_exit_code;
-
-extern export u32 *g_text_by_linenum;
-extern export size_t g_text_by_linenum_len, g_text_by_linenum_cap;
 
 extern const char *const REGISTER_NAMES[];
 

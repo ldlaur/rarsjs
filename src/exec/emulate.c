@@ -60,11 +60,11 @@ static inline u32 remu32(u32 a, u32 b) {
 
 u8 *emulator_get_addr(u32 addr, int size) {
     u8 *memspace = NULL;
-    for (size_t i = 0; i < g_sections_len; i++) {
-        Section *sec = g_sections[i];
+    for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
+        Section *sec = *RARSJS_ARRAY_GET(&g_sections, i);
         // TODO: check permissions
-        if (addr >= sec->base && addr + size <= (sec->base + sec->len))
-            return sec->buf + (addr - sec->base);
+        if (addr >= sec->base && addr + size <= (sec->base + sec->contents.len))
+            return sec->contents.buf + (addr - sec->base);
     }
     return NULL;
 }

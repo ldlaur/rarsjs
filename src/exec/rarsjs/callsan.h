@@ -1,8 +1,8 @@
 #pragma once
-#include "core.h"
-#include "types.h"
 #include <stdbool.h>
 
+#include "core.h"
+#include "types.h"
 
 // DO NOT MODIFY THIS STRUCT CARELESSLY
 // THIS IS ACCESSED AS RAW MEMORY FROM WASM
@@ -20,6 +20,8 @@ typedef struct {
     u32 reg_bitmap;
 } ShadowStackEnt;
 
+RARSJS_ARRAY_TYPE(ShadowStackEnt);
+
 void callsan_init();
 void callsan_store(int reg);
 void callsan_call();
@@ -29,6 +31,5 @@ void callsan_report_store(u32 addr, u32 size, int reg);
 bool callsan_check_load(u32 addr, u32 size);
 
 extern u32 g_reg_bitmap;
-extern ShadowStackEnt *g_shadow_stack;
-extern size_t g_shadow_stack_len, g_shadow_stack_cap;
+extern RARSJS_ARRAY(ShadowStackEnt) g_shadow_stack;
 extern u8 g_callsan_stack_written_by[];
