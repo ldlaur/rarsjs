@@ -7,39 +7,33 @@
 #include <string.h>
 
 #include "rarsjs/core.h"
+#include "rarsjs/util.h"
 
-#define UNKNOWN(prop) (prop) = "Unknown"
-#define CHK_OOM(ptr, err)       \
-    if (!(ptr)) {               \
-        *err = "out of memory"; \
-        goto fail;              \
-    }
+#define UNKNOWN_PROP "Unknown"
 
-#define CHK_CALL(expr) \
-    if (!(expr)) {     \
-        goto fail;     \
-    }
+#define STRTAB_ISTR 1   // Index of .strtab in strtab
+#define STRTAB_ISYM 9   // Index of .symtab in strtab
+#define STRTAB_ISEC 17  // Start of section names in strtab
 
-#define CLEANUP(ptr) \
-    if ((ptr)) {     \
-        free(ptr);   \
-    }
+static inline void copy(void *dst, const void *ptr, size_t *off) {
+    memcpy((dst) + *(off), (ptr), sizeof(*(ptr)));
+    *(off) += sizeof(*(ptr));
+}
 
-#define WRITE(dst, ptr, off)                       \
-    memcpy((dst) + *(off), (ptr), sizeof(*(ptr))); \
-    *(off) += sizeof(*(ptr))
+static inline void copy_n(void *dst, const void *src, size_t src_sz,
+                          size_t *off) {
+    memcpy((dst) + *(off), (src), (src_sz));
+    *(off) += (src_sz);
+}
 
-#define WRITE_BUF(dst, src, src_sz, off)     \
-    memcpy((dst) + *(off), (src), (src_sz)); \
-    *(off) += (src_sz)
-
-#define WRITE_STR(dst, src, off)                      \
-    memcpy((dst) + *(off), (src), strlen((src)) + 1); \
-    *(off) += strlen((src)) + 1
+static inline void copy_s(void *dst, const void *src, size_t *off) {
+    memcpy((dst) + *(off), (src), strlen((src)) + 1);
+    *(off) += strlen((src)) + 1;
+}
 
 bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
               char **error) {
-    if (NULL == elf_contents) {
+    if (!elf_contents) {
         *error = "null buffer";
         return false;
     }
@@ -69,7 +63,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
         out->class =
             "ELF64 (WARNING: Corrupt content ahead, format not supported)";
     } else {
-        UNKNOWN(out->class);
+        out->class = UNKNOWN_PROP;
     }
 
     // Print file endianness
@@ -78,14 +72,14 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
     } else if (2 == e_header->endianness) {
         out->endianness = "Big endian";
     } else {
-        UNKNOWN(out->class);
+        out->endianness = UNKNOWN_PROP;
     }
 
     // Print OS/ABI
     if (0 == e_header->abi) {
         out->abi = "UNIX - System V";
     } else {
-        UNKNOWN(out->abi);
+        out->abi = UNKNOWN_PROP;
     }
 
     // Print ELF type
@@ -98,7 +92,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
     } else if (4 == e_header->type) {
         out->type = "Core";
     } else {
-        UNKNOWN(out->type);
+        out->type = UNKNOWN_PROP;
     }
 
     // Print architecture
@@ -109,7 +103,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
     } else if (0xB7 == e_header->isa) {
         out->architecture = "AArch64 (ARM64)";
     } else {
-        UNKNOWN(out->architecture);
+        out->architecture = UNKNOWN_PROP;
     }
 
     if (e_header->phdrs_off >= elf_contents_len ||
@@ -122,7 +116,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
     ElfProgramHeader *phdrs =
         (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
     readable_phdrs = malloc(sizeof(ReadElfSegment) * e_header->phent_num);
-    CHK_OOM(readable_phdrs, error);
+    RARSJS_CHECK_OOM(readable_phdrs);
 
     for (u32 i = 0; i < e_header->phent_num; i++) {
         ElfProgramHeader *phdr = &phdrs[i];
@@ -167,7 +161,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
                 break;
 
             default:
-                UNKNOWN(readable->type);
+                readable->type = UNKNOWN_PROP;
                 break;
         }
     }
@@ -182,7 +176,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
     ElfSectionHeader *shdrs =
         (ElfSectionHeader *)(elf_contents + e_header->shdrs_off);
     readable_shdrs = malloc(sizeof(ReadElfSection) * e_header->shent_num);
-    CHK_OOM(readable_shdrs, error);
+    RARSJS_CHECK_OOM(readable_shdrs);
 
     ElfSectionHeader *str_sh = &shdrs[e_header->shdr_str_idx];
     char *str_tab = (char *)(elf_contents + str_sh->off);
@@ -237,7 +231,7 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
                 break;
 
             default:
-                UNKNOWN(readable->type);
+                readable->type = UNKNOWN_PROP;
                 break;
         }
     }
@@ -247,8 +241,8 @@ bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
     return true;
 
 fail:
-    CLEANUP(readable_phdrs);
-    CLEANUP(readable_shdrs);
+    free(readable_phdrs);
+    free(readable_shdrs);
     return false;
 }
 
@@ -302,7 +296,7 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off,
     }
 
     u8 *region = malloc(region_sz);
-    CHK_OOM(region, error);
+    RARSJS_CHECK_OOM(region);
 
     size_t phdrs_off = 0;
     size_t segment_off = 0;
@@ -318,7 +312,7 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off,
     if (use_shdrs) {
         ElfSectionHeader null_s = {0};
         null_s.type = SHT_NULL;
-        WRITE(region, &null_s, &shdrs_off);
+        copy(region, &null_s, &shdrs_off);
         shdrs_i++;
     }
 
@@ -395,13 +389,13 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off,
                                        .ent_sz = 0};
 
         if (use_phdrs) {
-            WRITE(region, &prog_header, &phdrs_off);
+            copy(region, &prog_header, &phdrs_off);
         }
-        WRITE_BUF(region, s->contents.buf, s->contents.len, &segment_off);
+        copy_n(region, s->contents.buf, s->contents.len, &segment_off);
         if (use_shdrs) {
             s->elf.shidx = shdrs_i;
             *(name_off) += strlen(s->name) + 1;
-            WRITE(region, &sec_header, &shdrs_off);
+            copy(region, &sec_header, &shdrs_off);
         }
 
         // Write relocation section header
@@ -416,7 +410,7 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off,
                                            .align = 1,
                                            .link = symtab_idx,
                                            .ent_sz = sizeof(ElfRelaEntry)};
-            WRITE(region, &reloc_shdr, &reloc_off);
+            copy(region, &reloc_shdr, &reloc_off);
             *(name_off) += strlen(".rela") + strlen(s->name) + 1;
         }
 
@@ -464,22 +458,22 @@ static bool make_strtab(char **out, size_t *out_sz, bool inc_externs,
     }
 
     char *strtab = malloc(strtab_sz);
-    CHK_OOM(strtab, error);
+    RARSJS_CHECK_OOM(strtab);
 
     strtab[0] = '\0';
     size_t strtab_off = 1;
 
-    WRITE_STR(strtab, ".strtab", &strtab_off);
-    WRITE_STR(strtab, ".symtab", &strtab_off);
+    copy_s(strtab, ".strtab", &strtab_off);
+    copy_s(strtab, ".symtab", &strtab_off);
     for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
         Section *s = *RARSJS_ARRAY_GET(&g_sections, i);
         if (s->physical && 0 != s->contents.len) {
-            WRITE_STR(strtab, s->name, &strtab_off);
+            copy_s(strtab, s->name, &strtab_off);
 
             if (0 != s->relocations.len) {
-                WRITE_STR(strtab, ".rela", &strtab_off);
+                copy_s(strtab, ".rela", &strtab_off);
                 strtab_off--;
-                WRITE_STR(strtab, s->name, &strtab_off);
+                copy_s(strtab, s->name, &strtab_off);
             }
         }
     }
@@ -487,7 +481,7 @@ static bool make_strtab(char **out, size_t *out_sz, bool inc_externs,
     if (inc_externs) {
         for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_externs); i++) {
             Extern *e = RARSJS_ARRAY_GET(&g_externs, i);
-            WRITE_BUF(strtab, e->symbol, e->len, &strtab_off);
+            copy_n(strtab, e->symbol, e->len, &strtab_off);
             strtab[strtab_off++] = '\0';
         }
     }
@@ -495,7 +489,7 @@ static bool make_strtab(char **out, size_t *out_sz, bool inc_externs,
     if (inc_globs) {
         for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_globals); i++) {
             Global *g = RARSJS_ARRAY_GET(&g_globals, i);
-            WRITE_BUF(strtab, g->str, g->len, &strtab_off);
+            copy_n(strtab, g->str, g->len, &strtab_off);
             strtab[strtab_off++] = '\0';
         }
     }
@@ -515,7 +509,7 @@ static bool make_symtab(u8 **out, size_t *out_sz, size_t *ent_num,
         sizeof(ElfSymtabEntry) *
         (1 + RARSJS_ARRAY_LEN(&g_externs) + RARSJS_ARRAY_LEN(&g_globals));
     ElfSymtabEntry *symtab = malloc(symtab_sz);
-    CHK_OOM(symtab, error);
+    RARSJS_CHECK_OOM(symtab);
 
     *out = (u8 *)symtab;
     *out_sz = symtab_sz;
@@ -579,7 +573,7 @@ static bool make_rela(u8 **out, size_t *out_sz, size_t file_off,
     }
 
     ElfRelaEntry *relas = malloc(sizeof(ElfRelaEntry) * rela_count);
-    CHK_OOM(relas, error);
+    RARSJS_CHECK_OOM(relas);
 
     // NOTE: this works because it assumes that section headers have been palced
     // by the make_core function. The make_core function places section headers
@@ -624,7 +618,7 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
     u8 *core = NULL;
     size_t strtab_sz = 0;
     size_t core_sz = 0;
-    size_t name_off = 17;
+    size_t name_off = STRTAB_ISEC;
     size_t phdrs_start = 0;
     size_t shdrs_start = 0;
     size_t phnum = 0;
@@ -636,10 +630,12 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
         return false;
     }
 
-    CHK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error));
-    CHK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start,
-                       &phnum, &shnum, NULL, NULL, sizeof(ElfHeader), 1, 0,
-                       true, true, error));
+    RARSJS_CHECK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error),
+                      fail);
+    RARSJS_CHECK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start,
+                                &shdrs_start, &phnum, &shnum, NULL, NULL,
+                                sizeof(ElfHeader), 1, 0, true, true, error),
+                      fail);
 
     ElfHeader e_hdr = {
         .magic = {0x7F, 'E', 'L', 'F'},  // ELF magic
@@ -676,12 +672,12 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
                                   .ent_sz = 0};
 
     u8 *elf_contents = malloc(sizeof(ElfHeader) + core_sz + strtab_sz);
-    CHK_OOM(elf_contents, error);
+    RARSJS_CHECK_OOM(elf_contents);
     size_t elf_off = 0;
 
-    WRITE(elf_contents, &e_hdr, &elf_off);
-    WRITE_BUF(elf_contents, core, core_sz, &elf_off);
-    WRITE_BUF(elf_contents, strtab, strtab_sz, &elf_off);
+    copy(elf_contents, &e_hdr, &elf_off);
+    copy_n(elf_contents, core, core_sz, &elf_off);
+    copy_n(elf_contents, strtab, strtab_sz, &elf_off);
     *out = elf_contents;
     *len = elf_off;
 
@@ -703,7 +699,7 @@ bool elf_emit_obj(void **out, size_t *len, char **error) {
     u8 *relas = NULL;
     size_t strtab_sz = 0;
     size_t core_sz = 0;
-    size_t name_off = 17;
+    size_t name_off = STRTAB_ISEC;
     size_t phdrs_start = 0;
     size_t shdrs_start = 0;
     size_t phnum = 0;
@@ -714,16 +710,23 @@ bool elf_emit_obj(void **out, size_t *len, char **error) {
     size_t symtab_entnum = 0;
     size_t relas_sz = 0;
 
-    CHK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error));
-    CHK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start,
-                       &phnum, &shnum, &reloc_idx, &reloc_num,
-                       sizeof(ElfHeader), 2, 2, false, true, error));
-    CHK_CALL(make_symtab(&symtab, &symtab_sz, &symtab_entnum, name_off, error));
+    RARSJS_CHECK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error),
+                      fail);
+    RARSJS_CHECK_CALL(
+        make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start,
+                  &phnum, &shnum, &reloc_idx, &reloc_num, sizeof(ElfHeader), 2,
+                  2, false, true, error),
+        fail);
+    RARSJS_CHECK_CALL(
+        make_symtab(&symtab, &symtab_sz, &symtab_entnum, name_off, error),
+        fail);
 
     ElfSectionHeader *shdrs = (ElfSectionHeader *)(core + shdrs_start);
-    CHK_CALL(make_rela(&relas, &relas_sz,
-                       sizeof(ElfHeader) + core_sz + strtab_sz + symtab_sz,
-                       shdrs, reloc_idx, (ElfSymtabEntry *)symtab, error));
+    RARSJS_CHECK_CALL(
+        make_rela(&relas, &relas_sz,
+                  sizeof(ElfHeader) + core_sz + strtab_sz + symtab_sz, shdrs,
+                  reloc_idx, (ElfSymtabEntry *)symtab, error),
+        fail);
 
     ElfHeader e_hdr = {
         .magic = {0x7F, 'E', 'L', 'F'},  // ELF magic
@@ -746,7 +749,7 @@ bool elf_emit_obj(void **out, size_t *len, char **error) {
         .flags = 0,                            // Flags
         .shdr_str_idx = 1};
 
-    shdrs[1] = (ElfSectionHeader){.name_off = 1,
+    shdrs[1] = (ElfSectionHeader){.name_off = STRTAB_ISTR,
                                   .type = SHT_STRTAB,
                                   .flags = 0,
                                   .off = sizeof(ElfHeader) + core_sz,
@@ -756,7 +759,7 @@ bool elf_emit_obj(void **out, size_t *len, char **error) {
                                   .link = 0,
                                   .ent_sz = 0};
     shdrs[2] =
-        (ElfSectionHeader){.name_off = 9,
+        (ElfSectionHeader){.name_off = STRTAB_ISYM,
                            .type = SHT_SYMTAB,
                            .flags = SHF_INFO_LINK,
                            .info = 1,
@@ -769,14 +772,14 @@ bool elf_emit_obj(void **out, size_t *len, char **error) {
 
     u8 *elf_contents =
         malloc(sizeof(ElfHeader) + core_sz + strtab_sz + symtab_sz + relas_sz);
-    CHK_OOM(elf_contents, error);
+    RARSJS_CHECK_OOM(elf_contents);
     size_t elf_off = 0;
 
-    WRITE(elf_contents, &e_hdr, &elf_off);
-    WRITE_BUF(elf_contents, core, core_sz, &elf_off);
-    WRITE_BUF(elf_contents, strtab, strtab_sz, &elf_off);
-    WRITE_BUF(elf_contents, symtab, symtab_sz, &elf_off);
-    WRITE_BUF(elf_contents, relas, relas_sz, &elf_off);
+    copy(elf_contents, &e_hdr, &elf_off);
+    copy_n(elf_contents, core, core_sz, &elf_off);
+    copy_n(elf_contents, strtab, strtab_sz, &elf_off);
+    copy_n(elf_contents, symtab, symtab_sz, &elf_off);
+    copy_n(elf_contents, relas, relas_sz, &elf_off);
 
     *out = elf_contents;
     *len = elf_off;
@@ -797,7 +800,7 @@ fail:
 }
 
 bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
-    if (NULL == elf_contents) {
+    if (!elf_contents) {
         *error = "null buffer";
         return false;
     }
@@ -846,7 +849,7 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
         }
 
         Section *s = malloc(sizeof(Section));
-        CHK_OOM(s, error);
+        RARSJS_CHECK_OOM(s);
         s->read = true;
         s->align = s_hdr->align;
         s->base = s_hdr->virt_addr;
@@ -878,7 +881,7 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
 
 fail:
     for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
-        CLEANUP(*RARSJS_ARRAY_GET(&g_sections, i));
+        free(*RARSJS_ARRAY_GET(&g_sections, i));
     }
     RARSJS_ARRAY_FREE(&g_sections);
     return false;

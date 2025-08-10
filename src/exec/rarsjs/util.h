@@ -1,0 +1,64 @@
+#pragma once
+
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define RARSJS_ARRAY_PUSH(arr)                                  \
+    (((arr)->len) >= ((arr)->cap)                               \
+     ? rarsjs_array_grow((void **)&((arr)->buf), &((arr)->cap), \
+                         sizeof(*((arr)->buf))),                \
+     (arr)->buf + ((arr)->len)++ : (arr)->buf + ((arr)->len)++)
+
+#define RARSJS_ARRAY_DEF(type) \
+    typedef struct {           \
+        type *buf;             \
+        size_t len;            \
+        size_t cap;            \
+    }
+
+#define RARSJS_ARRAY_TYPE(type) RARSJS_ARRAY_DEF(type) Array_##type
+
+#define RARSJS_ARRAY(alias) Array_##alias
+#define RARSJS_ARRAY_INIT(arr) (arr)->len = 0, (arr)->cap = 0
+#define RARSJS_ARRAY_NEW(type) (RARSJS_ARRAY(type)){NULL, 0, 0}
+#define RARSJS_ARRAY_FREE(arr) free((arr)->buf), (arr)->buf = NULL
+#define RARSJS_ARRAY_INSERT(arr, pos)                           \
+    ((pos) >= ((arr)->cap)                                      \
+     ? rarsjs_array_grow((void **)&((arr)->buf), &((arr)->cap), \
+                         sizeof(*((arr)->buf))),                \
+     (arr)->buf + (pos) : (arr)->buf + (pos))
+#define RARSJS_ARRAY_LEN(arr) (arr)->len
+#define RARSJS_ARRAY_CAP(arr) (arr)->cap
+#define RARSJS_ARRAY_GET(arr, pos) (&(arr)->buf[pos])
+#define RARSJS_ARRAY_PREPARE(type, cap) \
+    (RARSJS_ARRAY(type)) { NULL, (cap), (cap) }
+#define RARSJS_ARRAY_POP(arr) &((arr)->buf[--(arr)->len])
+
+#define RARSJS_CHECK_CALL(expr, fail_label) \
+    if (!(expr)) {                          \
+        goto fail_label;                    \
+    }
+
+#define RARSJS_CHECK_OOM(ptr)               \
+    if (!(ptr)) {                           \
+        fprintf(stderr, "out of memory\n"); \
+        exit(137);                          \
+    }
+
+static void rarsjs_array_grow(void **arr, size_t *cap, size_t size) {
+    size_t oldcap = *cap;
+    if (oldcap) *cap = oldcap * 2;
+    else *cap = 4;
+    void *newarr = malloc(*cap * size);
+    RARSJS_CHECK_OOM(newarr);
+    memset(newarr, 0, *cap * size);
+    if (arr) {
+        if (*arr) {
+            memcpy(newarr, *arr, oldcap * size);
+            free(*arr);
+        }
+        *arr = newarr;
+    }
+}

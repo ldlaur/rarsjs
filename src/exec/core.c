@@ -1262,13 +1262,13 @@ bool pc_to_label_r(u32 pc, LabelData **ret, u32 *off) {
 
     for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_labels); i++) {
         if (RARSJS_ARRAY_GET(&g_labels, i)->addr <= pc &&
-            (NULL == closest ||
+            (!closest ||
              RARSJS_ARRAY_GET(&g_labels, i)->addr > closest->addr)) {
             closest = RARSJS_ARRAY_GET(&g_labels, i);
         }
     }
 
-    if (NULL != closest) {
+    if (closest) {
         *ret = closest;
         *off = pc - closest->addr;
         return true;

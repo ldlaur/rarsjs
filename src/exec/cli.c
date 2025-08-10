@@ -10,15 +10,17 @@
 #include "rarsjs/callsan.h"
 #include "rarsjs/core.h"
 #include "rarsjs/elf.h"
+#include "rarsjs/util.h"
 #include "vendor/commander.h"
 
 #define CHK_CMD()                                         \
-    if (NULL != g_command) {                              \
+    if (g_command) {                                      \
         fprintf(stderr, "only one command is allowed\n"); \
         exit(-1);                                         \
     }                                                     \
-    if (NULL != self->arg) {                              \
+    if (self->arg) {                                      \
         g_next_arg = malloc(strlen(self->arg) + 1);       \
+        RARSJS_CHECK_OOM(g_next_arg);                     \
         strcpy(g_next_arg, self->arg);                    \
     }
 
@@ -181,7 +183,7 @@ err:
 static void assemble_from_file(const char *src_path, bool allow_externs) {
     FILE *f = fopen(src_path, "r");
 
-    if (NULL == f) {
+    if (!f) {
         g_error = "assembler: could not open input file";
         fprintf(stderr, "%s\n", g_error);
         return;
@@ -191,6 +193,7 @@ static void assemble_from_file(const char *src_path, bool allow_externs) {
     size_t s = ftell(f);
     rewind(f);
     char *txt = malloc(s);
+    RARSJS_CHECK_OOM(txt);
     fread(txt, s, 1, f);
     assemble(txt, s, allow_externs);
 
@@ -219,7 +222,7 @@ static void c_build(void) {
 
     FILE *out = fopen(g_exec_out, "wb");
 
-    if (NULL == out) {
+    if (!out) {
         fprintf(stderr, "linker: could not open output file\n");
         return;
     }
@@ -230,32 +233,32 @@ static void c_build(void) {
 
 static void c_run(void) {
     FILE *elf = fopen(g_next_arg, "rb");
+    u8 *elf_contents = NULL;
+    char *error = NULL;
 
-    if (NULL == elf) {
+    if (!elf) {
         fprintf(stderr, "loader: could not open input file\n");
-        return;
+        goto exit;
     }
 
     fseek(elf, 0, SEEK_END);
     size_t sz = ftell(elf);
     rewind(elf);
 
-    u8 *elf_contents = malloc(sz);
-
-    if (NULL == elf_contents) {
-        fprintf(stderr, "loader: out of memory\n");
-        return;
-    }
+    elf_contents = malloc(sz);
+    RARSJS_CHECK_OOM(elf_contents);
 
     fread(elf_contents, sz, 1, elf);
 
-    char *error = NULL;
-    if (!elf_load(elf_contents, sz, &error)) {
-        fprintf(stderr, "loader: %s\n", error);
-        return;
-    }
+    RARSJS_CHECK_CALL(elf_load(elf_contents, sz, &error), exit);
 
     emulate_safe();
+    return;
+
+exit:
+    if (error) fprintf(stderr, "loader: %s\n", error);
+    if (elf) fclose(elf);
+    free(elf_contents);
 }
 
 static void c_emulate(void) {
@@ -275,10 +278,11 @@ static void c_emulate(void) {
 
 static void c_readelf(void) {
     FILE *elf = fopen(g_next_arg, "rb");
+    char *error = NULL;
 
-    if (NULL == elf) {
-        fprintf(stderr, "readelf: could not open input file\n");
-        return;
+    if (!elf) {
+        error = "could not open input file";
+        goto exit;
     }
 
     fseek(elf, 0, SEEK_END);
@@ -286,20 +290,11 @@ static void c_readelf(void) {
     rewind(elf);
 
     u8 *elf_contents = malloc(sz);
-
-    if (NULL == elf_contents) {
-        fprintf(stderr, "readelf: out of memory\n");
-        return;
-    }
+    RARSJS_CHECK_OOM(elf_contents);
 
     fread(elf_contents, sz, 1, elf);
     ReadElfResult readelf = {0};
-    char *error = NULL;
-
-    if (!elf_read(elf_contents, sz, &readelf, &error)) {
-        fprintf(stderr, "readelf: %s\n", error);
-        return;
-    }
+    RARSJS_CHECK_CALL(elf_read(elf_contents, sz, &readelf, &error), exit);
 
     printf(" %-35s:", "Magic");
     for (size_t i = 0; i < 8; i++) {
@@ -358,6 +353,12 @@ static void c_readelf(void) {
         // clang-format on
     }
     printf("\n");
+    return;
+
+exit:
+    if (error) fprintf(stderr, "readelf: %s\n", error);
+    if (elf) fclose(elf);
+    if (elf_contents) free(elf_contents);
 }
 
 static void c_assemble(void) {
@@ -377,7 +378,7 @@ static void c_assemble(void) {
 
     FILE *out = fopen(g_obj_out, "wb");
 
-    if (NULL == out) {
+    if (!out) {
         fprintf(stderr, "assembelr: could not open output file\n");
         return;
     }
@@ -414,7 +415,7 @@ static void c_link(void) {
 static void c_hexdump() {
     FILE *file = fopen(g_next_arg, "rb");
 
-    if (NULL == file) {
+    if (!file) {
         fprintf(stderr, "hexdump: could not open file\n");
         return;
     }
@@ -440,7 +441,7 @@ static void c_hexdump() {
 static void c_ascii(void) {
     FILE *file = fopen(g_next_arg, "rb");
 
-    if (NULL == file) {
+    if (!file) {
         fprintf(stderr, "ascii: could not open file\n");
         return;
     }
@@ -527,6 +528,7 @@ static void opt_readelf(command_t *self) {
 
 static void opt_o(command_t *self) {
     g_obj_out = malloc(strlen(self->arg) + 1);
+    RARSJS_CHECK_OOM(g_obj_out);
     strcpy(g_obj_out, self->arg);
     g_exec_out = g_obj_out;
     g_out_changed = true;
@@ -589,7 +591,7 @@ int main(int argc, char **argv) {
     g_cmd_args = (const char **)cmd.argv;
     g_cmd_args_len = cmd.argc;
 
-    if (1 == argc || NULL == g_command) {
+    if (1 == argc || !g_command) {
         command_help(&cmd);
         command_free(&cmd);
         return EXIT_FAILURE;
