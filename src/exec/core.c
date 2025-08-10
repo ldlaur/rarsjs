@@ -11,12 +11,12 @@ RARSJS_ARRAY(SectionPtr) g_sections = RARSJS_ARRAY_NEW(SectionPtr);
 RARSJS_ARRAY(Extern) g_externs = RARSJS_ARRAY_NEW(Extern);
 RARSJS_ARRAY(LabelData) g_labels = RARSJS_ARRAY_NEW(LabelData);
 RARSJS_ARRAY(Global) g_globals = RARSJS_ARRAY_NEW(Global);
-RARSJS_ARRAY(u32) g_text_by_linenum;
+export RARSJS_ARRAY(u32) g_text_by_linenum;
 
 static RARSJS_ARRAY(DeferredInsn)
     g_deferred_insn = RARSJS_ARRAY_NEW(DeferredInsn);
 
-Section *g_section;
+static Section *g_section;
 
 export bool g_exited;
 export int g_exit_code;
@@ -33,8 +33,10 @@ export const char *g_error;
 export u32 g_runtime_error_params[2];
 export Error g_runtime_error_type;
 
-bool g_allow_externs;
+static bool g_allow_externs;
 
+// NOTE: this may seem like it can be static, but it's used elsewhere (like in
+// cli.c)
 const char *const REGISTER_NAMES[] = {
     "zero", "ra", "sp", "gp", "tp",  "t0",  "t1", "t2", "fp", "s1", "a0",
     "a1",   "a2", "a3", "a4", "a5",  "a6",  "a7", "s2", "s3", "s4", "s5",
@@ -1278,6 +1280,7 @@ bool pc_to_label_r(u32 pc, LabelData **ret, u32 *off) {
 }
 
 // Ugly because i"m calling it from JS"
+// The problem with this is that... it's basically the cleanest way to do it
 const char *g_pc_to_label_txt;
 size_t g_pc_to_label_len;
 u32 g_pc_to_label_off;

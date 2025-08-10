@@ -195,7 +195,7 @@ extern RARSJS_ARRAY(SectionPtr) g_sections;
 extern RARSJS_ARRAY(LabelData) g_labels;
 extern RARSJS_ARRAY(Global) g_globals;
 extern RARSJS_ARRAY(Extern) g_externs;
-export RARSJS_ARRAY(u32) g_text_by_linenum;
+extern export RARSJS_ARRAY(u32) g_text_by_linenum;
 
 extern export u32 g_regs[32];
 extern export u32 g_pc;

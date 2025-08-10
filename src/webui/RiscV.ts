@@ -14,7 +14,6 @@ interface WasmExports {
   g_reg_written: number;
   g_pc: number;
   g_text_by_linenum: number;
-  g_text_by_linenum_len: number;
   g_error: number;
   g_error_line: number;
   g_runtime_error_pc: number;
@@ -23,7 +22,6 @@ interface WasmExports {
   g_pc_to_label_txt: number;
   g_pc_to_label_len: number;
   g_shadow_stack: number;
-  g_shadow_stack_len: number;
   g_callsan_stack_written_by: number;
 }
 
@@ -127,7 +125,7 @@ export class WasmInterface {
       this.exports.g_runtime_error_params,
     );
     this.runtimeErrorType = this.createU32(this.exports.g_runtime_error_type);
-    this.shadowStackLen = this.createU32(this.exports.g_shadow_stack_len);
+    this.shadowStackLen = this.createU32(this.exports.g_shadow_stack + 4);
     this.shadowStackPtr = this.createU32(this.exports.g_shadow_stack);
     this.callsanWrittenBy = this.createU8(
       this.exports.g_callsan_stack_written_by,
@@ -144,7 +142,7 @@ export class WasmInterface {
     this.exports.assemble(offset, strLen, false);
     const textByLinenumPtr = this.createU32(this.exports.g_text_by_linenum)[0];
     this.textByLinenum = this.createU32(textByLinenumPtr);
-    this.textByLinenumLen = this.createU32(this.exports.g_text_by_linenum_len);
+    this.textByLinenumLen = this.createU32(this.exports.g_text_by_linenum + 4);
 
     const errorLine = this.createU32(this.exports.g_error_line)[0];
     const errorPtr = this.createU32(this.exports.g_error)[0];
