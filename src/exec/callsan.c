@@ -3,7 +3,7 @@
 #include "rarsjs/core.h"
 
 export u32 g_reg_bitmap;
-RARSJS_ARRAY(ShadowStackEnt) g_shadow_stack;
+RARSJS_ARRAY(ShadowStackEnt) g_shadow_stack = RARSJS_ARRAY_NEW(ShadowStackEnt);
 export u8 g_callsan_stack_written_by[STACK_LEN / 4];
 
 void callsan_init() {

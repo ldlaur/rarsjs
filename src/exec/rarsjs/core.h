@@ -71,7 +71,7 @@ static inline void shadowstack_pop(){}
 #define RARSJS_ARRAY_GET(arr, pos) (&(arr)->buf[pos])
 #define RARSJS_ARRAY_PREPARE(type, cap) \
     (RARSJS_ARRAY(type)) { NULL, (cap), (cap) }
-#define RARSJS_ARRAY_POP(arr) &((arr)->buf[(arr)->len--])
+#define RARSJS_ARRAY_POP(arr) &((arr)->buf[--(arr)->len])
 
 RARSJS_ARRAY_TYPE(u8);
 RARSJS_ARRAY_TYPE(u32);
