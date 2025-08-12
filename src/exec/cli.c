@@ -44,9 +44,10 @@ static bool g_flg_callsan = false;
 static char *g_txt;
 
 // SETUP FUNCTIONS
+
 static void update_argument(const char *arg) {
     if (g_command) {
-        fprintf(stderr, "only one command is allowedn");
+        fprintf(stderr, "only one command is allowed\n");
         exit(-1);
     }
 
@@ -136,6 +137,7 @@ static void emulate_safe(void) {
                         g_pc, g_runtime_error_params[0]);
                 goto err;
 
+            default:
                 fprintf(stderr, "emulator: unhandled error at pc=0x%08x\n",
                         g_pc);
 

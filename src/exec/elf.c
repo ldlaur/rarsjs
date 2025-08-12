@@ -9,6 +9,12 @@
 #include "rarsjs/core.h"
 #include "rarsjs/util.h"
 
+// TODO: if the host machine and RISC-V have mismatched byte orders (i.e., the
+// host is big endian, as is the case for SPARC and other defunct
+// architectures), then the output object file will be broken. This endianness
+// UB is quite easy to fix, code is already present in ezld, but porting it
+// takes time and it's unlikelly to ever be used
+
 #define UNKNOWN_PROP "Unknown"
 
 #define STRTAB_ISTR 1   // Index of .strtab in strtab
