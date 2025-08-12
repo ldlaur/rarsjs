@@ -13,17 +13,6 @@
 #include "rarsjs/util.h"
 #include "vendor/commander.h"
 
-#define CHK_CMD()                                         \
-    if (g_command) {                                      \
-        fprintf(stderr, "only one command is allowed\n"); \
-        exit(-1);                                         \
-    }                                                     \
-    if (self->arg) {                                      \
-        g_next_arg = malloc(strlen(self->arg) + 1);       \
-        RARSJS_CHECK_OOM(g_next_arg);                     \
-        strcpy(g_next_arg, self->arg);                    \
-    }
-
 // Type of command handler functions (c_*)
 typedef void (*cmd_func_t)(void);
 
@@ -51,8 +40,21 @@ static int g_cmd_args_len;
 static bool g_flg_callsan = false;
 
 // The file text, used as backing storage by all global strings
-// this allows to simplify lifetime management significantly
+// this simplifies lifetime management significantly
 static char *g_txt;
+
+// SETUP FUNCTIONS
+static void update_argument(const char *arg) {
+    if (g_command) {
+        fprintf(stderr, "only one command is allowedn");
+        exit(-1);
+    }
+
+    if (arg) {
+        g_next_arg = strdup(arg);
+        RARSJS_CHECK_OOM(g_next_arg);
+    }
+}
 
 // UTILITY FUNCTIONS
 
@@ -95,12 +97,11 @@ static void emulate_safe(void) {
                 goto err;
 
             case ERROR_CALLSAN_NOT_SAVED:
-                fprintf(
-                    stderr,
-                    "callsan: attempt to write callee-saved register %s at "
-                    "pc=0x%08x without saving it first. Check the calling "
-                    "convention!\n",
-                    REGISTER_NAMES[g_runtime_error_params[0]], g_pc);
+                fprintf(stderr,
+                        "callsan: attempt to write callee-saved register %s at "
+                        "pc=0x%08x without saving it first. Check the calling "
+                        "convention!\n",
+                        REGISTER_NAMES[g_runtime_error_params[0]], g_pc);
                 goto err;
 
             case ERROR_CALLSAN_RA_MISMATCH:
@@ -274,7 +275,6 @@ exit:
 static void c_emulate(void) {
     assemble_from_file(g_next_arg, false);
     if (g_error) goto exit;
-
 
     uint32_t addr;
     g_pc = TEXT_BASE;
@@ -522,27 +522,27 @@ static void c_ascii(void) {
 // OPTIONS
 
 static void opt_assemble(command_t *self) {
-    CHK_CMD();
+    update_argument(self->arg);
     g_command = c_assemble;
 }
 
 static void opt_build(command_t *self) {
-    CHK_CMD();
+    update_argument(self->arg);
     g_command = c_build;
 }
 
 static void opt_run(command_t *self) {
-    CHK_CMD();
+    update_argument(self->arg);
     g_command = c_run;
 }
 
 static void opt_emulate(command_t *self) {
-    CHK_CMD();
+    update_argument(self->arg);
     g_command = c_emulate;
 }
 
 static void opt_readelf(command_t *self) {
-    CHK_CMD();
+    update_argument(self->arg);
     g_command = c_readelf;
 }
 
@@ -555,17 +555,17 @@ static void opt_o(command_t *self) {
 }
 
 static void opt_hexdump(command_t *self) {
-    CHK_CMD();
+    update_argument(self->arg);
     g_command = c_hexdump;
 }
 
 static void opt_link(command_t *self) {
-    CHK_CMD();
+    update_argument(self->arg);
     g_command = c_link;
 }
 
 static void opt_ascii(command_t *self) {
-    CHK_CMD();
+    update_argument(self->arg);
     g_command = c_ascii;
 }
 
