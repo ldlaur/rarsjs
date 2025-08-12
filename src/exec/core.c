@@ -110,6 +110,12 @@ bool ident(char c) {
            (c >= 'A' && c <= 'Z') || (c == '_') || (c == '.');
 }
 
+// the WASM version is freestanding, so reimplement ASCII tolower
+char my_tolower(char c) {
+    if (c >= 'A' && c <= 'Z') return c + ('a' - 'A');
+    return c;
+}
+
 void advance(Parser *p) {
     if (p->pos >= p->size) return;
     if (p->input[p->pos] == '\n') p->lineidx++;
@@ -142,23 +148,30 @@ char peek_n(Parser *p, size_t n) {
 // otherwise i would be marking as valid stuff like
 // li x0, 1234li x0, 1234
 
+// Skip a single comment or preprocessor line if present.
+// Returns true if a comment was skipped.
 bool skip_comment(Parser *p) {
-    if (peek(p) == '/') {
-        if (peek_n(p, 1) == '/') {
-            while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
-            return true;
-        } else if (peek_n(p, 1) == '*') {
-            advance_n(p, 2);
-            while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/'))
+    char c = peek(p);
+    if (c == '/') {
+        char c2 = peek_n(p, 1);
+        if (c2 == '/') {
+            while (p->pos < p->size && p->input[p->pos] != '\n')
                 advance(p);
-            advance_n(p, 2);
             return true;
-        } else {
-            return false;
+        } else if (c2 == '*') {
+            advance_n(p, 2);
+            while (p->pos < p->size &&
+                   !(peek(p) == '*' && peek_n(p, 1) == '/'))
+                advance(p);
+            if (p->pos < p->size)
+                advance_n(p, 2);
+            return true;
         }
+        return false;
     }
-    if (peek(p) == '#') {
-        while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
+    if (c == '#') {
+        while (p->pos < p->size && p->input[p->pos] != '\n')
+            advance(p);
         return true;
     }
     return false;
@@ -166,30 +179,17 @@ bool skip_comment(Parser *p) {
 
 void skip_whitespace(Parser *p) {
     while (p->pos < p->size) {
-        while (whitespace(peek(p))) advance(p);
-        if (!skip_comment(p)) break;
+        if (whitespace(peek(p))) {
+            advance(p);
+        } else if (skip_comment(p)) {
+        } else break;
     }
 }
-
 void skip_trailing(Parser *p) {
     while (p->pos < p->size) {
-        if (trailing(p->input[p->pos])) {
+        if (trailing(peek(p))) {
             advance(p);
-        } else if (peek(p) == '/') {
-            if (peek_n(p, 1) == '/') {
-                while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
-                continue;
-            } else if (peek_n(p, 1) == '*') {
-                advance_n(p, 2);
-                while (p->pos < p->size &&
-                       !(peek(p) == '*' && peek_n(p, 1) == '/'))
-                    advance(p);
-                advance_n(p, 2);
-                continue;
-            } else break;
-        } else if (peek(p) == '#') {
-            while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
-            continue;
+        } else if (skip_comment(p)) {
         } else break;
     }
 }
@@ -216,9 +216,12 @@ void parse_ident(Parser *p, const char **str, size_t *len) {
     *len = end - start;
 }
 
-bool str_eq(const char *txt, size_t len, const char *c) {
+bool str_eq_case(const char *txt, size_t len, const char *c) {
     if (len != strlen(c)) return false;
-    return memcmp(txt, c, len) == 0;
+    for (size_t i = 0; i < len; i++) {
+        if (my_tolower(c[i]) != my_tolower(txt[i])) return false;
+    }
+    return true;
 }
 
 bool str_eq_2(const char *s1, size_t s1len, const char *s2, size_t s2len) {
@@ -232,8 +235,10 @@ bool parse_numeric(Parser *p, i32 *out) {
     bool parsed_digit = false;
     u32 value = 0;  // u32 to avoid the issue of signed overflow
     int base = 10;
-
-    if (consume_if(p, '-')) negative = true;
+    while (peek(p) == '-' || peek(p) == '+') {
+        if (consume_if(p, '-')) negative = !negative;
+        consume_if(p, '+');
+    }
 
     if (consume_if(p, '\'')) {
         char c;
@@ -269,7 +274,11 @@ bool parse_numeric(Parser *p, i32 *out) {
             if (c >= '0' && c <= '9') digit = c - '0';
             else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
             else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
-            if (digit >= base) break;
+            if (digit >= base) {
+                if (whitespace(c)) break;
+                if (c == ' ' || c == '(' || c == ',' || c == '\0') break;
+                return false;
+            }
             parsed_digit = true;
             value = value * base + digit;
             advance(p);
@@ -340,7 +349,7 @@ int parse_reg(Parser *p) {
     size_t len;
     parse_ident(p, &str, &len);
 
-    if ((len == 2 || len == 3) && str[0] == 'x') {
+    if ((len == 2 || len == 3) && (str[0] == 'x' || str[0] == 'X')) {
         if (len == 2) return str[1] - '0';
         else {
             int num = (str[1] - '0') * 10 + (str[2] - '0');
@@ -349,9 +358,9 @@ int parse_reg(Parser *p) {
         }
     }
     for (int i = 0; i < 32; i++) {
-        if (str_eq(str, len, REGISTER_NAMES[i])) return i;
+        if (str_eq_case(str, len, REGISTER_NAMES[i])) return i;
     }
-    if (str_eq(str, len, "s0")) return 8;  // s0 = fp
+    if (str_eq_case(str, len, "s0")) return 8;  // s0 = fp
     return -1;
 }
 
@@ -505,24 +514,24 @@ const char *handle_alu_reg(Parser *p, const char *opcode, size_t opcode_len) {
     if ((s2 = parse_reg(p)) == -1) return "Invalid rs2";
 
     u32 inst = 0;
-    if (str_eq(opcode, opcode_len, "add")) inst = ADD(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "slt")) inst = SLT(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "sltu")) inst = SLTU(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "and")) inst = AND(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "or")) inst = OR(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "xor")) inst = XOR(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "sll")) inst = SLL(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "srl")) inst = SRL(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "sub")) inst = SUB(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "sra")) inst = SRA(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "mul")) inst = MUL(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "mulh")) inst = MULH(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "mulu")) inst = MULU(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "mulhu")) inst = MULHU(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "div")) inst = DIV(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "divu")) inst = DIVU(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "rem")) inst = REM(d, s1, s2);
-    else if (str_eq(opcode, opcode_len, "remu")) inst = REMU(d, s1, s2);
+    if (str_eq_case(opcode, opcode_len, "add")) inst = ADD(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "slt")) inst = SLT(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "sltu")) inst = SLTU(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "and")) inst = AND(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "or")) inst = OR(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "xor")) inst = XOR(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "sll")) inst = SLL(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "srl")) inst = SRL(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "sub")) inst = SUB(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "sra")) inst = SRA(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "mul")) inst = MUL(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "mulh")) inst = MULH(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "mulu")) inst = MULU(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "mulhu")) inst = MULHU(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "div")) inst = DIV(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "divu")) inst = DIVU(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "rem")) inst = REM(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "remu")) inst = REMU(d, s1, s2);
 
     asm_emit(inst, p->startline);
     return NULL;
@@ -548,15 +557,15 @@ const char *handle_alu_imm(Parser *p, const char *opcode, size_t opcode_len) {
     if (simm < -2048 || simm > 2047) return "Out of bounds imm";
 
     u32 inst = 0;
-    if (str_eq(opcode, opcode_len, "addi")) inst = ADDI(d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "slti")) inst = SLTI(d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "sltiu")) inst = SLTIU(d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "andi")) inst = ANDI(d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "ori")) inst = ORI(d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "xori")) inst = XORI(d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "slli")) inst = SLLI(d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "srli")) inst = SRLI(d, s1, simm);
-    else if (str_eq(opcode, opcode_len, "srai")) inst = SRAI(d, s1, simm);
+    if (str_eq_case(opcode, opcode_len, "addi")) inst = ADDI(d, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "slti")) inst = SLTI(d, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "sltiu")) inst = SLTIU(d, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "andi")) inst = ANDI(d, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "ori")) inst = ORI(d, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "xori")) inst = XORI(d, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "slli")) inst = SLLI(d, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "srli")) inst = SRLI(d, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "srai")) inst = SRAI(d, s1, simm);
 
     asm_emit(inst, p->startline);
 
@@ -574,9 +583,9 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     if (!parse_numeric(p, &simm)) return "Invalid imm";
+    if (simm < -2048 || simm > 2047) return "Out of bounds imm";
 
     skip_whitespace(p);
-
     if (!consume_if(p, '(')) return "Expected (";
     skip_whitespace(p);
     if ((mem = parse_reg(p)) == -1) return "Invalid rmem";
@@ -584,14 +593,14 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
     if (!consume_if(p, ')')) return "Expected )";
 
     u32 inst = 0;
-    if (str_eq(opcode, opcode_len, "lb")) inst = LB(reg, mem, simm);
-    else if (str_eq(opcode, opcode_len, "lh")) inst = LH(reg, mem, simm);
-    else if (str_eq(opcode, opcode_len, "lw")) inst = LW(reg, mem, simm);
-    else if (str_eq(opcode, opcode_len, "lbu")) inst = LBU(reg, mem, simm);
-    else if (str_eq(opcode, opcode_len, "lhu")) inst = LHU(reg, mem, simm);
-    else if (str_eq(opcode, opcode_len, "sb")) inst = SB(reg, mem, simm);
-    else if (str_eq(opcode, opcode_len, "sh")) inst = SH(reg, mem, simm);
-    else if (str_eq(opcode, opcode_len, "sw")) inst = SW(reg, mem, simm);
+    if (str_eq_case(opcode, opcode_len, "lb")) inst = LB(reg, mem, simm);
+    else if (str_eq_case(opcode, opcode_len, "lh")) inst = LH(reg, mem, simm);
+    else if (str_eq_case(opcode, opcode_len, "lw")) inst = LW(reg, mem, simm);
+    else if (str_eq_case(opcode, opcode_len, "lbu")) inst = LBU(reg, mem, simm);
+    else if (str_eq_case(opcode, opcode_len, "lhu")) inst = LHU(reg, mem, simm);
+    else if (str_eq_case(opcode, opcode_len, "sb")) inst = SB(reg, mem, simm);
+    else if (str_eq_case(opcode, opcode_len, "sh")) inst = SH(reg, mem, simm);
+    else if (str_eq_case(opcode, opcode_len, "sw")) inst = SW(reg, mem, simm);
 
     asm_emit(inst, p->startline);
     return NULL;
@@ -659,16 +668,16 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
     i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
 
     u32 inst = 0;
-    if (str_eq(opcode, opcode_len, "beq")) inst = BEQ(s1, s2, simm);
-    else if (str_eq(opcode, opcode_len, "bne")) inst = BNE(s1, s2, simm);
-    else if (str_eq(opcode, opcode_len, "blt")) inst = BLT(s1, s2, simm);
-    else if (str_eq(opcode, opcode_len, "bge")) inst = BGE(s1, s2, simm);
-    else if (str_eq(opcode, opcode_len, "bltu")) inst = BLTU(s1, s2, simm);
-    else if (str_eq(opcode, opcode_len, "bgeu")) inst = BGEU(s1, s2, simm);
-    else if (str_eq(opcode, opcode_len, "bgt")) inst = BLT(s2, s1, simm);
-    else if (str_eq(opcode, opcode_len, "ble")) inst = BGE(s2, s1, simm);
-    else if (str_eq(opcode, opcode_len, "bgtu")) inst = BLTU(s2, s1, simm);
-    else if (str_eq(opcode, opcode_len, "bleu")) inst = BGEU(s2, s1, simm);
+    if (str_eq_case(opcode, opcode_len, "beq")) inst = BEQ(s1, s2, simm);
+    else if (str_eq_case(opcode, opcode_len, "bne")) inst = BNE(s1, s2, simm);
+    else if (str_eq_case(opcode, opcode_len, "blt")) inst = BLT(s1, s2, simm);
+    else if (str_eq_case(opcode, opcode_len, "bge")) inst = BGE(s1, s2, simm);
+    else if (str_eq_case(opcode, opcode_len, "bltu")) inst = BLTU(s1, s2, simm);
+    else if (str_eq_case(opcode, opcode_len, "bgeu")) inst = BGEU(s1, s2, simm);
+    else if (str_eq_case(opcode, opcode_len, "bgt")) inst = BLT(s2, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "ble")) inst = BGE(s2, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "bgtu")) inst = BLTU(s2, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "bleu")) inst = BGEU(s2, s1, simm);
     asm_emit(inst, p->startline);
     return NULL;
 }
@@ -696,12 +705,12 @@ const char *handle_branch_zero(Parser *p, const char *opcode,
     i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
 
     u32 inst = 0;
-    if (str_eq(opcode, opcode_len, "beqz")) inst = BEQ(s, 0, simm);
-    else if (str_eq(opcode, opcode_len, "bnez")) inst = BNE(s, 0, simm);
-    else if (str_eq(opcode, opcode_len, "blez")) inst = BGE(0, s, simm);
-    else if (str_eq(opcode, opcode_len, "bgez")) inst = BGE(s, 0, simm);
-    else if (str_eq(opcode, opcode_len, "bltz")) inst = BLT(s, 0, simm);
-    else if (str_eq(opcode, opcode_len, "bgtz")) inst = BLT(0, s, simm);
+    if (str_eq_case(opcode, opcode_len, "beqz")) inst = BEQ(s, 0, simm);
+    else if (str_eq_case(opcode, opcode_len, "bnez")) inst = BNE(s, 0, simm);
+    else if (str_eq_case(opcode, opcode_len, "blez")) inst = BGE(0, s, simm);
+    else if (str_eq_case(opcode, opcode_len, "bgez")) inst = BGE(s, 0, simm);
+    else if (str_eq_case(opcode, opcode_len, "bltz")) inst = BLT(s, 0, simm);
+    else if (str_eq_case(opcode, opcode_len, "bgtz")) inst = BLT(0, s, simm);
 
     asm_emit(inst, p->startline);
     return NULL;
@@ -721,13 +730,13 @@ const char *handle_alu_pseudo(Parser *p, const char *opcode,
     if ((s = parse_reg(p)) == -1) return "Invalid rs";
 
     u32 inst = 0;
-    if (str_eq(opcode, opcode_len, "mv")) inst = ADDI(d, s, 0);
-    else if (str_eq(opcode, opcode_len, "not")) inst = XORI(d, s, -1);
-    else if (str_eq(opcode, opcode_len, "neg")) inst = SUB(d, 0, s);
-    else if (str_eq(opcode, opcode_len, "seqz")) inst = SLTIU(d, s, 1);
-    else if (str_eq(opcode, opcode_len, "snez")) inst = SLTU(d, 0, s);
-    else if (str_eq(opcode, opcode_len, "sltz")) inst = SLT(d, s, 0);
-    else if (str_eq(opcode, opcode_len, "sgtz")) inst = SLT(d, 0, s);
+    if (str_eq_case(opcode, opcode_len, "mv")) inst = ADDI(d, s, 0);
+    else if (str_eq_case(opcode, opcode_len, "not")) inst = XORI(d, s, -1);
+    else if (str_eq_case(opcode, opcode_len, "neg")) inst = SUB(d, 0, s);
+    else if (str_eq_case(opcode, opcode_len, "seqz")) inst = SLTIU(d, s, 1);
+    else if (str_eq_case(opcode, opcode_len, "snez")) inst = SLTU(d, 0, s);
+    else if (str_eq_case(opcode, opcode_len, "sltz")) inst = SLT(d, s, 0);
+    else if (str_eq_case(opcode, opcode_len, "sgtz")) inst = SLT(d, 0, s);
 
     asm_emit(inst, p->startline);
     return NULL;
@@ -741,7 +750,7 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     // jal optionally takes a register argument
-    if (str_eq(opcode, opcode_len, "jal")) {
+    if (str_eq_case(opcode, opcode_len, "jal")) {
         if ((d = parse_reg(p)) == -1) err = "Invalid rd";
         skip_whitespace(p);
         if (consume_if(p, ',')) {
@@ -750,7 +759,7 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
             *p = orig;
             d = 1;
         }
-    } else if (str_eq(opcode, opcode_len, "j")) {
+    } else if (str_eq_case(opcode, opcode_len, "j")) {
         d = 0;
     } else assert(false);
 
@@ -776,9 +785,9 @@ const char *handle_jump_reg(Parser *p, const char *opcode, size_t opcode_len) {
     // jalr rs
     // jalr rd, rs, simm
     // jalr rd, simm(rs)
-    if (str_eq(opcode, opcode_len, "jalr")) {
+    if (str_eq_case(opcode, opcode_len, "jalr")) {
         if ((d = parse_reg(p)) == -1) return "Invalid register";
-        skip_trailing(p);
+        skip_whitespace(p);
         if (!consume_if(p, ',')) {
             asm_emit(JALR(1, d, 0), p->startline);
             return NULL;
@@ -807,7 +816,7 @@ const char *handle_jump_reg(Parser *p, const char *opcode, size_t opcode_len) {
         if (simm >= -2048 && simm <= 2047)
             asm_emit(JALR(d, s, simm), p->startline);
         else return "Immediate out of range";
-    } else if (str_eq(opcode, opcode_len, "jr")) {
+    } else if (str_eq_case(opcode, opcode_len, "jr")) {
         if ((s = parse_reg(p)) == -1) return "Invalid rs";
         asm_emit(JALR(0, s, 0), p->startline);
     }
@@ -830,9 +839,11 @@ const char *handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
     if (!consume_if(p, ',')) return "Expected ,";
     skip_whitespace(p);
     if (!parse_numeric(p, &simm)) return "Invalid imm";
+    // the immediate can either be signed or unsigned 20 bit
+    if (simm < -524288 || simm > 1048575) return "Out of bounds imm";
 
-    if (str_eq(opcode, opcode_len, "lui")) inst = LUI(d, simm);
-    else if (str_eq(opcode, opcode_len, "auipc")) inst = AUIPC(d, simm);
+    if (str_eq_case(opcode, opcode_len, "lui")) inst = LUI(d, simm);
+    else if (str_eq_case(opcode, opcode_len, "auipc")) inst = AUIPC(d, simm);
 
     asm_emit(inst, p->startline);
     return NULL;
@@ -1015,28 +1026,28 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
             const char *directive;
             size_t directive_len;
             parse_ident(p, &directive, &directive_len);
-            skip_trailing(p);
-            if (str_eq(directive, directive_len, "data")) {
+            skip_whitespace(p);
+            if (str_eq_case(directive, directive_len, "data")) {
                 g_section = &g_data;
                 continue;
-            } else if (str_eq(directive, directive_len, "text")) {
+            } else if (str_eq_case(directive, directive_len, "text")) {
                 g_section = &g_text;
                 continue;
-            } else if (str_eq(directive, directive_len, "globl")) {
-                skip_trailing(p);
+            } else if (str_eq_case(directive, directive_len, "globl")) {
+                skip_whitespace(p);
                 const char *ident;
                 size_t ident_len;
                 parse_ident(p, &ident, &ident_len);
                 *RARSJS_ARRAY_PUSH(&g_globals) =
                     (Global){.str = ident, .len = ident_len};
                 continue;
-            } else if (str_eq(directive, directive_len, "byte")) {
+            } else if (str_eq_case(directive, directive_len, "byte")) {
                 i32 value;
                 bool first = true;
                 while (true) {
-                    skip_trailing(p);
+                    skip_whitespace(p);
                     if (first || consume_if(p, ',')) {
-                        skip_trailing(p);
+                        skip_whitespace(p);
                         if (!parse_numeric(p, &value)) {
                             err = "Invalid byte";
                             break;
@@ -1050,13 +1061,13 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                     first = false;
                 }
                 continue;
-            } else if (str_eq(directive, directive_len, "half")) {
+            } else if (str_eq_case(directive, directive_len, "half")) {
                 i32 value;
                 bool first = true;
                 while (true) {
-                    skip_trailing(p);
+                    skip_whitespace(p);
                     if (first || consume_if(p, ',')) {
-                        skip_trailing(p);
+                        skip_whitespace(p);
                         if (!parse_numeric(p, &value)) {
                             err = "Invalid half";
                             break;
@@ -1071,13 +1082,13 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                     first = false;
                 }
                 continue;
-            } else if (str_eq(directive, directive_len, "word")) {
+            } else if (str_eq_case(directive, directive_len, "word")) {
                 i32 value;
                 bool first = true;
                 while (true) {
-                    skip_trailing(p);
+                    skip_whitespace(p);
                     if (first || consume_if(p, ',')) {
-                        skip_trailing(p);
+                        skip_whitespace(p);
                         if (!parse_numeric(p, &value)) {
                             err = "Invalid word";
                             break;
@@ -1087,14 +1098,14 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                     first = false;
                 }
                 continue;
-            } else if (str_eq(directive, directive_len, "ascii")) {
+            } else if (str_eq_case(directive, directive_len, "ascii")) {
                 char *out;
                 size_t out_len;
                 bool first = true;
                 while (true) {
-                    skip_trailing(p);
+                    skip_whitespace(p);
                     if (first || consume_if(p, ',')) {
-                        skip_trailing(p);
+                        skip_whitespace(p);
                         if (!parse_quoted_str(p, &out, &out_len)) {
                             err = "Invalid string";
                             break;
@@ -1106,15 +1117,16 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                     first = false;
                 }
                 continue;
-            } else if (str_eq(directive, directive_len, "asciz") ||
-                       str_eq(directive, directive_len, "string")) {
+            } else if (str_eq_case(directive, directive_len, "asciz") ||
+                       str_eq_case(directive, directive_len, "asciiz") ||
+                       str_eq_case(directive, directive_len, "string")) {
                 char *out;
                 size_t out_len;
                 bool first = true;
                 while (true) {
-                    skip_trailing(p);
+                    skip_whitespace(p);
                     if (first || consume_if(p, ',')) {
-                        skip_trailing(p);
+                        skip_whitespace(p);
                         if (!parse_quoted_str(p, &out, &out_len)) {
                             err = "Invalid string";
                             break;
@@ -1138,7 +1150,10 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
         const char *ident, *opcode;
         size_t ident_len, opcode_len;
         parse_ident(p, &ident, &ident_len);
-        skip_trailing(p);
+        // IMPORTANT: it needs to be skip trailing here
+        // otherwise, it will happily consume the newline after 
+        // no-param instructions, like ret and nop 
+        skip_trailing(p); 
 
         if (consume_if(p, ':')) {
             for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_labels); i++) {
@@ -1164,7 +1179,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
         for (size_t i = 0;
              !found && i < sizeof(opcode_types) / sizeof(OpcodeHandling); i++) {
             for (size_t j = 0; !found && opcode_types[i].opcodes[j]; j++) {
-                if (str_eq(opcode, opcode_len, opcode_types[i].opcodes[j])) {
+                if (str_eq_case(opcode, opcode_len, opcode_types[i].opcodes[j])) {
                     found = true;
                     err = opcode_types[i].cb(p, opcode, opcode_len);
                 }

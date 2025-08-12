@@ -50,6 +50,10 @@ static int g_cmd_args_len;
 // Set by variout opt_* like --sanitize, --fuzz
 static bool g_flg_callsan = false;
 
+// The file text, used as backing storage by all global strings
+// this allows to simplify lifetime management significantly
+static char *g_txt;
+
 // UTILITY FUNCTIONS
 
 static void emulate_safe(void) {
@@ -93,10 +97,10 @@ static void emulate_safe(void) {
             case ERROR_CALLSAN_NOT_SAVED:
                 fprintf(
                     stderr,
-                    "callsan: attempt to write callee-saved register s%u at "
+                    "callsan: attempt to write callee-saved register %s at "
                     "pc=0x%08x without saving it first. Check the calling "
                     "convention!\n",
-                    g_runtime_error_params[0], g_pc);
+                    REGISTER_NAMES[g_runtime_error_params[0]], g_pc);
                 goto err;
 
             case ERROR_CALLSAN_RA_MISMATCH:
@@ -205,11 +209,10 @@ static void assemble_from_file(const char *src_path, bool allow_externs) {
 // COMMANDS
 
 static void c_build(void) {
+    FILE *out = NULL;
     assemble_from_file(g_next_arg, false);
 
-    if (g_error) {
-        return;
-    }
+    if (g_error) goto exit;
 
     void *elf_contents = NULL;
     size_t elf_sz = 0;
@@ -217,18 +220,25 @@ static void c_build(void) {
 
     if (!elf_emit_exec(&elf_contents, &elf_sz, &error)) {
         fprintf(stderr, "linker: %s\n", error);
-        return;
+        goto exit;
     }
 
-    FILE *out = fopen(g_exec_out, "wb");
+    out = fopen(g_exec_out, "wb");
 
     if (!out) {
         fprintf(stderr, "linker: could not open output file\n");
-        return;
+        goto exit;
     }
 
     fwrite(elf_contents, elf_sz, 1, out);
-    fclose(out);
+
+exit:
+    if (out) fclose(out);
+    if (g_txt) {
+        free(g_txt);
+        g_txt = NULL;
+    }
+    return;
 }
 
 static void c_run(void) {
@@ -263,9 +273,8 @@ exit:
 
 static void c_emulate(void) {
     assemble_from_file(g_next_arg, false);
-    if (g_error) {
-        return;
-    }
+    if (g_error) goto exit;
+
 
     uint32_t addr;
     g_pc = TEXT_BASE;
@@ -274,6 +283,12 @@ static void c_emulate(void) {
     }
 
     emulate_safe();
+
+exit:
+    if (g_txt) {
+        free(g_txt);
+        g_txt = NULL;
+    }
 }
 
 static void c_readelf(void) {
@@ -362,10 +377,9 @@ exit:
 }
 
 static void c_assemble(void) {
+    FILE *out = NULL;
     assemble_from_file(g_next_arg, true);
-    if (g_error) {
-        return;
-    }
+    if (g_error) goto exit;
 
     void *elf_contents = NULL;
     size_t elf_sz = 0;
@@ -373,10 +387,10 @@ static void c_assemble(void) {
 
     if (!elf_emit_obj(&elf_contents, &elf_sz, &error)) {
         fprintf(stderr, "assembler: %s\n", error);
-        return;
+        goto exit;
     }
 
-    FILE *out = fopen(g_obj_out, "wb");
+    out = fopen(g_obj_out, "wb");
 
     if (!out) {
         fprintf(stderr, "assembelr: could not open output file\n");
@@ -384,7 +398,13 @@ static void c_assemble(void) {
     }
 
     fwrite(elf_contents, elf_sz, 1, out);
-    fclose(out);
+
+exit:
+    if (out) fclose(out);
+    if (g_txt) {
+        free(g_txt);
+        g_txt = NULL;
+    }
 }
 
 static void c_link(void) {

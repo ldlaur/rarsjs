@@ -1,3 +1,7 @@
 [submodule "src/exec/ezld"]
 	path = src/exec/ezld
 	url = https://github.com/Alessandro-Salerno/ezld
+
+[submodule "src/unity"]
+	path = src/unity
+	url = https://github.com/ThrowTheSwitch/Unity

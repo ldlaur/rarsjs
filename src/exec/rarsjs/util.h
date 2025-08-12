@@ -1,9 +1,27 @@
 #pragma once
 
 #include <stddef.h>
+#ifdef __wasm__
+void *malloc(size_t size);
+void free(void *ptr);
+extern void panic();
+void *memcpy(void *dest, const void *src, size_t n);
+void *memset(void *dest, int c, size_t n);
+
+#define RARSJS_CHECK_OOM(ptr)               \
+    if (!(ptr)) {                           \
+        panic(); \
+    }
+#else
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#define RARSJS_CHECK_OOM(ptr)               \
+    if (!(ptr)) {                           \
+        fprintf(stderr, "out of memory\n"); \
+        exit(137);                          \
+    }
+#endif
 
 #define RARSJS_ARRAY_PUSH(arr)                                  \
     (((arr)->len) >= ((arr)->cap)                               \
@@ -23,7 +41,7 @@
 #define RARSJS_ARRAY(alias) Array_##alias
 #define RARSJS_ARRAY_INIT(arr) (arr)->len = 0, (arr)->cap = 0
 #define RARSJS_ARRAY_NEW(type) (RARSJS_ARRAY(type)){NULL, 0, 0}
-#define RARSJS_ARRAY_FREE(arr) free((arr)->buf), (arr)->buf = NULL
+#define RARSJS_ARRAY_FREE(arr) free((arr)->buf), (arr)->buf = NULL, (arr)->len = (arr)->cap = 0
 #define RARSJS_ARRAY_INSERT(arr, pos)                           \
     ((pos) >= ((arr)->cap)                                      \
      ? rarsjs_array_grow((void **)&((arr)->buf), &((arr)->cap), \
@@ -39,12 +57,6 @@
 #define RARSJS_CHECK_CALL(expr, fail_label) \
     if (!(expr)) {                          \
         goto fail_label;                    \
-    }
-
-#define RARSJS_CHECK_OOM(ptr)               \
-    if (!(ptr)) {                           \
-        fprintf(stderr, "out of memory\n"); \
-        exit(137);                          \
     }
 
 static void rarsjs_array_grow(void **arr, size_t *cap, size_t size) {

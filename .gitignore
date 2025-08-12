@@ -1,3 +1,4 @@
+.cache
 dist
 a.out
 src/webui/main.wasm
@@ -58,8 +59,19 @@ Mkfile.old
 dkms.conf
 
 /rarsjs
-.vercel
-fuzz/
-node_modules
-rarsjs_afl
-rarsjs_libfuzzer
+/rarsjs_test
+/rarsjs_afl
+/rarsjs_libfuzzer
+/rarsjs_test
+/*.profdata
+/*.profraw
+/.vercel
+/fuzz/
+/node_modules
+/coverage_report
+/compile_commands.json
+/lcov.info
+
+
+
+/src/test/test_main.c

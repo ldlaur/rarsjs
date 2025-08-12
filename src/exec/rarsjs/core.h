@@ -212,3 +212,11 @@ enum Reg {
     REG_T5,
     REG_T6
 };
+
+
+// -- functions exposed here mainly for testing purposes
+bool parse_numeric(Parser *p, i32 *out);
+bool parse_quoted_str(Parser *p, char **out_str, size_t *out_len);
+void skip_whitespace(Parser *p);
+void parse_ident(Parser *p, const char **str, size_t *len);
+bool skip_comment(Parser *p);
