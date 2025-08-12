@@ -199,10 +199,12 @@ static void assemble_from_file(const char *src_path, bool allow_externs) {
     fseek(f, 0, SEEK_END);
     size_t s = ftell(f);
     rewind(f);
-    char *txt = malloc(s);
-    RARSJS_CHECK_OOM(txt);
-    fread(txt, s, 1, f);
-    assemble(txt, s, allow_externs);
+    g_txt = malloc(s);
+    RARSJS_CHECK_OOM(g_txt);
+    fread(g_txt, s, 1, f);
+    fclose(f);
+
+    assemble(g_txt, s, allow_externs);
 
     if (g_error) {
         fprintf(stderr, "assembler: line %u %s\n", g_error_line, g_error);
@@ -266,12 +268,11 @@ static void c_run(void) {
     RARSJS_CHECK_CALL(elf_load(elf_contents, sz, &error), exit);
 
     emulate_safe();
-    return;
 
 exit:
     if (error) fprintf(stderr, "loader: %s\n", error);
     if (elf) fclose(elf);
-    free(elf_contents);
+    if (elf_contents) free(elf_contents);
 }
 
 static void c_emulate(void) {
@@ -296,6 +297,7 @@ exit:
 static void c_readelf(void) {
     FILE *elf = fopen(g_next_arg, "rb");
     char *error = NULL;
+    u8* elf_contents = NULL;
 
     if (!elf) {
         error = "could not open input file";
@@ -306,7 +308,7 @@ static void c_readelf(void) {
     size_t sz = ftell(elf);
     rewind(elf);
 
-    u8 *elf_contents = malloc(sz);
+    elf_contents = malloc(sz);
     RARSJS_CHECK_OOM(elf_contents);
 
     fread(elf_contents, sz, 1, elf);
@@ -370,7 +372,6 @@ static void c_readelf(void) {
         // clang-format on
     }
     printf("\n");
-    return;
 
 exit:
     if (error) fprintf(stderr, "readelf: %s\n", error);
@@ -458,6 +459,7 @@ static void c_hexdump() {
         printf("\n");
         off += bytes_read;
     }
+    fclose(file);
 }
 
 static void c_ascii(void) {
@@ -519,6 +521,7 @@ static void c_ascii(void) {
         printf("\n");
         off += bytes_read;
     }
+    fclose(file);
 }
 
 // OPTIONS

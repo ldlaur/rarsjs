@@ -102,7 +102,7 @@ bool callsan_ret() {
 
     // rest of the stack is all poisoned
     u32 endidx = (e->sp - (STACK_TOP - STACK_LEN)) / 4;
-    for (int i = 0; i < endidx; i++) g_callsan_stack_written_by[i] = -1;
+    for (u32 i = 0; i < endidx; i++) g_callsan_stack_written_by[i] = -1;
     return true;
 }
 

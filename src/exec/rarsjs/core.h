@@ -144,9 +144,9 @@ RARSJS_ARRAY_TYPE(Extern);
 RARSJS_ARRAY_TYPE(DeferredInsn);
 RARSJS_ARRAY_TYPE(char);
 
-extern export Section g_text;
-extern export Section g_data;
-extern export Section g_stack;
+extern export Section *g_text;
+extern export Section *g_data;
+extern export Section *g_stack;
 
 extern RARSJS_ARRAY(SectionPtr) g_sections;
 extern RARSJS_ARRAY(LabelData) g_labels;

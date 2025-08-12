@@ -231,22 +231,22 @@ void test_parse_directives_nums() {
     // TODO: make tests endianness independent
     u32 word;
     assemble_line(".data\nvar: .WORD 5");
-    TEST_ASSERT_EQUAL_INT(g_data.contents.len, 4);
-    memcpy(&word, g_data.contents.buf, 4);
+    TEST_ASSERT_EQUAL_INT(g_data->contents.len, 4);
+    memcpy(&word, g_data->contents.buf, 4);
     TEST_ASSERT_EQUAL_INT(word, 5);
     free_runtime();
 
     u16 half; 
     assemble_line(".DATA\nvar: .HALF 5");
-    TEST_ASSERT_EQUAL_INT(g_data.contents.len, 2);
-    memcpy(&half, g_data.contents.buf, 2);
+    TEST_ASSERT_EQUAL_INT(g_data->contents.len, 2);
+    memcpy(&half, g_data->contents.buf, 2);
     TEST_ASSERT_EQUAL_INT(half, 5);
     free_runtime();
 
     u8 byte;
     assemble_line(".data\nvar: .byte 5");
-    TEST_ASSERT_EQUAL_INT(g_data.contents.len, 1);
-    memcpy(&byte, g_data.contents.buf, 1);
+    TEST_ASSERT_EQUAL_INT(g_data->contents.len, 1);
+    memcpy(&byte, g_data->contents.buf, 1);
     TEST_ASSERT_EQUAL_INT(byte, 5);
 }
 
@@ -275,12 +275,12 @@ void test_parse_directives_nums_oob() {
 
 void test_parse_directives_str() {
     assemble_line(".data\nstr: .ASCII \"hi\", \"hi\"");
-    TEST_ASSERT_EQUAL_STR("hihi", g_data.contents.buf, g_data.contents.len);
+    TEST_ASSERT_EQUAL_STR("hihi", g_data->contents.buf, g_data->contents.len);
     free_runtime();
 
     assemble_line(".data\nstr: .string \"hi\"");
-    TEST_ASSERT_EQUAL_INT(g_data.contents.len, 3);
-    TEST_ASSERT_EQUAL_CHAR_ARRAY("hi\0", g_data.contents.buf, g_data.contents.len);
+    TEST_ASSERT_EQUAL_INT(g_data->contents.len, 3);
+    TEST_ASSERT_EQUAL_CHAR_ARRAY("hi\0", g_data->contents.buf, g_data->contents.len);
     free_runtime();
 }
 
@@ -300,8 +300,8 @@ void test_resolve_text_symbol_found(void) {
     Section *sec;
     bool found = resolve_symbol("mylabel", strlen("mylabel"), false, &addr, &sec);
     TEST_ASSERT_TRUE(found);
-    TEST_ASSERT_EQUAL(sec, &g_text);
-    TEST_ASSERT_TRUE(addr >= g_text.base && addr < g_text.limit);
+    TEST_ASSERT_EQUAL(sec, g_text);
+    TEST_ASSERT_TRUE(addr >= g_text->base && addr < g_text->limit);
 }
 
 void test_resolve_data_symbol_found(void) {
@@ -310,15 +310,15 @@ void test_resolve_data_symbol_found(void) {
     Section *sec;
     bool found = resolve_symbol("mylabel", strlen("mylabel"), false, &addr, &sec);
     TEST_ASSERT_TRUE(found);
-    TEST_ASSERT_EQUAL(sec, &g_data);
-    TEST_ASSERT_TRUE(addr >= g_data.base && addr < g_data.limit);
+    TEST_ASSERT_EQUAL(sec, g_data);
+    TEST_ASSERT_TRUE(addr >= g_data->base && addr < g_data->limit);
 }
 
 void test_pc_to_label_r2(void) {
     assemble_line("label: add x0, x0, x0");
     LabelData *ret = NULL;
     u32 off = 0;
-    bool result = pc_to_label_r(g_text.base, &ret, &off);
+    bool result = pc_to_label_r(g_text->base, &ret, &off);
     TEST_ASSERT_TRUE(result);
     TEST_ASSERT_EQUAL_STR("label", ret->txt, ret->len);
 }
@@ -334,7 +334,7 @@ void test_pc_to_label_r_no_label(void) {
 void test_fixup(void) {
     assemble_line("j exit\nexit:");
     bool err;
-    TEST_ASSERT_EQUAL_INT(LOAD(g_text.base, 4, &err), 0x0040006f);
+    TEST_ASSERT_EQUAL_INT(LOAD(g_text->base, 4, &err), 0x0040006f);
     TEST_ASSERT_FALSE(err);
 }
 
@@ -342,7 +342,7 @@ void test_backtrack(void) {
     assemble_line("j .exit\n.exit:");
     TEST_ASSERT_EQUAL_STRING(g_error, NULL);
     bool err;
-    TEST_ASSERT_EQUAL_INT(LOAD(g_text.base, 4, &err), 0x0040006f);
+    TEST_ASSERT_EQUAL_INT(LOAD(g_text->base, 4, &err), 0x0040006f);
     TEST_ASSERT_FALSE(err);
 }
 

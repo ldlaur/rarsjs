@@ -5,7 +5,7 @@
 #include "rarsjs/callsan.h"
 #include "rarsjs/elf.h"
 
-export Section g_text, g_data, g_stack;
+export Section *g_text, *g_data, *g_stack;
 
 RARSJS_ARRAY(SectionPtr) g_sections = RARSJS_ARRAY_NEW(SectionPtr);
 RARSJS_ARRAY(Extern) g_externs = RARSJS_ARRAY_NEW(Extern);
@@ -258,7 +258,7 @@ bool parse_numeric(Parser *p, i32 *out) {
             else if (c == '0') c = 0;
             else return false;
         }
-        value = c;
+        value = (unsigned char)c;
         if (!consume_if(p, '\'')) return false;
     } else {
         if (peek(p) == '0') {
@@ -374,7 +374,7 @@ void asm_emit_byte(u8 byte, int linenum) {
 }
 
 void asm_emit(u32 inst, int linenum) {
-    if (g_section == &g_text) {
+    if (g_section == g_text) {
         *RARSJS_ARRAY_PUSH(&g_text_by_linenum) = linenum;
     }
 
@@ -951,7 +951,7 @@ const char *resolve_start(u32 *start_pc) {
         *start_pc = TEXT_BASE;
         return NULL;
     }
-    if (section != &g_text) {
+    if (section != g_text) {
         return "_start not in .text section";
     }
     return NULL;
@@ -960,8 +960,12 @@ const char *resolve_start(u32 *start_pc) {
 export void assemble(const char *txt, size_t s, bool allow_externs) {
     g_allow_externs = allow_externs;
     callsan_init();
+    g_text = malloc(sizeof(*g_text));
+    RARSJS_CHECK_OOM(g_text);
+    g_data = malloc(sizeof(*g_data));
+    RARSJS_CHECK_OOM(g_data);
 
-    g_text = (Section){.name = ".text",
+    *g_text = (Section){.name = ".text",
                        .base = TEXT_BASE,
                        .limit = TEXT_END,
                        .contents = RARSJS_ARRAY_NEW(u8),
@@ -973,7 +977,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                        .execute = true,
                        .physical = true};
 
-    g_data = (Section){.name = ".data",
+    *g_data = (Section){.name = ".data",
                        .base = DATA_BASE,
                        .limit = DATA_END,
                        .contents = RARSJS_ARRAY_NEW(u8),
@@ -984,7 +988,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                        .write = true,
                        .execute = false,
                        .physical = true};
-    g_section = &g_text;
+    g_section = g_text;
 
     g_exited = false;
     g_exit_code = 0;
@@ -1028,10 +1032,10 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
             parse_ident(p, &directive, &directive_len);
             skip_whitespace(p);
             if (str_eq_case(directive, directive_len, "data")) {
-                g_section = &g_data;
+                g_section = g_data;
                 continue;
             } else if (str_eq_case(directive, directive_len, "text")) {
-                g_section = &g_text;
+                g_section = g_text;
                 continue;
             } else if (str_eq_case(directive, directive_len, "globl")) {
                 skip_whitespace(p);
@@ -1343,7 +1347,9 @@ bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
 }
 
 void prepare_stack() {
-    g_stack = (Section){.name = "RARSJS_STACK",
+    g_stack = malloc(sizeof(Section));
+    RARSJS_CHECK_OOM(g_stack);
+    *g_stack = (Section){.name = "RARSJS_STACK",
                         .base = STACK_TOP - STACK_LEN,
                         .limit = STACK_TOP,
                         .contents = RARSJS_ARRAY_PREPARE(u8, STACK_LEN),
@@ -1355,18 +1361,21 @@ void prepare_stack() {
                         .execute = false,
                         .physical = false};
 
-    g_stack.contents.buf = malloc(g_stack.contents.len);
+    g_stack->contents.buf = malloc(g_stack->contents.len);
+    // fill all the memory with random uninitialized values
+    memset(g_stack->contents.buf, 0xAB, g_stack->contents.len);
+
     g_regs[2] = STACK_TOP;  // FIXME: now i am diverging from RARS, which
                             // does STACK_TOP - 4
-    *RARSJS_ARRAY_PUSH(&g_sections) = &g_stack;
+    *RARSJS_ARRAY_PUSH(&g_sections) = g_stack;
 }
 
 void prepare_runtime_sections() {
     // TODO: dynamically growing stacks?
     // TODO: handle OOM
 
-    *RARSJS_ARRAY_PUSH(&g_sections) = &g_text;
-    *RARSJS_ARRAY_PUSH(&g_sections) = &g_data;
+    *RARSJS_ARRAY_PUSH(&g_sections) = g_text;
+    *RARSJS_ARRAY_PUSH(&g_sections) = g_data;
     prepare_stack();
 }
 
@@ -1375,6 +1384,7 @@ void free_runtime() {
         Section *s = *RARSJS_ARRAY_GET(&g_sections, i);
         RARSJS_ARRAY_FREE(&s->relocations);
         RARSJS_ARRAY_FREE(&s->contents);
+        free(s);
     }
 
     RARSJS_ARRAY_FREE(&g_sections);
