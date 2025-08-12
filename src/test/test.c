@@ -366,6 +366,18 @@ void test_start_in_data(void) {
     TEST_ASSERT_EQUAL_STRING(g_error, "_start not in .text section");
 }
 
+void test_linenum(void) {
+    assemble_line("\
+addi x0, x0, 1 \n\
+addi x0, x0,   \n\
+    2          \n\
+addi x0, x0, 3 \n\
+");
+    TEST_ASSERT_EQUAL_INT(g_text_by_linenum.buf[0], 1);
+    TEST_ASSERT_EQUAL_INT(g_text_by_linenum.buf[1], 2);
+    TEST_ASSERT_EQUAL_INT(g_text_by_linenum.buf[2], 4);
+}
+
 // -- runtime tests
 
 void build_and_run(const char* txt) {
