@@ -4,8 +4,10 @@
 
 #include "rarsjs/callsan.h"
 #include "rarsjs/elf.h"
+#include "rarsjs/emulate.h"
 
-export Section *g_text, *g_data, *g_stack;
+export Section *g_text, *g_data, *g_stack, *g_kernel_text, *g_kernel_data,
+    *g_mmio;
 
 RARSJS_ARRAY(SectionPtr) g_sections = RARSJS_ARRAY_NEW(SectionPtr);
 RARSJS_ARRAY(Extern) g_externs = RARSJS_ARRAY_NEW(Extern);
@@ -23,6 +25,7 @@ export int g_exit_code;
 
 export bool g_in_fixup;
 export u32 g_regs[32];
+export u32 g_csr[4096];
 export u32 g_pc;
 export u32 g_mem_written_len;
 export u32 g_mem_written_addr;
@@ -42,6 +45,13 @@ const char *const REGISTER_NAMES[] = {
     "a1",   "a2", "a3", "a4", "a5",  "a6",  "a7", "s2", "s3", "s4", "s5",
     "s6",   "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
 
+const char *const CSR_NAMES[] = {
+    [0x100] = "sstatus",  [0x104] = "sie",      [0x105] = "stvec",
+    [0x140] = "sscratch", [0x141] = "sepc",     [0x142] = "scause",
+    [0x144] = "sip",      [0x300] = "mstatus",  [0x304] = "mie",
+    [0x305] = "mtvec",    [0x340] = "mscratch", [0x342] = "mcause",
+    [0x344] = "mip"};
+
 // clang-format off
 u32 DS1S2(u32 d, u32 s1, u32 s2) { return (d << 7) | (s1 << 15) | (s2 << 20); }
 #define InstA(Name, op2, op12, one, mul) u32 Name(u32 d, u32 s1, u32 s2)  { return 0b11 | (op2 << 2) | (op12 << 12) | DS1S2(d, s1, s2) | ((one*0b01000) << 27) | (mul << 25); }
@@ -53,6 +63,12 @@ InstI(SLTIU, 0b00100, 0b011)
 InstI(XORI,  0b00100, 0b100)
 InstI(ORI,   0b00100, 0b110)
 InstI(ANDI,  0b00100, 0b111)
+InstI(CSRRW, 0x70, 0b001)
+InstI(CSRRS, 0x70, 0b010)
+InstI(CSRRC, 0x70, 0b011)
+InstI(CSRRWI, 0x70, 0b101)
+InstI(CSRRSI, 0x70, 0b110)
+InstI(CSRRCI, 0x70, 0b111)
 
 InstA(SLLI,  0b00100, 0b001, 0, 0)
 InstA(SRLI,  0b00100, 0b101, 0, 0)
@@ -155,23 +171,19 @@ bool skip_comment(Parser *p) {
     if (c == '/') {
         char c2 = peek_n(p, 1);
         if (c2 == '/') {
-            while (p->pos < p->size && p->input[p->pos] != '\n')
-                advance(p);
+            while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
             return true;
         } else if (c2 == '*') {
             advance_n(p, 2);
-            while (p->pos < p->size &&
-                   !(peek(p) == '*' && peek_n(p, 1) == '/'))
+            while (p->pos < p->size && !(peek(p) == '*' && peek_n(p, 1) == '/'))
                 advance(p);
-            if (p->pos < p->size)
-                advance_n(p, 2);
+            if (p->pos < p->size) advance_n(p, 2);
             return true;
         }
         return false;
     }
     if (c == '#') {
-        while (p->pos < p->size && p->input[p->pos] != '\n')
-            advance(p);
+        while (p->pos < p->size && p->input[p->pos] != '\n') advance(p);
         return true;
     }
     return false;
@@ -361,6 +373,18 @@ int parse_reg(Parser *p) {
         if (str_eq_case(str, len, REGISTER_NAMES[i])) return i;
     }
     if (str_eq_case(str, len, "s0")) return 8;  // s0 = fp
+    return -1;
+}
+
+int parse_csr(Parser *p) {
+    const char *str;
+    size_t len;
+    parse_ident(p, &str, &len);
+
+    for (int i = 0; i < 32; i++) {
+        if (CSR_NAMES[i] && str_eq_case(str, len, CSR_NAMES[i])) return i;
+    }
+
     return -1;
 }
 
@@ -559,7 +583,8 @@ const char *handle_alu_imm(Parser *p, const char *opcode, size_t opcode_len) {
     u32 inst = 0;
     if (str_eq_case(opcode, opcode_len, "addi")) inst = ADDI(d, s1, simm);
     else if (str_eq_case(opcode, opcode_len, "slti")) inst = SLTI(d, s1, simm);
-    else if (str_eq_case(opcode, opcode_len, "sltiu")) inst = SLTIU(d, s1, simm);
+    else if (str_eq_case(opcode, opcode_len, "sltiu"))
+        inst = SLTIU(d, s1, simm);
     else if (str_eq_case(opcode, opcode_len, "andi")) inst = ANDI(d, s1, simm);
     else if (str_eq_case(opcode, opcode_len, "ori")) inst = ORI(d, s1, simm);
     else if (str_eq_case(opcode, opcode_len, "xori")) inst = XORI(d, s1, simm);
@@ -907,6 +932,68 @@ const char *handle_ecall(Parser *p, const char *opcode, size_t opcode_len) {
     return NULL;
 }
 
+const char *handle_sret(Parser *p, const char *opcode, size_t opcode_len) {
+    asm_emit(0x10200073, p->startline);
+    return NULL;
+}
+
+const char *handle_csr(Parser *p, const char *opcode, size_t opcode_len) {
+    int csr, d, s;
+
+    skip_whitespace(p);
+    if ((d = parse_reg(p)) == -1) return "Invalid rd";
+
+    skip_whitespace(p);
+    if (!consume_if(p, ',')) return "Expected ,";
+
+    skip_whitespace(p);
+    if ((csr = parse_csr(p)) == -1) return "Invalid CSR";
+
+    skip_whitespace(p);
+    if (!consume_if(p, ',')) return "Expected ,";
+
+    skip_whitespace(p);
+    if ((s = parse_reg(p)) == -1) return "Invalid rs";
+
+    u32 inst = 0;
+    if (str_eq_case(opcode, opcode_len, "csrrw")) inst = CSRRW(d, s, csr);
+    else if (str_eq_case(opcode, opcode_len, "csrrs")) inst = CSRRS(d, s, csr);
+    else if (str_eq_case(opcode, opcode_len, "csrrc")) inst = CSRRC(d, s, csr);
+
+    asm_emit(inst, p->startline);
+    return NULL;
+}
+
+const char *handle_csr_imm(Parser *p, const char *opcode, size_t opcode_len) {
+    int csr, d;
+    i32 zimm;
+
+    skip_whitespace(p);
+    if ((d = parse_reg(p)) == -1) return "Invalid rd";
+
+    skip_whitespace(p);
+    if (!consume_if(p, ',')) return "Expected ,";
+
+    skip_whitespace(p);
+    if ((csr = parse_csr(p)) == -1) return "Invalid CSR";
+
+    skip_whitespace(p);
+    if (!consume_if(p, ',')) return "Expected ,";
+
+    skip_whitespace(p);
+    if (!parse_numeric(p, &zimm)) return "Invalid imm";
+
+    u32 inst = 0;
+    if (str_eq_case(opcode, opcode_len, "csrrwi")) inst = CSRRWI(d, zimm, csr);
+    else if (str_eq_case(opcode, opcode_len, "csrrsi"))
+        inst = CSRRSI(d, zimm, csr);
+    else if (str_eq_case(opcode, opcode_len, "csrrci"))
+        inst = CSRRCI(d, zimm, csr);
+
+    asm_emit(inst, p->startline);
+    return NULL;
+}
+
 typedef struct OpcodeHandling {
     DeferredInsnCb *cb;
     const char *opcodes[64];
@@ -933,9 +1020,10 @@ OpcodeHandling opcode_types[] = {
     {handle_li, {"li"}},
     {handle_la, {"la"}},
     {handle_ecall, {"ecall"}},
+    {handle_csr, {"csrrw", "csrrs", "csrrc"}},
+    {handle_csr_imm, {"csrrwi", "csrrsi", "csrrci"}},
+    {handle_sret, {"sret"}},
 };
-
-void callsan_init();
 
 // defining _start but not making it global is a VERY common mistake
 // another mistake i've seen is putting _start in .data by accident
@@ -957,6 +1045,34 @@ const char *resolve_start(u32 *start_pc) {
     return NULL;
 }
 
+const char *resolve_kernel_start(u32 *start_pc) {
+    Section *section;
+    if (!resolve_symbol("_kernel_start", strlen("_kernel_start"), true,
+                        start_pc, &section)) {
+        if (resolve_symbol("_kernel_start", strlen("_kernel_start"), false,
+                           start_pc, &section)) {
+            return "_kernel_start defined, but without .globl";
+        }
+
+        return "_kernel_start symbol not found";
+    }
+
+    if (section != g_kernel_text) {
+        return "_kernel_start not in .kernel_text section";
+    }
+
+    return NULL;
+}
+
+const char *resolve_entry(u32 *start_pc) {
+    if (!resolve_kernel_start(start_pc)) {
+        emulator_enter_kernel();
+        return NULL;
+    }
+
+    return resolve_start(start_pc);
+}
+
 export void assemble(const char *txt, size_t s, bool allow_externs) {
     g_allow_externs = allow_externs;
     callsan_init();
@@ -964,30 +1080,78 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
     RARSJS_CHECK_OOM(g_text);
     g_data = malloc(sizeof(*g_data));
     RARSJS_CHECK_OOM(g_data);
+    g_kernel_data = malloc(sizeof(*g_kernel_data));
+    RARSJS_CHECK_OOM(g_kernel_data);
+    g_kernel_text = malloc(sizeof(*g_kernel_text));
+    RARSJS_CHECK_OOM(g_kernel_text);
+    g_mmio = malloc(sizeof(*g_mmio));
+    RARSJS_CHECK_OOM(g_mmio);
 
     *g_text = (Section){.name = ".text",
-                       .base = TEXT_BASE,
-                       .limit = TEXT_END,
-                       .contents = RARSJS_ARRAY_NEW(u8),
-                       .emit_idx = 0,
-                       .align = 4,
-                       .relocations = {.buf = NULL, .len = 0, .cap = 0},
-                       .read = true,
-                       .write = false,
-                       .execute = true,
-                       .physical = true};
+                        .base = TEXT_BASE,
+                        .limit = TEXT_END,
+                        .contents = RARSJS_ARRAY_NEW(u8),
+                        .emit_idx = 0,
+                        .align = 4,
+                        .relocations = RARSJS_ARRAY_NEW(Relocation),
+                        .read = true,
+                        .write = false,
+                        .execute = true,
+                        .super = false,
+                        .physical = true};
 
     *g_data = (Section){.name = ".data",
-                       .base = DATA_BASE,
-                       .limit = DATA_END,
-                       .contents = RARSJS_ARRAY_NEW(u8),
-                       .emit_idx = 0,
-                       .align = 1,
-                       .relocations = {.buf = NULL, .len = 0, .cap = 0},
-                       .read = true,
-                       .write = true,
-                       .execute = false,
-                       .physical = true};
+                        .base = DATA_BASE,
+                        .limit = DATA_END,
+                        .contents = RARSJS_ARRAY_NEW(u8),
+                        .emit_idx = 0,
+                        .align = 1,
+                        .relocations = RARSJS_ARRAY_NEW(Relocation),
+                        .read = true,
+                        .write = true,
+                        .execute = false,
+                        .super = false,
+                        .physical = true};
+
+    *g_kernel_data = (Section){.name = ".kernel_data",
+                               .base = KERNEL_DATA_BASE,
+                               .limit = KERNEL_DATA_END,
+                               .contents = RARSJS_ARRAY_NEW(u8),
+                               .emit_idx = 0,
+                               .align = 1,
+                               .relocations = RARSJS_ARRAY_NEW(Relocation),
+                               .read = true,
+                               .write = true,
+                               .execute = false,
+                               .super = true,
+                               .physical = false};
+
+    *g_kernel_text = (Section){.name = ".kernel_text",
+                               .base = KERNEL_TEXT_BASE,
+                               .limit = KERNEL_TEXT_END,
+                               .contents = RARSJS_ARRAY_NEW(u8),
+                               .emit_idx = 0,
+                               .align = 1,
+                               .relocations = RARSJS_ARRAY_NEW(Relocation),
+                               .read = true,
+                               .write = false,
+                               .execute = true,
+                               .super = true,
+                               .physical = false};
+
+    *g_mmio = (Section){.name = ".mmio",
+                        .base = MMIO_BASE,
+                        .limit = MMIO_END,
+                        .contents = RARSJS_ARRAY_NEW(u8),
+                        .emit_idx = 0,
+                        .align = 1,
+                        .relocations = RARSJS_ARRAY_NEW(Relocation),
+                        .read = true,
+                        .write = true,
+                        .execute = false,
+                        .super = true,
+                        .physical = false};
+
     g_section = g_text;
 
     g_exited = false;
@@ -1155,9 +1319,9 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
         size_t ident_len, opcode_len;
         parse_ident(p, &ident, &ident_len);
         // IMPORTANT: it needs to be skip trailing here
-        // otherwise, it will happily consume the newline after 
-        // no-param instructions, like ret and nop 
-        skip_trailing(p); 
+        // otherwise, it will happily consume the newline after
+        // no-param instructions, like ret and nop
+        skip_trailing(p);
 
         if (consume_if(p, ':')) {
             for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_labels); i++) {
@@ -1183,7 +1347,8 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
         for (size_t i = 0;
              !found && i < sizeof(opcode_types) / sizeof(OpcodeHandling); i++) {
             for (size_t j = 0; !found && opcode_types[i].opcodes[j]; j++) {
-                if (str_eq_case(opcode, opcode_len, opcode_types[i].opcodes[j])) {
+                if (str_eq_case(opcode, opcode_len,
+                                opcode_types[i].opcodes[j])) {
                     found = true;
                     err = opcode_types[i].cb(p, opcode, opcode_len);
                 }
@@ -1222,57 +1387,10 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
         return;
     }
 
-    err = resolve_start(&g_pc);
+    err = resolve_entry(&g_pc);
     if (err) {
         g_error = err;
         g_error_line = 1;
-    }
-}
-
-void do_syscall() {
-    u32 param = g_regs[10];
-    if (g_regs[17] == 1) {
-        // print int
-        char buffer[12];
-        int i = 0;
-        if ((i32)param < 0) {
-            putchar('-');
-            param = -param;
-        }
-        do {
-            buffer[i++] = (param % 10) + '0';
-            param /= 10;
-        } while (param > 0);
-        while (i--) putchar(buffer[i]);
-    } else if (g_regs[17] == 4) {
-        // print string
-        u32 i = 0;
-        while (1) {
-            bool err = false;
-            u8 ch = LOAD(param + i, 1, &err);
-            if (err) return;  // TODO: return an error?
-            if (ch == 0) break;
-            i++;
-            putchar(ch);
-        }
-    } else if (g_regs[17] == 11) {
-        // print char
-        putchar(param);
-    } else if (g_regs[17] == 34) {
-        // print int hex
-        putchar('0');
-        putchar('x');
-        for (int i = 32 - 4; i >= 0; i -= 4)
-            putchar("0123456789abcdef"[(param >> i) & 15]);
-    } else if (g_regs[17] == 35) {
-        // print int binary
-        putchar('0');
-        putchar('b');
-        for (int i = 31; i >= 0; i--) {
-            putchar(((param >> i) & 1) ? '1' : '0');
-        }
-    } else if (g_regs[17] == 93 || g_regs[17] == 7 || g_regs[17] == 10) {
-        emu_exit();
     }
 }
 
@@ -1338,6 +1456,7 @@ bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
     }
     if (ret) {
         *addr = ret->addr;
+        printf("returning 0x%08x for sym %s\n", *addr, sym);
         if (sec) {
             *sec = ret->section;
         }
@@ -1350,16 +1469,16 @@ void prepare_stack() {
     g_stack = malloc(sizeof(Section));
     RARSJS_CHECK_OOM(g_stack);
     *g_stack = (Section){.name = "RARSJS_STACK",
-                        .base = STACK_TOP - STACK_LEN,
-                        .limit = STACK_TOP,
-                        .contents = RARSJS_ARRAY_PREPARE(u8, STACK_LEN),
-                        .emit_idx = 0,
-                        .align = 1,
-                        .relocations = {.buf = NULL, .len = 0, .cap = 0},
-                        .read = true,
-                        .write = true,
-                        .execute = false,
-                        .physical = false};
+                         .base = STACK_TOP - STACK_LEN,
+                         .limit = STACK_TOP,
+                         .contents = RARSJS_ARRAY_PREPARE(u8, STACK_LEN),
+                         .emit_idx = 0,
+                         .align = 1,
+                         .relocations = {.buf = NULL, .len = 0, .cap = 0},
+                         .read = true,
+                         .write = true,
+                         .execute = false,
+                         .physical = false};
 
     g_stack->contents.buf = malloc(g_stack->contents.len);
     // fill all the memory with random uninitialized values
