@@ -31,8 +31,8 @@ void *memset(void *dest, int c, size_t n);
 
 #define RARSJS_ARRAY_DEF(type) \
     typedef struct {           \
-        size_t cap;            \
         size_t len;            \
+        size_t cap;            \
         type *buf;             \
     }
 

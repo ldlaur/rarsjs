@@ -1,15 +1,12 @@
 import { linter } from "@codemirror/lint";
 import { WasmInterface } from "./RiscV";
-import {
-  setDummy,
-  setWasmPc,
-  dummy,
-  view,
-  setConsoleText,
-  setHasError,
-  latestAsm,
-} from "./App";
+
 import { lineHighlightEffect } from "./LineHighlight";
+import { latestAsm } from "./EmulatorState";
+import { view } from "./App";
+import { createSignal } from "solid-js";
+const [compileErrors, setCompileErrors] = createSignal("");
+export { compileErrors };
 
 export const createAsmLinter = (wasmInterface: WasmInterface) => {
   let delay: number = 100;
@@ -19,14 +16,11 @@ export const createAsmLinter = (wasmInterface: WasmInterface) => {
       if (latestAsm["text"] == code) return [];
       latestAsm["text"] = code;
       let err = await wasmInterface.build(code);
-      setDummy(dummy() + 1);
-      setWasmPc(wasmInterface.pc[0]);
-      setHasError(false);
       view.dispatch({
         effects: lineHighlightEffect.of(0), // disable the line highlight, as line numbering starts from 1
       });
       if (err !== null) {
-        setConsoleText(`Error on line ${err.line}: ${err.message}`);
+        setCompileErrors(`Error on line ${err.line}: ${err.message}`);
         return [
           {
             from: ev.state.doc.line(err.line).from,
@@ -36,7 +30,7 @@ export const createAsmLinter = (wasmInterface: WasmInterface) => {
           },
         ];
       } else {
-        setConsoleText("");
+        setCompileErrors("");
         return [];
       }
     },

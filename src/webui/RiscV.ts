@@ -33,7 +33,6 @@ export class WasmInterface {
   private exports?: WasmExports;
   private loadedPromise?: Promise<void>;
   private originalMemory?: Uint8Array;
-  private setText: (str: string) => void;
   public textBuffer: string = "";
   public successfulExecution: boolean;
   public regsArr?: Uint32Array;
@@ -75,7 +74,6 @@ export class WasmInterface {
           memory: this.memory,
           putchar: (n: number) => {
             this.textBuffer += String.fromCharCode(n);
-            if (this.setText) this.setText(this.textBuffer);
           },
           emu_exit: () => {
             console.log("EXIT");
@@ -125,8 +123,8 @@ export class WasmInterface {
       this.exports.g_runtime_error_params,
     );
     this.runtimeErrorType = this.createU32(this.exports.g_runtime_error_type);
-    this.shadowStackLen = this.createU32(this.exports.g_shadow_stack + 4);
-    this.shadowStackPtr = this.createU32(this.exports.g_shadow_stack);
+    this.shadowStackLen = this.createU32(this.exports.g_shadow_stack);
+    this.shadowStackPtr = this.createU32(this.exports.g_shadow_stack + 8);
     this.callsanWrittenBy = this.createU8(
       this.exports.g_callsan_stack_written_by,
     );
@@ -140,9 +138,9 @@ export class WasmInterface {
     this.createU8(offset).set(strBytes);
     this.createU32(this.exports.g_heap_size)[0] = (strLen + 7) & ~7; // align up to 8
     this.exports.assemble(offset, strLen, false);
-    const textByLinenumPtr = this.createU32(this.exports.g_text_by_linenum)[0];
+    const textByLinenumPtr = this.createU32(this.exports.g_text_by_linenum)[2];
     this.textByLinenum = this.createU32(textByLinenumPtr);
-    this.textByLinenumLen = this.createU32(this.exports.g_text_by_linenum + 4);
+    this.textByLinenumLen = this.createU32(this.exports.g_text_by_linenum);
 
     const errorLine = this.createU32(this.exports.g_error_line)[0];
     const errorPtr = this.createU32(this.exports.g_error)[0];
@@ -208,13 +206,11 @@ export class WasmInterface {
     ];
     return regnames[idx];
   }
-  run(setText: (str: string) => void): void {
-    this.setText = setText;
+  run(): void {
     this.exports.emulate();
     this.instructions++;
     if (this.instructions > INSTRUCTION_LIMIT) {
       this.textBuffer += `ERROR: instruction limit ${INSTRUCTION_LIMIT} reached\n`;
-      setText(this.textBuffer);
       this.hasError = true;
     } else if (this.runtimeErrorType[0] != 0) {
       const errorType = this.runtimeErrorType[0];
@@ -273,18 +269,17 @@ export class WasmInterface {
           )}\n`;
           break;
       }
-      setText(this.textBuffer);
       this.hasError = true;
     } else if (this.successfulExecution) {
       const needsNewline =
         this.textBuffer.length &&
         this.textBuffer[this.textBuffer.length - 1] != "\n";
-      setText(
-        this.textBuffer +
-          (needsNewline
+      
+        this.textBuffer +=
+          needsNewline
             ? "\nExecuted successfully."
-            : "Executed successfully."),
-      );
+            : "Executed successfully.";
+      
     }
   }
 }

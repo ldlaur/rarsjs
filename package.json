@@ -11,24 +11,24 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^22.15.3",
+    "@types/node": "^22.17.1",
     "autoprefixer": "^10.4.21",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.8.3",
-    "vite": "^6.3.3",
-    "vite-plugin-solid": "^2.11.6"
+    "typescript": "^5.9.2",
+    "vite": "^6.3.5",
+    "vite-plugin-solid": "^2.11.8"
   },
   "dependencies": {
-    "@babel/runtime": "^7.27.0",
+    "@babel/runtime": "^7.28.2",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/lint": "^6.8.5",
-    "@lezer/generator": "^1.7.3",
+    "@lezer/generator": "^1.8.0",
     "@lezer/highlight": "^1.2.1",
     "@lezer/lr": "^1.4.2",
-    "@solid-primitives/virtual": "^0.2.1",
-    "@tanstack/solid-virtual": "^3.13.6",
-    "codemirror": "^6.0.1",
-    "solid-js": "^1.9.5"
+    "@solid-primitives/virtual": "^0.2.2",
+    "@tanstack/solid-virtual": "^3.13.12",
+    "codemirror": "^6.0.2",
+    "solid-js": "^1.9.9"
   }
 }

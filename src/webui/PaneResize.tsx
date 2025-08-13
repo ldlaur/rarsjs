@@ -1,11 +1,11 @@
-import { createSignal, onMount, onCleanup, Component } from "solid-js";
+import { createSignal, onMount, onCleanup, Component, Show } from "solid-js";
 import { JSX } from "solid-js/jsx-runtime";
 
 export const PaneResize: Component<{
     firstSize: number,
     direction: "vertical" | "horizontal",
-    disableSecond: boolean,
-    children: [() => JSX.Element, () => JSX.Element]
+    second: any,
+    children: [() => JSX.Element, (data) => JSX.Element]
 }> = (props) => {
 
     let handle: HTMLDivElement | undefined;
@@ -99,10 +99,10 @@ export const PaneResize: Component<{
                 class="theme-bg theme-fg flex-shrink overflow-hidden"
                 style={{
                     contain: "strict",
-                    height: props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
-                    "min-height": props.direction == "vertical" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
-                    width: props.direction == "horizontal" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
-                    "min-width": props.direction == "horizontal" ? `${props.disableSecond ? containerSize() : size()}px` : "auto",
+                    height: props.direction == "vertical" ? `${!props.second ? containerSize() : size()}px` : "auto",
+                    "min-height": props.direction == "vertical" ? `${!props.second ? containerSize() : size()}px` : "auto",
+                    width: props.direction == "horizontal" ? `${!props.second ? containerSize() : size()}px` : "auto",
+                    "min-width": props.direction == "horizontal" ? `${!props.second ? containerSize() : size()}px` : "auto",
                 }}
             >
                 {props.children[0]()}
@@ -113,13 +113,13 @@ export const PaneResize: Component<{
                 ref={handle}
                 style={{ "flex-shrink": 0 }}
                 class={
-                    props.disableSecond ? "hidden" : (props.direction == "vertical"
+                    !props.second ? "hidden" : (props.direction == "vertical"
                         ? "w-full h-[4px] theme-separator cursor-row-resize"
                         : "h-full w-[4px] theme-separator cursor-col-resize")
                 }
             ></div>
-            <div style={{contain: "strict"}} class={props.disableSecond ? "hidden" : "theme-bg theme-fg flex-grow flex-shrink overflow-hidden"}>
-                {props.children[1]()}
+            <div style={{contain: "strict"}} class={!props.second ? "hidden" : "theme-bg theme-fg flex-grow flex-shrink overflow-hidden"}>
+                <Show when={props.second}>{props.children[1](props.second)}</Show>
             </div>
         </div>
     );
