@@ -28,7 +28,7 @@ extern void shadowstack_pop();
 #else
 
 static inline void shadowstack_push() {}
-static inline void shadowstack_pop(){}
+static inline void shadowstack_pop() {}
 
 #include <assert.h>
 #include <stdio.h>
@@ -44,6 +44,27 @@ static inline void shadowstack_pop(){}
 #define STACK_TOP 0x7FFFF000
 #define STACK_LEN 4096
 #define DATA_END 0x70000000
+
+#define KERNEL_TEXT_BASE 0xFFF80000
+#define KERNEL_TEXT_END 0xFFFFFFFF
+#define KERNEL_DATA_BASE 0xFFF00000
+#define KERNEL_DATA_END 0xFFF70000
+#define MMIO_BASE 0xFFE00000
+#define MMIO_END 0xFFE80000
+
+#define CSR_SSTATUS 0x100
+#define CSR_SIE 0x104
+#define CSR_STVEC 0x105
+#define CSR_SSCRATCH 0x140
+#define CSR_SEPC 0x141
+#define CSR_SCAUSE 0x142
+#define CSR_SIP 0x144
+#define CSR_MSTATUS 0x300
+#define CSR_MIE 0x304
+#define CSR_MTVEC 0x305
+#define CSR_MSCRATCH 0x340
+#define CSR_MCAUSE 0x342
+#define CSR_MIP 0x344
 
 RARSJS_ARRAY_TYPE(u8);
 RARSJS_ARRAY_TYPE(u32);
@@ -91,6 +112,7 @@ typedef struct Section {
     bool read;
     bool write;
     bool execute;
+    bool super;
     bool physical;
 } Section, *SectionPtr;
 
@@ -134,7 +156,9 @@ typedef enum Error : u32 {
     ERROR_CALLSAN_SP_MISMATCH = 7,
     ERROR_CALLSAN_RA_MISMATCH = 8,
     ERROR_CALLSAN_RET_EMPTY = 9,
-    ERROR_CALLSAN_LOAD_STACK = 10
+    ERROR_CALLSAN_LOAD_STACK = 10,
+    ERROR_PROTECTION = 11,
+    ERROR_DOUBLE = 12
 } Error;
 
 RARSJS_ARRAY_TYPE(SectionPtr);
@@ -147,6 +171,9 @@ RARSJS_ARRAY_TYPE(char);
 extern export Section *g_text;
 extern export Section *g_data;
 extern export Section *g_stack;
+extern export Section *g_kernel_data;
+extern export Section *g_kernel_text;
+extern export Section *g_mmio;
 
 extern RARSJS_ARRAY(SectionPtr) g_sections;
 extern RARSJS_ARRAY(LabelData) g_labels;
@@ -155,6 +182,7 @@ extern RARSJS_ARRAY(Extern) g_externs;
 extern export RARSJS_ARRAY(u32) g_text_by_linenum;
 
 extern export u32 g_regs[32];
+extern export u32 g_csr[4096];
 extern export u32 g_pc;
 
 extern export u32 g_error_line;
@@ -167,6 +195,7 @@ extern export bool g_exited;
 extern export int g_exit_code;
 
 extern const char *const REGISTER_NAMES[];
+extern const char *const CSR_NAMES[];
 
 void assemble(const char *str, size_t len, bool allow_externs);
 void emulate();
@@ -212,7 +241,6 @@ enum Reg {
     REG_T5,
     REG_T6
 };
-
 
 // -- functions exposed here mainly for testing purposes
 bool parse_numeric(Parser *p, i32 *out);

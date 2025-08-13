@@ -1,11 +1,11 @@
 AFL_CC ?= afl-clang-fast
 LIBFUZZER_CC ?= clang
-CFLAGS ?= -g
+CFLAGS ?= -g -fsanitize=address
 RARSJS_FLAGS ?= -Isrc/exec/ezld/include -g3
 LIBFUZZER_FLAGS ?= $(RARSJS_FLAGS) -fsanitize=address -fsanitize=fuzzer
 AFL_FLAGS ?= $(RARSJS_FLAGS) -O2 -fsanitize=address
 
-EXEC_SRC = src/exec/core.c src/exec/emulate.c src/exec/callsan.c
+EXEC_SRC = src/exec/core.c src/exec/emulate.c src/exec/callsan.c src/exec/dev.c
 SRC = $(EXEC_SRC) src/exec/vendor/commander.c src/exec/cli.c src/exec/elf.c
 AFLSRC = $(EXEC_SRC) src/exec/afl.c
 FUZZER_SRC = $(EXEC_SRC) src/exec/libfuzzer.c

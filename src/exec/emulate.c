@@ -1,5 +1,6 @@
 #include "rarsjs/callsan.h"
 #include "rarsjs/core.h"
+#include "rarsjs/dev.h"
 
 extern u32 g_regs[32];
 extern u32 g_pc;
@@ -10,6 +11,8 @@ extern u32 g_error_line;
 
 extern u32 g_runtime_error_params[2];
 extern Error g_runtime_error_type;
+
+static bool g_in_kernel = false;
 
 // end is inclusive, like in Verilog
 static inline u32 extr(u32 val, u32 end, u32 start) {
@@ -58,20 +61,49 @@ static inline u32 remu32(u32 a, u32 b) {
     }
 }
 
-u8 *emulator_get_addr(u32 addr, int size) {
-    u8 *memspace = NULL;
+Section *emulator_get_section(u32 addr) {
     for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
         Section *sec = *RARSJS_ARRAY_GET(&g_sections, i);
-        // TODO: check permissions
-        if (addr >= sec->base && addr + size <= (sec->base + sec->contents.len))
-            return sec->contents.buf + (addr - sec->base);
+        if (addr >= sec->base && addr <= sec->limit) {
+            return sec;
+        }
     }
+
+    return NULL;
+}
+
+u8 *emulator_get_addr(u32 addr, int size, Section **out_sec) {
+    Section *addr_sec = emulator_get_section(addr);
+
+    if (out_sec) {
+        *out_sec = addr_sec;
+    }
+
+    if (!addr_sec) {
+        return NULL;
+    }
+
+    if (addr + size >= addr_sec->contents.len + addr_sec->base) {
+        return NULL;
+    }
+
+    return addr_sec->contents.buf + (addr - addr_sec->base);
     return NULL;
 }
 
 u32 LOAD(u32 addr, int size, bool *err) {
-    u8 *mem = emulator_get_addr(addr, size);
-    if (!mem) {
+    Section *mem_sec;
+    u8 *mem = emulator_get_addr(addr, size, &mem_sec);
+
+    if (!mem_sec || !mem_sec->read || (mem_sec->super && !g_in_kernel)) {
+        *err = true;
+        return 0;
+    }
+
+    if (mem_sec->base == MMIO_BASE) {
+        *err = !mmio_read(addr - MMIO_BASE, size);
+        return 0;
+    } else if (!mem) {
         *err = true;
         return 0;
     }
@@ -96,8 +128,18 @@ void STORE(u32 addr, u32 val, int size, bool *err) {
     g_mem_written_len = size;
     g_mem_written_addr = addr;
 
-    u8 *mem = emulator_get_addr(addr, size);
-    if (!mem) {
+    Section *mem_sec;
+    u8 *mem = emulator_get_addr(addr, size, &mem_sec);
+
+    if (!mem_sec || !mem_sec->write || (mem_sec->super && !g_in_kernel)) {
+        *err = true;
+        return;
+    }
+
+    if (mem_sec->base == MMIO_BASE) {
+        *err = !mmio_write(addr - MMIO_BASE, size, val);
+        return;
+    } else if (!mem) {
         *err = true;
         return;
     }
@@ -116,7 +158,78 @@ void STORE(u32 addr, u32 val, int size, bool *err) {
     *err = false;
 }
 
-void do_syscall();
+void do_syscall() {
+    // Machine mode is not supported
+    if (g_in_kernel) {
+        g_runtime_error_params[0] = g_pc;
+        g_runtime_error_type = ERROR_DOUBLE;
+        return;
+    }
+
+    g_in_kernel = true;
+
+    if (!RARSJS_ARRAY_IS_EMPTY(&g_kernel_text->contents)) {
+        g_csr[CSR_SEPC] = g_pc;
+        g_pc = g_csr[CSR_STVEC];
+        // TODO: set other CSRs
+        return;
+    }
+
+    g_reg_written = 0;
+
+    u32 param = g_regs[10];
+    if (g_regs[17] == 1) {
+        // print int
+        char buffer[12];
+        int i = 0;
+        if ((i32)param < 0) {
+            putchar('-');
+            param = -param;
+        }
+        do {
+            buffer[i++] = (param % 10) + '0';
+            param /= 10;
+        } while (param > 0);
+        while (i--) putchar(buffer[i]);
+    } else if (g_regs[17] == 4) {
+        // print string
+        u32 i = 0;
+        while (1) {
+            bool err = false;
+            u8 ch = LOAD(param + i, 1, &err);
+            if (err) return;  // TODO: return an error?
+            if (ch == 0) break;
+            i++;
+            putchar(ch);
+        }
+    } else if (g_regs[17] == 11) {
+        // print char
+        putchar(param);
+    } else if (g_regs[17] == 34) {
+        // print int hex
+        putchar('0');
+        putchar('x');
+        for (int i = 32 - 4; i >= 0; i -= 4)
+            putchar("0123456789abcdef"[(param >> i) & 15]);
+    } else if (g_regs[17] == 35) {
+        // print int binary
+        putchar('0');
+        putchar('b');
+        for (int i = 31; i >= 0; i--) {
+            putchar(((param >> i) & 1) ? '1' : '0');
+        }
+    } else if (g_regs[17] == 93 || g_regs[17] == 7 || g_regs[17] == 10) {
+        emu_exit();
+    }
+
+    g_in_kernel = false;
+    g_pc += 4;
+}
+
+void do_sret() {
+    g_pc = g_csr[CSR_SEPC] + 4;
+    g_in_kernel = false;
+}
 
 void emulate() {
     g_runtime_error_type = ERROR_NONE;
@@ -153,13 +266,6 @@ void emulate() {
     u32 *D = &g_regs[rd];
 
     u32 opcode = extr(inst, 6, 0);
-
-    if (inst == 0x73) {
-        do_syscall();
-        g_pc += 4;
-        g_reg_written = 0;
-        return;
-    }
 
     // LUI
     if (opcode == 0b0110111) {
@@ -337,7 +443,56 @@ void emulate() {
         return;
     }
 
+    // SYSTEM instructions
+    if (opcode == 0x73) {
+        if (funct3 == 0b000) {
+            if (itype == 0x102) {  // SRET
+                do_sret();
+            } else {  // ECALL
+                do_syscall();
+            }
+            return;
+        } else if (funct3 == 0b001) {  // CSRRW
+            u32 old = g_csr[itype];
+            g_csr[itype] = rs1;
+            g_regs[rd] = old;
+        } else if (funct3 == 0b010) {  // CSRRS
+            u32 old = g_csr[itype];
+            g_csr[itype] = old | g_regs[rs1];
+            g_regs[rd] = old;
+        } else if (funct3 == 0b011) {  // CSRRC
+            u32 old = g_csr[itype];
+            g_csr[itype] = old & ~g_regs[rs1];
+            g_regs[rd] = old;
+        } else if (funct3 == 0b101) {  // CSRRWI
+            g_regs[rd] = g_csr[itype];
+            g_csr[itype] = rs1;        // used as imm
+        } else if (funct3 == 0b110) {  // CSRRSI
+            u32 old = g_csr[itype];
+            g_csr[itype] = old | rs1;
+            g_regs[rd] = old;
+        } else if (funct3 == 0b111) {  // CSRRCI
+            u32 old = g_csr[itype];
+            g_csr[itype] = old & ~rs1;
+            g_regs[rd] = old;
+        } else {
+            goto end;
+        }
+
+        // TODO: CSR instructions themselves are not privileged, s/m CSRs are,
+        // so this is wrong, but close enough
+        if (!g_in_kernel) {
+            g_runtime_error_params[0] = g_pc;
+            g_runtime_error_type = ERROR_PROTECTION;
+        }
+
+        g_pc += 4;
+        g_reg_written = rd;
+        return;
+    }
+
     // if i reached here, it's an unhandled instruction
+end:
     g_runtime_error_params[0] = g_pc;
     g_runtime_error_type = ERROR_UNHANDLED_INSN;
     return;
@@ -350,3 +505,7 @@ u32 emu_load(u32 addr, int size) {
     if (err) return 0;
     return val;
 }
+
+void emulator_enter_kernel(void) { g_in_kernel = true; }
+
+void emulator_leave_kernel(void) { g_in_kernel = false; }

@@ -53,6 +53,7 @@ void *memset(void *dest, int c, size_t n);
 #define RARSJS_ARRAY_PREPARE(type, cap) \
     (RARSJS_ARRAY(type)) { (cap), (cap), NULL }
 #define RARSJS_ARRAY_POP(arr) &((arr)->buf[--(arr)->len])
+#define RARSJS_ARRAY_IS_EMPTY(arr) (!(arr)->buf || (arr)->len == 0)
 
 #define RARSJS_CHECK_CALL(expr, fail_label) \
     if (!(expr)) {                          \

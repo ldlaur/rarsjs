@@ -279,12 +279,6 @@ static void c_emulate(void) {
     assemble_from_file(g_next_arg, false);
     if (g_error) goto exit;
 
-    uint32_t addr;
-    g_pc = TEXT_BASE;
-    if (resolve_symbol("_start", strlen("_start"), true, &addr, NULL)) {
-        g_pc = addr;
-    }
-
     emulate_safe();
 
 exit:
@@ -297,7 +291,7 @@ exit:
 static void c_readelf(void) {
     FILE *elf = fopen(g_next_arg, "rb");
     char *error = NULL;
-    u8* elf_contents = NULL;
+    u8 *elf_contents = NULL;
 
     if (!elf) {
         error = "could not open input file";
