@@ -10,7 +10,7 @@ import { Compartment, EditorState } from "@codemirror/state";
 
 import { lineHighlightEffect, lineHighlightState } from "./LineHighlight";
 import { breakpointGutter } from "./Breakpoint";
-import { compileErrors, createAsmLinter } from "./AssemblerErrors";
+import { createAsmLinter } from "./AssemblerErrors";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands"
 
 import { parser } from "./riscv.grammar";
@@ -20,32 +20,7 @@ import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
 import { githubLight, githubDark, Theme, Colors } from './GithubTheme'
-import { continueStep, DebugState, ErrorState, initialRegs, nextStep, quitDebug, runNormal, setWasmRuntime, singleStep, startStep, wasmInterface, wasmRuntime } from "./EmulatorState";
-
-export function toUnsigned(x: number): number {
-	return x >>> 0;
-}
-
-
-const TEXT_BASE = 0x00400000;
-const TEXT_END = 0x10000000;
-const DATA_BASE = 0x10000000;
-const STACK_TOP = 0x7FFFF000;
-const STACK_LEN = 4096;
-const DATA_END = 0x70000000;
-
-export function convertNumber(x: number, decimal: boolean): string {
-	let ptr = false;
-	if (decimal) {
-		if (x >= TEXT_BASE && x <= TEXT_END) ptr = true;
-		else if (x >= STACK_TOP - STACK_LEN && x <= STACK_TOP) ptr = true;
-		else if (x >= DATA_BASE && x <= DATA_END) ptr = true;
-		if (ptr) return "0x" + (toUnsigned(x).toString(16).padStart(8, "0"));
-		else return toUnsigned(x).toString();
-	} else {
-		return toUnsigned(x).toString(16).padStart(8, "0");
-	}
-}
+import { continueStep, DebugState, ErrorState, getCurrentLine, initialRegs, nextStep, quitDebug, runNormal, setWasmRuntime, singleStep, startStep, TEXT_BASE, wasmInterface, wasmRuntime } from "./EmulatorState";
 
 let parserWithMetadata = parser.configure({
 	props: [highlighting]
@@ -337,17 +312,14 @@ const Editor: Component = () => {
 			});
 		} else {
 			view.dispatch({
-				effects: lintCompartment.reconfigure(createAsmLinter(wasmInterface))
+				effects: lintCompartment.reconfigure(createAsmLinter())
 			});
 		}
 	})
 	createComputed(() => {
 		let lineno = 0;
 		if (wasmRuntime.status == "debug" || wasmRuntime.status == "error") {
-			let linenoIdx = (wasmRuntime.pc - 0x00400000) / 4;
-			if (linenoIdx < wasmInterface.textByLinenumLen[0]) {
-				lineno = wasmInterface.textByLinenum[linenoIdx];
-			}
+			lineno = getCurrentLine(wasmRuntime);
 		}
 		if (!view) return;
 		view.dispatch({
@@ -366,7 +338,7 @@ const Editor: Component = () => {
 			extensions: [
 				tabKeymap,
 				new LanguageSupport(riscvLanguage, [dummyIndent]),
-				lintCompartment.of(createAsmLinter(wasmInterface)),
+				lintCompartment.of(createAsmLinter()),
 				breakpointGutter, // must be first so it's the first gutter
 				basicSetup,
 				theme,
@@ -389,9 +361,8 @@ const Editor: Component = () => {
 		ref={editor} />;
 }
 
-// TODO:
 let consoleText = () => {
-	if (wasmRuntime.status == "idle") return compileErrors();
+	if (wasmRuntime.status == "idle") return "";
 	return wasmRuntime.consoleText;
 }
 
@@ -407,8 +378,8 @@ const App: Component = () => {
 					</PaneResize>}
 					{() => <PaneResize firstSize={0.75} direction="vertical" second={true}>
 						{() => <PaneResize firstSize={0.55} direction="horizontal" second={true}>
-							{() => <RegisterTable pc={wasmRuntime.status == "idle" ? 0x00400000 : wasmRuntime.pc}
-								regs={wasmRuntime.status == "idle" ? initialRegs : wasmRuntime.regs}
+							{() => <RegisterTable pc={(wasmRuntime.status == "idle" || wasmRuntime.status == "asmerr") ? TEXT_BASE : wasmRuntime.pc}
+								regs={(wasmRuntime.status == "idle" || wasmRuntime.status == "asmerr") ? initialRegs : wasmRuntime.regs}
 								regWritten={wasmInterface.regWritten ? wasmInterface.regWritten[0] : 0} />}
 							{() => <MemoryView version={() => wasmRuntime.version}
 								writeAddr={wasmInterface.memWrittenAddr ? wasmInterface.memWrittenAddr[0] : 0}

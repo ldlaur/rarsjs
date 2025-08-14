@@ -1,36 +1,29 @@
 import { linter } from "@codemirror/lint";
-import { WasmInterface } from "./RiscV";
 
 import { lineHighlightEffect } from "./LineHighlight";
-import { latestAsm } from "./EmulatorState";
-import { view } from "./App";
-import { createSignal } from "solid-js";
-const [compileErrors, setCompileErrors] = createSignal("");
-export { compileErrors };
+import { buildAsm, latestAsm, setWasmRuntime, wasmRuntime } from "./EmulatorState";
 
-export const createAsmLinter = (wasmInterface: WasmInterface) => {
+export const createAsmLinter = () => {
   let delay: number = 100;
   return linter(
     async (ev) => {
-      const code = ev.state.doc.toString();
-      if (latestAsm["text"] == code) return [];
-      latestAsm["text"] = code;
-      let err = await wasmInterface.build(code);
-      view.dispatch({
+      if (wasmRuntime.status != "idle" && wasmRuntime.status != "stopped" && wasmRuntime.status != "asmerr") return [];
+      console.log(wasmRuntime.status, "starting");
+      if (latestAsm["text"] != ev.state.doc.toString())
+        await buildAsm(wasmRuntime, setWasmRuntime);
+      ev.dispatch({
         effects: lineHighlightEffect.of(0), // disable the line highlight, as line numbering starts from 1
       });
-      if (err !== null) {
-        setCompileErrors(`Error on line ${err.line}: ${err.message}`);
+      if (wasmRuntime.status === "asmerr") {
         return [
           {
-            from: ev.state.doc.line(err.line).from,
-            to: ev.state.doc.line(err.line).to,
-            message: err.message,
+            from: ev.state.doc.line(wasmRuntime.line).from,
+            to: ev.state.doc.line(wasmRuntime.line).to,
+            message: wasmRuntime.message,
             severity: "error",
           },
         ];
       } else {
-        setCompileErrors("");
         return [];
       }
     },

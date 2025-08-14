@@ -1,5 +1,5 @@
+import { convertNumber } from "./EmulatorState";
 import wasmUrl from "./main.wasm?url";
-import { convertNumber } from "./App";
 
 interface WasmExports {
   emulate(): void;

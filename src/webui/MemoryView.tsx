@@ -1,8 +1,7 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { Component, createSignal, onMount, createEffect, For, Show } from "solid-js";
 import { TabSelector } from "./TabSelector";
-import { convertNumber } from './App';
-import { ShadowEntry, wasmInterface, wasmRuntime } from "./EmulatorState";
+import { DATA_BASE, shadowStackAugmented, ShadowStackAugmentedEnt, STACK_LEN, STACK_TOP, TEXT_BASE, wasmRuntime } from "./EmulatorState";
 const ROW_HEIGHT: number = 24;
 
 export const MemoryView: Component<{ version: () => any, writeAddr: number, writeLen: number, sp: number, load: (addr: number, pow: number) => number | null }> = (props) => {
@@ -63,9 +62,9 @@ export const MemoryView: Component<{ version: () => any, writeAddr: number, writ
     });
 
     const getStartAddr = () => {
-        if (activeTab() == ".text") return 0x00400000;
-        else if (activeTab() == ".data") return 0x10000000;
-        else if (activeTab() == "stack") return 0x7FFFF000 - 65536; // TODO: runtime stack size detection
+        if (activeTab() == ".text") return TEXT_BASE;
+        else if (activeTab() == ".data") return DATA_BASE;
+        else if (activeTab() == "stack") return STACK_TOP - 65536; // TODO: runtime stack size detection
         return 0;
     }
     // FIXME: selecting data should not also select the address column
@@ -75,7 +74,10 @@ export const MemoryView: Component<{ version: () => any, writeAddr: number, writ
             <div ref={parentRef} class="font-mono text-lg overflow-auto theme-scrollbar ml-2">
                 <div ref={dummyChunk} class="invisible absolute ">{"000000000"}</div>
                 <Show when={activeTab() == "frames"}>
-                    <ShadowStack shadowStack={(wasmRuntime.status == "debug" || wasmRuntime.status == "error") ? wasmRuntime.shadowStack : []} writeLen={props.writeLen} writeAddr={props.writeAddr} version={props.version} load={props.load} />
+                    <ShadowStack
+                        shadowStackAugmented={(wasmRuntime.status == "debug" || wasmRuntime.status == "error")
+                            ? shadowStackAugmented(wasmRuntime.shadowStack, props.load, props.writeAddr, props.writeLen) : []}
+                        version={props.version} />
                 </Show>
                 <Show when={activeTab() != "frames"}>
                     <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
@@ -123,32 +125,21 @@ export const MemoryView: Component<{ version: () => any, writeAddr: number, writ
     );
 };
 
-const ShadowStack: Component<{ version: () => any, shadowStack: ShadowEntry[], writeLen: number, writeAddr: number, load: (addr: number, pow: number) => number | null }> = (props) =>
-    <For each={[...props.shadowStack].reverse()}>
+const ShadowStack: Component<{ version: () => any, shadowStackAugmented: ShadowStackAugmentedEnt[] }> = (props) =>
+    <For each={props.shadowStackAugmented}>
         {(elem, idx) => {
-            props.version();
-            let realIdx = props.shadowStack.length - 1 - idx();
-            let startSp = idx() == 0 ? wasmInterface.regsArr[2 - 1] : props.shadowStack[realIdx + 1].sp;
-            let elems = [];
-            for (let ptr = elem.sp - 4; ptr >= startSp; ptr -= 4) {
-                let text = props.load ? convertNumber(props.load(ptr, 4), true) : "0";
-                if (wasmInterface.callsanWrittenBy) {
-                    let off = (ptr - (0x7FFFF000 - 4096)) / 4;
-                    let regidx = wasmInterface.callsanWrittenBy[off];
-                    if (regidx == 0xff) text = "??";
-                    else if (regidx != 0) text += " (" + wasmInterface.getRegisterName(regidx) + ")";
-                }
-                let isAnimated = ptr >= props.writeAddr && ptr < props.writeAddr + props.writeLen;
-                elems.push(<div class="flex flex-row">
-                    <a class="theme-fg2 pr-2">
-                        {ptr.toString(16)}
-                    </a>
-                    <div class={isAnimated ? "animate-fade-highlight" : ""}>{text}</div>
-                </div>);
-            }
             return <div class="flex flex-col pb-4">
                 <div >{elem.name}</div>
-                {elems}
+                <For each={elem.elems}>
+                    {(elem, idx) =>
+                        <div class="flex flex-row">
+                            <a class="theme-fg2 pr-2">
+                                {elem.addr}
+                            </a>
+                            <div class={elem.isAnimated ? "animate-fade-highlight" : ""}>{elem.text}</div>
+                        </div>
+                    }
+                </For>
             </div>
         }}
     </For>

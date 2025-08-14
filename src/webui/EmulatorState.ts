@@ -4,6 +4,30 @@ import { view } from "./App";
 import { forceLinting } from "@codemirror/lint";
 import { breakpointState } from "./Breakpoint";
 
+export function toUnsigned(x: number): number {
+	return x >>> 0;
+}
+
+export const TEXT_BASE = 0x00400000;
+export const TEXT_END = 0x10000000;
+export const DATA_BASE = 0x10000000;
+export const STACK_TOP = 0x7FFFF000;
+export const STACK_LEN = 4096;
+export const DATA_END = 0x70000000;
+
+export function convertNumber(x: number, decimal: boolean): string {
+	let ptr = false;
+	if (decimal) {
+		if (x >= TEXT_BASE && x <= TEXT_END) ptr = true;
+		else if (x >= STACK_TOP - STACK_LEN && x <= STACK_TOP) ptr = true;
+		else if (x >= DATA_BASE && x <= DATA_END) ptr = true;
+		if (ptr) return "0x" + (toUnsigned(x).toString(16).padStart(8, "0"));
+		else return toUnsigned(x).toString();
+	} else {
+		return toUnsigned(x).toString(16).padStart(8, "0");
+	}
+}
+
 export type ShadowEntry = { name: string; args: number[]; sp: number };
 
 export let breakpoints = new Set();
@@ -49,31 +73,40 @@ export type StoppedState = {
 	version: number;
 };
 
+export type AsmErrState = {
+	status: "asmerr";
+	consoleText: string;
+	line: number;
+	message: string;
+	version: number;
+};
+
 export type RuntimeState =
 	| IdleState
 	| RunningState
 	| DebugState
 	| ErrorState
-	| StoppedState;
+	| StoppedState
+	| AsmErrState;
 
 export const initialRegs = new Array(31).fill(0);
-export const [wasmRuntime, setWasmRuntime] = createStore<RuntimeState>({ status: "idle", version: 0 });
+export let [wasmRuntime, setWasmRuntime] = createStore<RuntimeState>({ status: "idle", version: 0 });
 
 export const wasmInterface = new WasmInterface();
 export let latestAsm = { text: "" };
 
 // TODO: cleanup
 function setBreakpoints(): void {
-  breakpoints = new Set();
-  view.state.field(breakpointState).between(0, view.state.doc.length, (from) => {
-    const line = view.state.doc.lineAt(from);
-    const lineNum = line.number;
-    for (let i = 0; i < 65536; i++) {
-      if (wasmInterface.textByLinenum[i] == lineNum) {
-        breakpoints.add(0x00400000 + i * 4);
-      }
-    }
-  });
+	breakpoints = new Set();
+	view.state.field(breakpointState).between(0, view.state.doc.length, (from) => {
+		const line = view.state.doc.lineAt(from);
+		const lineNum = line.number;
+		for (let i = 0; i < 65536; i++) {
+			if (wasmInterface.textByLinenum[i] == lineNum) {
+				breakpoints.add(TEXT_BASE + i * 4);
+			}
+		}
+	});
 }
 
 function buildShadowStack() {
@@ -120,19 +153,35 @@ function updateReactiveState(setRuntime) {
 	}
 }
 
-export async function runNormal(wasmRuntime: RuntimeState, setRuntime): Promise<void> {
+export async function buildAsm(_runtime: RuntimeState, setRuntime): Promise<void> {
 	const asm = view.state.doc.toString();
 	const err = await wasmInterface.build(asm);
 	if (err !== null) {
-		forceLinting(view);
-		setRuntime({ status: "idle" });
-		return;
+		setRuntime({
+			status: "asmerr",
+			consoleText: `Error on line ${err.line}: ${err.message}`,
+			line: err.line,
+			message: err.message,
+			version: globalVersion++
+		});
+	} else {
+		console.log("here");
+		if (_runtime.status != "stopped" || asm != latestAsm.text) setRuntime({ status: "idle", version: globalVersion++ });
 	}
 	latestAsm.text = asm;
+}
+
+export async function runNormal(_runtime: RuntimeState, setRuntime): Promise<void> {
+	await buildAsm(_runtime, setRuntime);
+	if (_runtime.status == "asmerr") {
+		forceLinting(view);
+		return;
+	}
+
 	setRuntime({
 		status: "running",
 		consoleText: "",
-		pc: wasmInterface.pc?.[0] ?? 0x00400000,
+		pc: wasmInterface.pc?.[0] ?? TEXT_BASE,
 		regs: [...wasmInterface.regsArr?.slice(0, 31) ?? initialRegs],
 	});
 
@@ -144,14 +193,14 @@ export async function runNormal(wasmRuntime: RuntimeState, setRuntime): Promise<
 	updateReactiveState(setRuntime);
 }
 
-export async function startStep(runtime: RuntimeState, setRuntime): Promise<void> {
-	const asm = view.state.doc.toString();
-	const err = await wasmInterface.build(asm);
-	if (err !== null) {
+export async function startStep(_runtime: RuntimeState, setRuntime): Promise<void> {
+	console.log(_runtime);
+	await buildAsm(_runtime, setRuntime);
+	if (_runtime.status == "asmerr") {
 		forceLinting(view);
 		return;
 	}
-	latestAsm.text = asm;
+	console.log("hereS");
 
 	setRuntime({
 		status: "debug",
@@ -202,5 +251,42 @@ export function nextStep(_runtime: DebugState, setRuntime): void {
 }
 
 export function quitDebug(_runtime: DebugState, setRuntime): void {
-	setRuntime({ status: "idle" });
+	setRuntime({ status: "idle", version: globalVersion++ });
+}
+
+// in accordance to CodeMirror, 0 = invalid line (PC out of the file)
+export function getCurrentLine(_runtime: DebugState | ErrorState): number {
+	let linenoIdx = (_runtime.pc - TEXT_BASE) / 4;
+	if (linenoIdx < wasmInterface.textByLinenumLen[0])
+		return wasmInterface.textByLinenum[linenoIdx];
+	return 0;
+}
+
+export type ShadowStackAugmentedEnt = {
+    name: string,
+    elems: { addr: string, isAnimated: boolean, text: string }[]
+}
+
+// TODO: cleanup and make type safe
+export function shadowStackAugmented(shadowStack: ShadowEntry[], load, writeAddr, writeLen): ShadowStackAugmentedEnt[] {
+    let allInfo = new Array(shadowStack.length);
+    for (let i = 0; i < shadowStack.length; i++) {
+        let ent = shadowStack[i];
+        let startSp = i == (shadowStack.length - 1) ? wasmInterface.regsArr[2 - 1] : shadowStack[i + 1].sp;
+        let elemCnt = (ent.sp - startSp) / 4;
+        let elems = new Array(elemCnt);
+        for (let j = 0, ptr = ent.sp - 4; j < elemCnt; j++, ptr -= 4) {
+            let text = load ? convertNumber(load(ptr, 4), true) : "0";
+            if (wasmInterface.callsanWrittenBy) {
+                let off = (ptr - (0x7FFFF000 - 4096)) / 4;
+                let regidx = wasmInterface.callsanWrittenBy[off];
+                if (regidx == 0xff) text = "??";
+                else if (regidx != 0) text += " (" + wasmInterface.getRegisterName(regidx) + ")";
+            }
+            let isAnimated = ptr >= writeAddr && ptr < writeAddr + writeLen;
+            elems[j] = { addr: ptr.toString(16), isAnimated, text };
+        }
+        allInfo[shadowStack.length - 1 - i] = { name: ent.name, elems };
+    }
+    return allInfo;
 }
