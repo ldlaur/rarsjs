@@ -1,6 +1,6 @@
 AFL_CC ?= afl-clang-fast
 LIBFUZZER_CC ?= clang
-CFLAGS ?= -g -fsanitize=address
+CFLAGS ?= -g
 RARSJS_FLAGS ?= -Isrc/exec/ezld/include -g3
 LIBFUZZER_FLAGS ?= $(RARSJS_FLAGS) -fsanitize=address -fsanitize=fuzzer
 AFL_FLAGS ?= $(RARSJS_FLAGS) -O2 -fsanitize=address

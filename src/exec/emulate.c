@@ -1,3 +1,5 @@
+#include "rarsjs/emulate.h"
+
 #include "rarsjs/callsan.h"
 #include "rarsjs/core.h"
 #include "rarsjs/dev.h"
@@ -12,7 +14,7 @@ extern u32 g_error_line;
 extern u32 g_runtime_error_params[2];
 extern Error g_runtime_error_type;
 
-static bool g_in_kernel = false;
+static int g_privilege_level = PRIV_USER;
 
 // end is inclusive, like in Verilog
 static inline u32 extr(u32 val, u32 end, u32 start) {
@@ -83,7 +85,7 @@ u8 *emulator_get_addr(u32 addr, int size, Section **out_sec) {
         return NULL;
     }
 
-    if (addr + size >= addr_sec->contents.len + addr_sec->base) {
+    if (addr + size > addr_sec->contents.len + addr_sec->base) {
         return NULL;
     }
 
@@ -95,14 +97,16 @@ u32 LOAD(u32 addr, int size, bool *err) {
     Section *mem_sec;
     u8 *mem = emulator_get_addr(addr, size, &mem_sec);
 
-    if (!mem_sec || !mem_sec->read || (mem_sec->super && !g_in_kernel)) {
+    if (!mem_sec || !mem_sec->read ||
+        (mem_sec->super && g_privilege_level == PRIV_USER)) {
         *err = true;
         return 0;
     }
 
     if (mem_sec->base == MMIO_BASE) {
-        *err = !mmio_read(addr - MMIO_BASE, size);
-        return 0;
+        u32 ret;
+        *err = !mmio_read(addr - MMIO_BASE, size, &ret);
+        return ret;
     } else if (!mem) {
         *err = true;
         return 0;
@@ -131,7 +135,8 @@ void STORE(u32 addr, u32 val, int size, bool *err) {
     Section *mem_sec;
     u8 *mem = emulator_get_addr(addr, size, &mem_sec);
 
-    if (!mem_sec || !mem_sec->write || (mem_sec->super && !g_in_kernel)) {
+    if (!mem_sec || !mem_sec->write ||
+        (mem_sec->super && g_privilege_level == PRIV_USER)) {
         *err = true;
         return;
     }
@@ -159,14 +164,7 @@ void STORE(u32 addr, u32 val, int size, bool *err) {
 }
 
 void do_syscall() {
-    // Machine mode is not supported
-    if (g_in_kernel) {
-        g_runtime_error_params[0] = g_pc;
-        g_runtime_error_type = ERROR_DOUBLE;
-        return;
-    }
-
-    g_in_kernel = true;
+    emulator_enter_kernel();
 
     if (!RARSJS_ARRAY_IS_EMPTY(&g_kernel_text->contents)) {
         g_csr[CSR_SEPC] = g_pc;
@@ -222,13 +220,13 @@ void do_syscall() {
         emu_exit();
     }
 
-    g_in_kernel = false;
+    emulator_leave_kernel();
     g_pc += 4;
 }
 
 void do_sret() {
     g_pc = g_csr[CSR_SEPC] + 4;
-    g_in_kernel = false;
+    emulator_leave_kernel();
 }
 
 void emulate() {
@@ -481,7 +479,7 @@ void emulate() {
 
         // TODO: CSR instructions themselves are not privileged, s/m CSRs are,
         // so this is wrong, but close enough
-        if (!g_in_kernel) {
+        if (g_privilege_level == PRIV_USER) {
             g_runtime_error_params[0] = g_pc;
             g_runtime_error_type = ERROR_PROTECTION;
         }
@@ -506,6 +504,29 @@ u32 emu_load(u32 addr, int size) {
     return val;
 }
 
-void emulator_enter_kernel(void) { g_in_kernel = true; }
+void emulator_enter_kernel(void) { g_privilege_level = PRIV_SUPERVISOR; }
 
-void emulator_leave_kernel(void) { g_in_kernel = false; }
+void emulator_leave_kernel(void) { g_privilege_level = PRIV_USER; }
+
+void emulator_interrupt(u32 scause) {
+    u32 off = scause & ~CAUSE_INTERRUPT;
+
+    // This is probably all wrong
+
+    switch (scause) {
+        case CAUSE_SUPERVISOR_EXTERNAL:
+        case CAUSE_SUPERVISOR_SOFTWARE:
+        case CAUSE_SUPERVISOR_TIMER:
+            g_csr[CSR_MIP] |= (1 << off);
+            break;
+
+        case CAUSE_MACHINE_EXTERNAL:
+        case CAUSE_MACHINE_SOFTWARE:
+        case CAUSE_MACHINE_TIMER:
+            g_csr[CSR_SIP] |= (1 << off);
+            break;
+
+        default:
+            return;
+    }
+}

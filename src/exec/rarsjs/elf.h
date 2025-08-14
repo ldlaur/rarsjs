@@ -9,7 +9,8 @@
 // Constants taken from musl libc
 // https://github.com/kraj/musl/blob/1880359b54ff7dd9f5016002bfdae4b136007dde/include/elf.h#L3253
 // Distributed under the MIT license
-// License: https://github.com/kraj/musl/blob/1880359b54ff7dd9f5016002bfdae4b136007dde/COPYRIGHT
+// License:
+// https://github.com/kraj/musl/blob/1880359b54ff7dd9f5016002bfdae4b136007dde/COPYRIGHT
 #define EI_NIDENT (16)
 #define EI_MAG0 0
 #define ELFMAG0 0x7f
@@ -2559,7 +2560,8 @@
 #define R_LARCH_32_PCREL 99
 #define R_LARCH_RELAX 100
 
-// Source from SalernOS Kernel: https://github.com/Alessandro-Salerno/SalernOS-Kernel/blob/main/src/com/sys/elf.c
+// Source from SalernOS Kernel:
+// https://github.com/Alessandro-Salerno/SalernOS-Kernel/blob/main/src/com/sys/elf.c
 // Docs from: https://wiki.osdev.org/ELF
 typedef struct {
     u8 magic[4];
@@ -2581,7 +2583,7 @@ typedef struct {
     u16 shent_sz;
     u16 shent_num;
     u16 shdr_str_idx;
-} __attribute__((packed)) ElfHeader;
+} __attribute__((__packed__)) ElfHeader;
 
 typedef struct {
     u32 type;
@@ -2605,7 +2607,7 @@ typedef struct {
     u32 info;
     u32 align;
     u32 ent_sz;
-} __attribute__((packed)) ElfSectionHeader;
+} __attribute__((__packed__)) ElfSectionHeader;
 
 typedef struct {
     u32 name_off;
@@ -2614,7 +2616,7 @@ typedef struct {
     u8 info;
     u8 other;
     u16 shent_idx;
-} __attribute__((packed)) ElfSymtabEntry;
+} __attribute__((__packed__)) ElfSymtabEntry;
 
 typedef struct {
     u32 offset;
@@ -2683,7 +2685,8 @@ typedef struct {
     REadElfRelaSection *relas;
 } ReadElfResult;
 
-bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out, char **error);
+bool elf_read(u8 *elf_contents, size_t elf_contents_len, ReadElfResult *out,
+              char **error);
 bool elf_emit_exec(void **out, size_t *len, char **error);
 bool elf_emit_obj(void **out, size_t *len, char **error);
 bool elf_load(u8 *elf_contents, size_t elf_len, char **error);

@@ -1456,7 +1456,6 @@ bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
     }
     if (ret) {
         *addr = ret->addr;
-        printf("returning 0x%08x for sym %s\n", *addr, sym);
         if (sec) {
             *sec = ret->section;
         }
