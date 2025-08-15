@@ -46,10 +46,11 @@ const char *const REGISTER_NAMES[] = {
     "s6",   "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"};
 
 const char *const CSR_NAMES[] = {
-    [0x100] = "sstatus",  [0x104] = "sie",      [0x105] = "stvec",
-    [0x140] = "sscratch", [0x141] = "sepc",     [0x142] = "scause",
-    [0x144] = "sip",      [0x300] = "mstatus",  [0x304] = "mie",
-    [0x305] = "mtvec",    [0x340] = "mscratch", [0x342] = "mcause",
+    [0x100] = "sstatus",  [0x104] = "sie",     [0x105] = "stvec",
+    [0x140] = "sscratch", [0x141] = "sepc",    [0x142] = "scause",
+    [0x144] = "sip",      [0x300] = "mstatus", [0x302] = "medeleg",
+    [0x303] = "mideleg",  [0x304] = "mie",     [0x305] = "mtvec",
+    [0x340] = "mscratch", [0x341] = "mepc",    [0x342] = "mcause",
     [0x344] = "mip"};
 
 // clang-format off

@@ -163,13 +163,54 @@ void STORE(u32 addr, u32 val, int size, bool *err) {
     *err = false;
 }
 
+void update_pending_interrupts(u32 cause) {
+    if (g_csr[CSR_MIDELEG] & (1 << cause)) {
+        g_csr[CSR_SIP] |= 1 << cause;
+    } else {
+        g_csr[CSR_MIP] |= 1 << cause;
+    }
+}
+
+void jump_to_exception(u32 cause) {
+    if (g_csr[CSR_MEDELEG] & (1 << cause)) {
+        g_csr[CSR_SEPC] = g_pc;
+        g_csr[CSR_SCAUSE] = cause;
+        g_pc = g_csr[CSR_STVEC];
+    } else {
+        g_csr[CSR_MEPC] = g_pc;
+        g_csr[CSR_MCAUSE] = cause;
+        g_pc = g_csr[CSR_MTVEC];
+    }
+
+    g_pc -= 4;
+}
+
+bool jump_to_pending(u32 vec, u32 enabled, u32 *pending_ptr, u32 *cause_ptr,
+                     u32 *pc_ptr) {
+    if (!(*pending_ptr & enabled)) {
+        return false;
+    }
+
+    *pc_ptr = g_pc;
+    g_pc = vec;
+    u32 cause = __builtin_ctzl(*pending_ptr & enabled);
+    *pending_ptr &= ~(1 << cause);
+    *cause_ptr = cause;
+    return true;
+}
+
 void do_syscall() {
+    u32 scause = CAUSE_U_ECALL;
+    if (g_privilege_level == PRIV_SUPERVISOR) {
+        scause = CAUSE_S_ECALL;
+    }
     emulator_enter_kernel();
 
     if (!RARSJS_ARRAY_IS_EMPTY(&g_kernel_text->contents)) {
         g_csr[CSR_SEPC] = g_pc;
+        g_csr[CSR_SCAUSE] = scause;
+        g_csr[CSR_SEPC] = g_pc;
         g_pc = g_csr[CSR_STVEC];
-        // TODO: set other CSRs
         return;
     }
 
@@ -226,7 +267,7 @@ void do_syscall() {
 
 void do_sret() {
     g_pc = g_csr[CSR_SEPC] + 4;
-    emulator_leave_kernel();
+    emulator_leave_kernel(); // TODO: ecall can come from kernel itself
 }
 
 void emulate() {
@@ -235,6 +276,13 @@ void emulate() {
     g_reg_written = 0;
     g_regs[0] = 0;
     bool err;
+
+    // Check for interrupt
+    if (!jump_to_pending(g_csr[CSR_MTVEC], g_csr[CSR_MIE], &g_csr[CSR_MIP],
+                         &g_csr[CSR_MCAUSE], &g_csr[CSR_MEPC])) {
+        jump_to_pending(g_csr[CSR_STVEC], g_csr[CSR_SIE], &g_csr[CSR_SIP],
+                        &g_csr[CSR_SCAUSE], &g_csr[CSR_SEPC]);
+    }
 
     u32 inst = LOAD(g_pc, 4, &err);
     if (err) {
@@ -511,22 +559,25 @@ void emulator_leave_kernel(void) { g_privilege_level = PRIV_USER; }
 void emulator_interrupt(u32 scause) {
     u32 off = scause & ~CAUSE_INTERRUPT;
 
-    // This is probably all wrong
-
     switch (scause) {
         case CAUSE_SUPERVISOR_EXTERNAL:
         case CAUSE_SUPERVISOR_SOFTWARE:
         case CAUSE_SUPERVISOR_TIMER:
-            g_csr[CSR_MIP] |= (1 << off);
+            g_csr[CSR_SIP] |= (1 << off);
             break;
 
         case CAUSE_MACHINE_EXTERNAL:
         case CAUSE_MACHINE_SOFTWARE:
         case CAUSE_MACHINE_TIMER:
-            g_csr[CSR_SIP] |= (1 << off);
+            g_csr[CSR_MIP] |= (1 << off);
             break;
 
         default:
+            if (scause & CAUSE_INTERRUPT) {
+                update_pending_interrupts(off);
+            } else {
+                jump_to_exception(scause);
+            }
             return;
     }
 }
