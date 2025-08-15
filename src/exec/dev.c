@@ -164,12 +164,10 @@ bool mmio_write(u32 mmio_addr, int size, u32 value) {
     if (dev_num > sizeof(g_mmio_devices) / sizeof(Device)) {
         return false;
     }
-
     Device *dev = &g_mmio_devices[dev_num];
     u8 *buf = dev->buffer;
     u32 off = mmio_addr - (dev_num * MMIO_DEVICE_RSV);
-
-    if (!rarsjs_buf_write(buf, size, value)) {
+    if (!rarsjs_buf_write(buf + off, size, value)) {
         return false;
     }
 

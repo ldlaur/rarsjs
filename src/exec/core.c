@@ -229,6 +229,14 @@ void parse_ident(Parser *p, const char **str, size_t *len) {
     *len = end - start;
 }
 
+bool str_eq(const char *txt, size_t len, const char *c) {
+    if (len != strlen(c)) return false;
+    for (size_t i = 0; i < len; i++) {
+        if (c[i] != txt[i]) return false;
+    }
+    return true;
+}
+
 bool str_eq_case(const char *txt, size_t len, const char *c) {
     if (len != strlen(c)) return false;
     for (size_t i = 0; i < len; i++) {
@@ -691,7 +699,7 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
         asm_emit(0, p->startline);
         return NULL;
     }
-    i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_section->emit_idx + g_section->base);
 
     u32 inst = 0;
     if (str_eq_case(opcode, opcode_len, "beq")) inst = BEQ(s1, s2, simm);
@@ -728,7 +736,7 @@ const char *handle_branch_zero(Parser *p, const char *opcode,
         asm_emit(0, p->startline);
         return NULL;
     }
-    i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_section->emit_idx + g_section->base);
 
     u32 inst = 0;
     if (str_eq_case(opcode, opcode_len, "beqz")) inst = BEQ(s, 0, simm);
@@ -798,7 +806,7 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
         asm_emit(0, p->startline);
         return NULL;
     }
-    i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_section->emit_idx + g_section->base);
     asm_emit(JAL(d, simm), p->startline);
     return NULL;
 }
@@ -918,7 +926,7 @@ const char *handle_la(Parser *p, const char *opcode, size_t opcode_len) {
         return NULL;
     }
     if (err) return err;
-    i32 simm = addr - (g_section->emit_idx + TEXT_BASE);
+    i32 simm = addr - (g_section->emit_idx + g_section->base);
 
     u32 lo = simm & 0xFFF;
     if (lo >= 0x800) lo -= 0x1000;
@@ -1066,7 +1074,7 @@ const char *resolve_kernel_start(u32 *start_pc) {
 }
 
 const char *resolve_entry(u32 *start_pc) {
-    if (!resolve_kernel_start(start_pc)) {
+    if (resolve_kernel_start(start_pc) == NULL) {
         emulator_enter_kernel();
         return NULL;
     }
@@ -1196,6 +1204,23 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
             size_t directive_len;
             parse_ident(p, &directive, &directive_len);
             skip_whitespace(p);
+            
+            if (str_eq_case(directive, directive_len, "section")) {
+                const char *secname;
+                size_t secname_len;
+                parse_ident(p, &secname, &secname_len);
+                SectionPtr sec = NULL;
+                // scan already-existing section names
+                for (size_t i = 0; !sec && i < g_sections.len; i++)
+                    if (str_eq(secname, secname_len, g_sections.buf[i]->name)) sec = g_sections.buf[i];
+                if (!sec) {
+                    err = "Section not found";
+                    break;
+                }
+                g_section = sec;
+                continue;
+            }
+
             if (str_eq_case(directive, directive_len, "data")) {
                 g_section = g_data;
                 continue;
@@ -1300,6 +1325,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                             err = "Invalid string";
                             break;
                         }
+                        printf("placing stuff at %s %x\n", g_section->name, g_section->base);
                         for (size_t i = 0; i < out_len; i++)
                             asm_emit_byte(out[i], p->startline);
                         asm_emit_byte(0, p->startline);
@@ -1334,6 +1360,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                 }
             }
             u32 addr = g_section->emit_idx + g_section->base;
+            printf("%.*s: %p\n", ident_len, ident, addr);
             *RARSJS_ARRAY_PUSH(&g_labels) = (LabelData){.txt = ident,
                                                         .len = ident_len,
                                                         .addr = addr,
@@ -1495,6 +1522,9 @@ void prepare_runtime_sections() {
 
     *RARSJS_ARRAY_PUSH(&g_sections) = g_text;
     *RARSJS_ARRAY_PUSH(&g_sections) = g_data;
+    *RARSJS_ARRAY_PUSH(&g_sections) = g_kernel_text;
+    *RARSJS_ARRAY_PUSH(&g_sections) = g_kernel_data;
+    *RARSJS_ARRAY_PUSH(&g_sections) = g_mmio;
     prepare_stack();
 }
 
