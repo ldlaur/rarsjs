@@ -41,7 +41,7 @@ typedef struct {
 
 static Device g_mmio_devices[];
 
-static void ric_throw_interrupt(u32 devaddr) {
+static void ric_send_interrupt(u32 devaddr) {
     RICRegisters *ric = (void *)g_mmio_devices[6].buffer;
     ric->devaddr = devaddr;
     emulator_interrupt(CAUSE_SUPERVISOR_EXTERNAL);
@@ -115,7 +115,7 @@ static bool console_handler(u32 devaddr, u8 *buf, u32 op_size, u32 off,
         console->internal.batch_counter++;
         if (console->internal.batch_counter >= console->batch_size) {
             console->internal.batch_counter = 0;
-            ric_throw_interrupt(devaddr);
+            ric_send_interrupt(devaddr);
         }
     }
 
