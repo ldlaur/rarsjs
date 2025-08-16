@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "rarsjs/callsan.h"
+#include "rarsjs/dev.h"
 #include "rarsjs/elf.h"
 #include "rarsjs/emulate.h"
 
@@ -20,16 +21,7 @@ static RARSJS_ARRAY(DeferredInsn)
 
 static Section *g_section;
 
-export bool g_exited;
-export int g_exit_code;
-
 export bool g_in_fixup;
-export u32 g_regs[32];
-export u32 g_csr[4096];
-export u32 g_pc;
-export u32 g_mem_written_len;
-export u32 g_mem_written_addr;
-export u32 g_reg_written;
 export u32 g_error_line;
 export const char *g_error;
 
@@ -1082,9 +1074,83 @@ const char *resolve_entry(u32 *start_pc) {
     return resolve_start(start_pc);
 }
 
+static void prepare_default_syms(void) {
+#define MMIO_LABEL(name, addrr)                                      \
+    *RARSJS_ARRAY_PUSH(&g_labels) = (LabelData){.txt = (name),       \
+                                                .len = strlen(name), \
+                                                .addr = (addrr),     \
+                                                .section = g_mmio}
+
+    MMIO_LABEL("_MMIO_BASE", MMIO_BASE);
+    MMIO_LABEL("_MMIO_END", MMIO_END);
+
+    MMIO_LABEL("_DMA0_BASE", DMA0_BASE);
+    MMIO_LABEL("_DMA0_DST_ADDR", DMA0_DST_ADDR);
+    MMIO_LABEL("_DMA0_SRC_ADDR", DMA0_SRC_ADDR);
+    MMIO_LABEL("_DMA0_DST_INC", DMA0_DST_INC);
+    MMIO_LABEL("_DMA0_SRC_INC", DMA0_SRC_INC);
+    MMIO_LABEL("_DMA0_LEN", DMA0_LEN);
+    MMIO_LABEL("_DMA0_TRANS_SIZE", DMA0_TRANS_SIZE);
+    MMIO_LABEL("_DMA0_CNTL", DMA0_CNTL);
+    MMIO_LABEL("_DMA0_END", DMA0_END);
+
+    MMIO_LABEL("_DMA1_BASE", DMA1_BASE);
+    MMIO_LABEL("_DMA1_DST_ADDR", DMA1_DST_ADDR);
+    MMIO_LABEL("_DMA1_SRC_ADDR", DMA1_SRC_ADDR);
+    MMIO_LABEL("_DMA1_DST_INC", DMA1_DST_INC);
+    MMIO_LABEL("_DMA1_SRC_INC", DMA1_SRC_INC);
+    MMIO_LABEL("_DMA1_LEN", DMA1_LEN);
+    MMIO_LABEL("_DMA1_TRANS_SIZE", DMA1_TRANS_SIZE);
+    MMIO_LABEL("_DMA1_CNTL", DMA1_CNTL);
+    MMIO_LABEL("_DMA1_END", DMA1_END);
+
+    MMIO_LABEL("_DMA2_BASE", DMA2_BASE);
+    MMIO_LABEL("_DMA2_DST_ADDR", DMA2_DST_ADDR);
+    MMIO_LABEL("_DMA2_SRC_ADDR", DMA2_SRC_ADDR);
+    MMIO_LABEL("_DMA2_DST_INC", DMA2_DST_INC);
+    MMIO_LABEL("_DMA2_SRC_INC", DMA2_SRC_INC);
+    MMIO_LABEL("_DMA2_LEN", DMA2_LEN);
+    MMIO_LABEL("_DMA2_TRANS_SIZE", DMA2_TRANS_SIZE);
+    MMIO_LABEL("_DMA2_CNTL", DMA2_CNTL);
+    MMIO_LABEL("_DMA2_END", DMA2_END);
+
+    MMIO_LABEL("_DMA3_BASE", DMA3_BASE);
+    MMIO_LABEL("_DMA3_DST_ADDR", DMA3_DST_ADDR);
+    MMIO_LABEL("_DMA3_SRC_ADDR", DMA3_SRC_ADDR);
+    MMIO_LABEL("_DMA3_DST_INC", DMA3_DST_INC);
+    MMIO_LABEL("_DMA3_SRC_INC", DMA3_SRC_INC);
+    MMIO_LABEL("_DMA3_LEN", DMA3_LEN);
+    MMIO_LABEL("_DMA3_TRANS_SIZE", DMA3_TRANS_SIZE);
+    MMIO_LABEL("_DMA3_CNTL", DMA3_CNTL);
+    MMIO_LABEL("_DMA3_END", DMA3_END);
+
+    MMIO_LABEL("_POWER0_BASE", POWER0_BASE);
+    MMIO_LABEL("_POWER0_CNTL", POWER0_CNTL);
+    MMIO_LABEL("_POWER0_END", POWER0_END);
+
+    MMIO_LABEL("_CONSOLE0_BASE", CONSOLE0_BASE);
+    MMIO_LABEL("_CONSOLE0_IN", CONSOLE0_IN);
+    MMIO_LABEL("_CONSOLE0_OUT", CONSOLE0_OUT);
+    MMIO_LABEL("_CONSOLE0_IN_SIZE", CONSOLE0_IN_SIZE);
+    MMIO_LABEL("_CONSOLE0_BATCH_SIZE", CONSOLE0_BATCH_SIZE);
+    MMIO_LABEL("_CONSOLE0_CNTL", CONSOLE0_CNTL);
+    MMIO_LABEL("_CONSOLE0_END", CONSOLE0_END);
+
+    MMIO_LABEL("_RIC0_BASE", RIC0_BASE);
+    MMIO_LABEL("_RIC0_DEVADDR", RIC0_DEVADDR);
+    MMIO_LABEL("_RIC0_END", RIC0_END);
+    printf("_CONSOLE0_OUT = 0x%08x\n", CONSOLE0_OUT);
+
+#undef MMIO_LABEL
+}
+
 export void assemble(const char *txt, size_t s, bool allow_externs) {
     g_allow_externs = allow_externs;
+    g_in_fixup = false;
+
     callsan_init();
+    emulator_init();
+
     g_text = malloc(sizeof(*g_text));
     RARSJS_CHECK_OOM(g_text);
     g_data = malloc(sizeof(*g_data));
@@ -1093,8 +1159,6 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
     RARSJS_CHECK_OOM(g_kernel_data);
     g_kernel_text = malloc(sizeof(*g_kernel_text));
     RARSJS_CHECK_OOM(g_kernel_text);
-    g_mmio = malloc(sizeof(*g_mmio));
-    RARSJS_CHECK_OOM(g_mmio);
 
     *g_text = (Section){.name = ".text",
                         .base = TEXT_BASE,
@@ -1148,37 +1212,9 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                                .super = true,
                                .physical = false};
 
-    *g_mmio = (Section){.name = ".mmio",
-                        .base = MMIO_BASE,
-                        .limit = MMIO_END,
-                        .contents = RARSJS_ARRAY_NEW(u8),
-                        .emit_idx = 0,
-                        .align = 1,
-                        .relocations = RARSJS_ARRAY_NEW(Relocation),
-                        .read = true,
-                        .write = true,
-                        .execute = false,
-                        .super = true,
-                        .physical = false};
-
-    g_section = g_text;
-
-    g_exited = false;
-    g_exit_code = 0;
-
-    g_in_fixup = false;
-    memset(g_regs, 0, sizeof(g_regs));
-    g_pc = TEXT_BASE;
-    g_mem_written_len = 0;
-    g_mem_written_addr = 0;
-    g_reg_written = 0;
-    g_error_line = 0;
-    g_error = NULL;
-
-    memset(g_runtime_error_params, 0, sizeof(g_runtime_error_params));
-    g_runtime_error_type = 0;
-
     prepare_runtime_sections();
+    prepare_default_syms();
+    g_section = g_text;
 
     Parser parser = {0};
     parser.input = txt;
@@ -1188,9 +1224,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
     Parser *p = &parser;
     const char *err = NULL;
 
-    while (1) {
-        if (err) break;
-
+    while (!err) {
         skip_whitespace(p);
         if (p->pos == p->size) break;
         p->startline = p->lineidx;
@@ -1204,7 +1238,7 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
             size_t directive_len;
             parse_ident(p, &directive, &directive_len);
             skip_whitespace(p);
-            
+
             if (str_eq_case(directive, directive_len, "section")) {
                 const char *secname;
                 size_t secname_len;
@@ -1212,7 +1246,8 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                 SectionPtr sec = NULL;
                 // scan already-existing section names
                 for (size_t i = 0; !sec && i < g_sections.len; i++)
-                    if (str_eq(secname, secname_len, g_sections.buf[i]->name)) sec = g_sections.buf[i];
+                    if (str_eq(secname, secname_len, g_sections.buf[i]->name))
+                        sec = g_sections.buf[i];
                 if (!sec) {
                     err = "Section not found";
                     break;
@@ -1325,7 +1360,8 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                             err = "Invalid string";
                             break;
                         }
-                        printf("placing stuff at %s %x\n", g_section->name, g_section->base);
+                        printf("placing stuff at %s %x\n", g_section->name,
+                               g_section->base);
                         for (size_t i = 0; i < out_len; i++)
                             asm_emit_byte(out[i], p->startline);
                         asm_emit_byte(0, p->startline);
@@ -1492,7 +1528,7 @@ bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
     return false;
 }
 
-void prepare_stack() {
+void prepare_aux_sections() {
     g_stack = malloc(sizeof(Section));
     RARSJS_CHECK_OOM(g_stack);
     *g_stack = (Section){.name = "RARSJS_STACK",
@@ -1513,19 +1549,33 @@ void prepare_stack() {
 
     g_regs[2] = STACK_TOP;  // FIXME: now i am diverging from RARS, which
                             // does STACK_TOP - 4
+
+    g_mmio = malloc(sizeof(*g_mmio));
+    RARSJS_CHECK_OOM(g_mmio);
+    *g_mmio = (Section){.name = ".mmio",
+                        .base = MMIO_BASE,
+                        .limit = MMIO_END,
+                        .contents = RARSJS_ARRAY_NEW(u8),
+                        .emit_idx = 0,
+                        .align = 1,
+                        .relocations = RARSJS_ARRAY_NEW(Relocation),
+                        .read = true,
+                        .write = true,
+                        .execute = false,
+                        .super = true,
+                        .physical = false};
+
     *RARSJS_ARRAY_PUSH(&g_sections) = g_stack;
+    *RARSJS_ARRAY_PUSH(&g_sections) = g_mmio;
 }
 
 void prepare_runtime_sections() {
     // TODO: dynamically growing stacks?
-    // TODO: handle OOM
 
     *RARSJS_ARRAY_PUSH(&g_sections) = g_text;
     *RARSJS_ARRAY_PUSH(&g_sections) = g_data;
     *RARSJS_ARRAY_PUSH(&g_sections) = g_kernel_text;
     *RARSJS_ARRAY_PUSH(&g_sections) = g_kernel_data;
-    *RARSJS_ARRAY_PUSH(&g_sections) = g_mmio;
-    prepare_stack();
 }
 
 void free_runtime() {

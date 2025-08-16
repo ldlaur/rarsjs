@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "rarsjs/core.h"
+#include "rarsjs/emulate.h"
 #include "rarsjs/util.h"
 
 // TODO: if the host machine and RISC-V have mismatched byte orders (i.e., the
@@ -23,13 +24,13 @@
 
 static inline void copy_n(void *dst, const void *src, size_t src_sz,
                           size_t *off) {
-    memcpy((uint8_t*)dst + *off, src, src_sz);
+    memcpy((uint8_t *)dst + *off, src, src_sz);
     *off += src_sz;
 }
 
 static inline void copy_s(void *dst, const char *src, size_t *off) {
     size_t len = strlen(src) + 1;
-    memcpy((uint8_t*)dst + *off, src, len);
+    memcpy((uint8_t *)dst + *off, src, len);
     *off += len;
 }
 
@@ -556,7 +557,7 @@ static bool make_symtab(u8 **out, size_t *out_sz, size_t *ent_num,
 
     *out = (u8 *)symtab;
     *out_sz = symtab_sz;
-    
+
     *ent_num = symtab_i;
     return true;
 
@@ -883,8 +884,8 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
         *RARSJS_ARRAY_PUSH(&g_sections) = s;
     }
 
+    emulator_init();
     g_pc = e_header->entry;
-    prepare_stack();
     return true;
 
 fail:

@@ -27,12 +27,8 @@ typedef struct {
     char in;
     char out;
     u32 in_size;
-    u32 out_size;
     u32 batch_size;
     u32 cntl;
-    struct {
-        u32 batch_counter;
-    } internal;
 } PACKED ConsoleRegisters;
 
 typedef struct {
@@ -111,10 +107,12 @@ static bool console_handler(u32 devaddr, u8 *buf, u32 op_size, u32 off,
         }
     }
 
+    // TODO: this should not be here, this shouild be run when reading input
+    // from the user
     if (console->cntl & CONSOLE_CNTL_INTERRUPT) {
-        console->internal.batch_counter++;
-        if (console->internal.batch_counter >= console->batch_size) {
-            console->internal.batch_counter = 0;
+        console->in_size++;
+        if (console->in_size >= console->batch_size) {
+            console->in_size = 0;
             ric_send_interrupt(devaddr);
         }
     }

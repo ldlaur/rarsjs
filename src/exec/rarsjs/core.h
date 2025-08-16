@@ -184,18 +184,8 @@ extern RARSJS_ARRAY(Global) g_globals;
 extern RARSJS_ARRAY(Extern) g_externs;
 extern export RARSJS_ARRAY(u32) g_text_by_linenum;
 
-extern export u32 g_regs[32];
-extern export u32 g_csr[4096];
-extern export u32 g_pc;
-
 extern export u32 g_error_line;
 extern export const char *g_error;
-
-extern export u32 g_runtime_error_params[2];
-extern export Error g_runtime_error_type;
-
-extern export bool g_exited;
-extern export int g_exit_code;
 
 extern const char *const REGISTER_NAMES[];
 extern const char *const CSR_NAMES[];
@@ -205,7 +195,7 @@ void emulate();
 bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
                     Section **sec);
 void prepare_runtime_sections();
-void prepare_stack();
+void prepare_aux_sections();
 void free_runtime();
 u32 LOAD(u32 addr, int size, bool *err);
 bool pc_to_label_r(u32 pc, LabelData **ret, u32 *off);

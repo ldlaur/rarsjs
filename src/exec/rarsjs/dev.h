@@ -15,7 +15,6 @@
 
 #define CONSOLE_CNTL_INTERRUPT 1
 #define CONSOLE_CNTL_IN_BLOCK (1 << 1)
-#define CONSOLE_CNTL_OUT_BLOCK (1 << 2)
 
 // DEVICE ADDRESSES
 
@@ -61,11 +60,19 @@
 
 #define POWER0_BASE (MMIO_BASE + MMIO_DEVICE_RSV * 4)
 #define POWER0_CNTL POWER0_BASE
+#define POWER0_END (POWER0_BASE + 4)
 
 #define CONSOLE0_BASE (MMIO_BASE + MMIO_DEVICE_RSV * 5)
+#define CONSOLE0_IN CONSOLE0_BASE
+#define CONSOLE0_OUT (CONSOLE0_BASE + 1)
+#define CONSOLE0_IN_SIZE (CONSOLE0_BASE + 2)
+#define CONSOLE0_BATCH_SIZE (CONSOLE0_BASE + 6)
+#define CONSOLE0_CNTL (CONSOLE0_BASE + 10)
+#define CONSOLE0_END (CONSOLE0_BASE + 14)
 
 #define RIC0_BASE (MMIO_BASE + MMIO_DEVICE_RSV * 6)
 #define RIC0_DEVADDR RIC0_BASE
+#define RIC0_END (RIC0_BASE + 4)
 
 bool mmio_read(u32 mmio_addr, int size, u32 *ret);
 bool mmio_write(u32 mmio_addr, int size, u32 value);

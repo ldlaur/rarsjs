@@ -10,6 +10,7 @@
 #include "rarsjs/callsan.h"
 #include "rarsjs/core.h"
 #include "rarsjs/elf.h"
+#include "rarsjs/emulate.h"
 #include "rarsjs/util.h"
 #include "vendor/commander.h"
 

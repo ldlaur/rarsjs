@@ -5,12 +5,12 @@
 
 _kernel_start:
     la a0, HelloWorld
-    li a1, 0xffe00140
+    la t1, _CONSOLE0_OUT
 loop:
     lb t0, 0(a0)
     beqz t0, exit
 
-    sb t0, 1(a1)
+    sb t0, 0(a1)
     addi a0, a0, 1
     j loop
 exit:

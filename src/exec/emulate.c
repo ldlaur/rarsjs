@@ -4,12 +4,16 @@
 #include "rarsjs/core.h"
 #include "rarsjs/dev.h"
 
-extern u32 g_regs[32];
-extern u32 g_pc;
-extern u32 g_mem_written_len;
-extern u32 g_mem_written_addr;
-extern u32 g_reg_written;
-extern u32 g_error_line;
+export u32 g_regs[32];
+export u32 g_csr[4096];
+export u32 g_pc;
+
+export u32 g_mem_written_len;
+export u32 g_mem_written_addr;
+export u32 g_reg_written;
+
+export bool g_exited;
+export int g_exit_code;
 
 extern u32 g_runtime_error_params[2];
 extern Error g_runtime_error_type;
@@ -267,7 +271,7 @@ void do_syscall() {
 
 void do_sret() {
     g_pc = g_csr[CSR_SEPC] + 4;
-    emulator_leave_kernel(); // TODO: ecall can come from kernel itself
+    emulator_leave_kernel();  // TODO: ecall can come from kernel itself
 }
 
 void emulate() {
@@ -580,4 +584,26 @@ void emulator_interrupt(u32 scause) {
             }
             return;
     }
+}
+
+void emulator_init(void) {
+    g_exited = false;
+    g_exit_code = 0;
+
+    memset(g_regs, 0, sizeof(g_regs));
+    g_pc = TEXT_BASE;
+    g_mem_written_len = 0;
+    g_mem_written_addr = 0;
+    g_reg_written = 0;
+    g_error_line = 0;
+    g_error = NULL;
+
+    memset(g_runtime_error_params, 0, sizeof(g_runtime_error_params));
+    g_runtime_error_type = 0;
+
+    prepare_aux_sections();
+
+    g_csr[CSR_STVEC] = g_csr[CSR_SIP] = g_csr[CSR_SIE] = g_csr[CSR_SEPC] =
+        g_csr[CSR_SCAUSE] = g_csr[CSR_SSTATUS] = 0;
+    g_csr[CSR_MIDELEG] = g_csr[CSR_MEDELEG] = ~(u32)0;
 }

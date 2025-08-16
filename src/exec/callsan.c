@@ -1,6 +1,7 @@
 #include "rarsjs/callsan.h"
 
 #include "rarsjs/core.h"
+#include "rarsjs/emulate.h"
 
 export u32 g_reg_bitmap;
 RARSJS_ARRAY(ShadowStackEnt) g_shadow_stack = RARSJS_ARRAY_NEW(ShadowStackEnt);
