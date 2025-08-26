@@ -270,16 +270,6 @@ export class WasmInterface {
           break;
       }
       this.hasError = true;
-    } else if (this.successfulExecution) {
-      const needsNewline =
-        this.textBuffer.length &&
-        this.textBuffer[this.textBuffer.length - 1] != "\n";
-      
-        this.textBuffer +=
-          needsNewline
-            ? "\nExecuted successfully."
-            : "Executed successfully.";
-      
     }
   }
 }

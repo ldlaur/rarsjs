@@ -1360,8 +1360,6 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                             err = "Invalid string";
                             break;
                         }
-                        printf("placing stuff at %s %x\n", g_section->name,
-                               g_section->base);
                         for (size_t i = 0; i < out_len; i++)
                             asm_emit_byte(out[i], p->startline);
                         asm_emit_byte(0, p->startline);
@@ -1396,7 +1394,6 @@ export void assemble(const char *txt, size_t s, bool allow_externs) {
                 }
             }
             u32 addr = g_section->emit_idx + g_section->base;
-            printf("%.*s: %p\n", ident_len, ident, addr);
             *RARSJS_ARRAY_PUSH(&g_labels) = (LabelData){.txt = ident,
                                                         .len = ident_len,
                                                         .addr = addr,

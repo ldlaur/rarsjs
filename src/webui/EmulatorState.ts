@@ -3,6 +3,7 @@ import { WasmInterface } from "./RiscV";
 import { view } from "./App";
 import { forceLinting } from "@codemirror/lint";
 import { breakpointState } from "./Breakpoint";
+import { createSignal } from "solid-js";
 
 export function toUnsigned(x: number): number {
 	return x >>> 0;
@@ -34,12 +35,12 @@ export let breakpoints = new Set();
 
 let globalVersion = 1;
 
-type IdleState = {
+export type IdleState = {
 	status: "idle";
 	version: number;
 };
 
-type RunningState = {
+export type RunningState = {
 	status: "running";
 	consoleText: string;
 	pc: number;
@@ -81,13 +82,30 @@ export type AsmErrState = {
 	version: number;
 };
 
+export type TestSuiteTableEntry = {
+	input: string,
+	userOutput: string
+	output: string,
+	runErr: boolean
+};
+
+export type TestSuiteState = {
+	status: "testsuite";
+	table: TestSuiteTableEntry[];
+	version: number;
+};
+
 export type RuntimeState =
 	| IdleState
 	| RunningState
 	| DebugState
 	| ErrorState
 	| StoppedState
-	| AsmErrState;
+	| AsmErrState
+	| TestSuiteState;
+
+let testcases = [];
+let testPrefix = "";
 
 export const initialRegs = new Array(31).fill(0);
 export let [wasmRuntime, setWasmRuntime] = createStore<RuntimeState>({ status: "idle", version: 0 });
@@ -190,8 +208,74 @@ export async function runNormal(_runtime: RuntimeState, setRuntime): Promise<voi
 		wasmInterface.run();
 		if (wasmInterface.successfulExecution || wasmInterface.hasError) break;
 	}
+	if (wasmInterface.successfulExecution) {
+		const needsNewline =
+			wasmInterface.textBuffer.length &&
+			wasmInterface.textBuffer[wasmInterface.textBuffer.length - 1] != "\n";
+
+		wasmInterface.textBuffer +=
+			needsNewline
+				? "\nExecuted successfully."
+				: "Executed successfully.";
+	}
 	updateReactiveState(setRuntime);
 }
+
+
+export async function buildWithTestcase(_runtime: RuntimeState, setRuntime, suffix): Promise<void> {
+	const asm = view.state.doc.toString();
+	console.log(asm + suffix);
+	const err = await wasmInterface.build(asm + suffix);
+	if (err !== null) {
+		setRuntime({
+			status: "asmerr",
+			consoleText: `Error on line ${err.line}: ${err.message}`,
+			line: err.line,
+			message: err.message,
+			version: globalVersion++
+		});
+	} else {
+		console.log("here");
+		if (_runtime.status != "stopped" || asm != latestAsm.text) setRuntime({ status: "idle", version: globalVersion++ });
+	}
+	latestAsm.text = asm;
+}
+
+export let [wasmTestsuite, setTestsuite] = createSignal<TestSuiteTableEntry[]>([]);
+export let [wasmTestsuiteIdx, setTestsuiteIdx] = createSignal<number>(-1);
+
+export async function runTestSuite(_runtime: RuntimeState, setRuntime): Promise<void> {
+	let outputTable = [];
+	for (let i = 0; i < testcases.length; i++) {
+		console.log("running test case", i);
+		await buildWithTestcase(_runtime, setRuntime, testPrefix + testcases[i].input);
+		if (_runtime.status == "asmerr") {
+			forceLinting(view);
+			return;
+		}
+
+		setRuntime({
+			status: "running",
+			consoleText: "",
+			pc: wasmInterface.pc?.[0] ?? TEXT_BASE,
+			regs: [...wasmInterface.regsArr?.slice(0, 31) ?? initialRegs],
+		});
+
+		// run loop
+		while (true) {
+			wasmInterface.run();
+			if (wasmInterface.successfulExecution || wasmInterface.hasError) break;
+		}
+		if (wasmInterface.successfulExecution && _runtime.status == "running") {
+			outputTable.push({ ...testcases[i], runErr: false, userOutput: wasmInterface.textBuffer.trim() });
+		} else {
+			outputTable.push({ ...testcases[i], runErr: true, userOutput: wasmInterface.textBuffer.trim() });
+		}
+	}
+	setTestsuite(outputTable);
+}
+
+
 
 export async function startStep(_runtime: RuntimeState, setRuntime): Promise<void> {
 	console.log(_runtime);
@@ -210,6 +294,40 @@ export async function startStep(_runtime: RuntimeState, setRuntime): Promise<voi
 		shadowStack: [],
 	});
 }
+
+
+export async function startStepTestSuite(_runtime: RuntimeState, setRuntime, index): Promise<void> {
+	setTestsuiteIdx(index);
+	let suffix = testPrefix + testcases[index].input;
+
+	console.log(suffix);
+	await buildWithTestcase(_runtime, setRuntime, suffix);
+	if (_runtime.status == "asmerr") {
+		forceLinting(view);
+		return;
+	}
+	console.log("hereS");
+
+	setRuntime({
+		status: "debug",
+		consoleText: "",
+		pc: wasmInterface.pc?.[0],
+		regs: initialRegs,
+		shadowStack: [],
+	});
+
+	// run instructions until you hit user code
+	while (true) {
+		wasmInterface.run();
+		let linenoIdx = (wasmInterface.pc[0] - TEXT_BASE) / 4;
+		if (linenoIdx < wasmInterface.textByLinenumLen[0]) {
+			if (wasmInterface.textByLinenum[linenoIdx] < view.state.doc.lines) break;
+		}
+
+	}
+	updateReactiveState(setRuntime);
+}
+
 
 export function singleStep(_runtime: DebugState, setRuntime): void {
 	setBreakpoints();
@@ -230,6 +348,16 @@ export function continueStep(_runtime: DebugState, setRuntime): void {
 		}
 		if (breakpoints.has(wasmInterface.pc[0])) break;
 		if (wasmInterface.successfulExecution || wasmInterface.hasError) break;
+	}
+	if (wasmInterface.successfulExecution) {
+		const needsNewline =
+			wasmInterface.textBuffer.length &&
+			wasmInterface.textBuffer[wasmInterface.textBuffer.length - 1] != "\n";
+
+		wasmInterface.textBuffer +=
+			needsNewline
+				? "\nExecuted successfully."
+				: "Executed successfully.";
 	}
 	updateReactiveState(setRuntime);
 }
@@ -263,30 +391,50 @@ export function getCurrentLine(_runtime: DebugState | ErrorState): number {
 }
 
 export type ShadowStackAugmentedEnt = {
-    name: string,
-    elems: { addr: string, isAnimated: boolean, text: string }[]
+	name: string,
+	elems: { addr: string, isAnimated: boolean, text: string }[]
 }
 
 // TODO: cleanup and make type safe
 export function shadowStackAugmented(shadowStack: ShadowEntry[], load, writeAddr, writeLen): ShadowStackAugmentedEnt[] {
-    let allInfo = new Array(shadowStack.length);
-    for (let i = 0; i < shadowStack.length; i++) {
-        let ent = shadowStack[i];
-        let startSp = i == (shadowStack.length - 1) ? wasmInterface.regsArr[2 - 1] : shadowStack[i + 1].sp;
-        let elemCnt = (ent.sp - startSp) / 4;
-        let elems = new Array(elemCnt);
-        for (let j = 0, ptr = ent.sp - 4; j < elemCnt; j++, ptr -= 4) {
-            let text = load ? convertNumber(load(ptr, 4), true) : "0";
-            if (wasmInterface.callsanWrittenBy) {
-                let off = (ptr - (0x7FFFF000 - 4096)) / 4;
-                let regidx = wasmInterface.callsanWrittenBy[off];
-                if (regidx == 0xff) text = "??";
-                else if (regidx != 0) text += " (" + wasmInterface.getRegisterName(regidx) + ")";
-            }
-            let isAnimated = ptr >= writeAddr && ptr < writeAddr + writeLen;
-            elems[j] = { addr: ptr.toString(16), isAnimated, text };
-        }
-        allInfo[shadowStack.length - 1 - i] = { name: ent.name, elems };
-    }
-    return allInfo;
+	let allInfo = new Array(shadowStack.length);
+	for (let i = 0; i < shadowStack.length; i++) {
+		let ent = shadowStack[i];
+		let startSp = i == (shadowStack.length - 1) ? wasmInterface.regsArr[2 - 1] : shadowStack[i + 1].sp;
+		let elemCnt = (ent.sp - startSp) / 4;
+		let elems = new Array(elemCnt);
+		for (let j = 0, ptr = ent.sp - 4; j < elemCnt; j++, ptr -= 4) {
+			let text = load ? convertNumber(load(ptr, 4), true) : "0";
+			if (wasmInterface.callsanWrittenBy) {
+				let off = (ptr - (0x7FFFF000 - 4096)) / 4;
+				let regidx = wasmInterface.callsanWrittenBy[off];
+				if (regidx == 0xff) text = "??";
+				else if (regidx != 0) text += " (" + wasmInterface.getRegisterName(regidx) + ")";
+			}
+			let isAnimated = ptr >= writeAddr && ptr < writeAddr + writeLen;
+			elems[j] = { addr: ptr.toString(16), isAnimated, text };
+		}
+		allInfo[shadowStack.length - 1 - i] = { name: ent.name, elems };
+	}
+	return allInfo;
+}
+
+
+export async function fetchTestcases() {
+	const params = new URLSearchParams(window.location.search);
+	const name = params.get('testsuite');
+	{
+		const response = await fetch(name + ".S");
+		if (!response.ok) {
+			alert("Can't load testcase files")
+		}
+		testPrefix = await response.text();
+	}
+	{
+		const response = await fetch(name + ".json");
+		if (!response.ok) {
+			alert("Can't load testcase files")
+		}
+		testcases = await response.json();
+	}
 }

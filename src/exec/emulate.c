@@ -70,7 +70,7 @@ static inline u32 remu32(u32 a, u32 b) {
 Section *emulator_get_section(u32 addr) {
     for (size_t i = 0; i < RARSJS_ARRAY_LEN(&g_sections); i++) {
         Section *sec = *RARSJS_ARRAY_GET(&g_sections, i);
-        if (addr >= sec->base && addr <= sec->limit) {
+        if (addr >= sec->base && addr < sec->limit) {
             return sec;
         }
     }

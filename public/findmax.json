@@ -1,0 +1,18 @@
+[
+	{
+		"input": "length: .word 1\narray: .half 1",
+		"output": "1"
+	},
+	{
+		"input": "length: .word 4\narray: .half 5, 10, 1, 4",
+		"output": "10"
+	},
+	{
+		"input": "length: .word 2\narray: .half -2, 1",
+		"output": "1"
+	},
+	{
+		"input": "length: .word 4\narray: .half -5, -10, -1, -4",
+		"output": "-1"
+	}
+]

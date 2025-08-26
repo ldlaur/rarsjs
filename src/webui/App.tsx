@@ -20,7 +20,7 @@ import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
 import { githubLight, githubDark, Theme, Colors } from './GithubTheme'
-import { continueStep, DebugState, ErrorState, getCurrentLine, initialRegs, nextStep, quitDebug, runNormal, setWasmRuntime, singleStep, startStep, TEXT_BASE, wasmInterface, wasmRuntime } from "./EmulatorState";
+import { AsmErrState, continueStep, DebugState, ErrorState, fetchTestcases, getCurrentLine, IdleState, initialRegs, nextStep, quitDebug, RunningState, runNormal, runTestSuite, setWasmRuntime, singleStep, startStep, startStepTestSuite, StoppedState, TestSuiteTableEntry, TEXT_BASE, wasmInterface, wasmRuntime, wasmTestsuite, wasmTestsuiteIdx } from "./EmulatorState";
 
 let parserWithMetadata = parser.configure({
 	props: [highlighting]
@@ -83,6 +83,12 @@ function updateCss(colors: Colors): void {
 .frame-highlight {
 	background-color: ${colors.bggreen};
 }
+.theme-testsuccess {
+	background-color: color-mix(in srgb, ${colors.bggreen} 25%, ${colors.base0} 75%);
+}
+.theme-testfail {
+	background-color: color-mix(in srgb, ${colors.bgorange} 25%, ${colors.base0} 75%);
+}
 @keyframes fadeHighlight {
 	from {
 		background-color: ${colors.bgorange};
@@ -98,6 +104,7 @@ function updateCss(colors: Colors): void {
 
 window.addEventListener("DOMContentLoaded", () => {
 	updateCss(currentTheme.colors);
+	fetchTestcases();
 });
 
 function changeTheme(theme: Theme): void {
@@ -215,6 +222,13 @@ const Navbar: Component = () => {
 						title={`Run (${prefixStr}-R)`}
 					>
 						play_circle
+					</button>
+					<button
+						on:click={() => runTestSuite(wasmRuntime, setWasmRuntime)}
+						class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+						title={`Run (${prefixStr}-R)`}
+					>
+						checklist
 					</button>
 					<button
 						on:click={() => startStep(wasmRuntime, setWasmRuntime)}
@@ -361,10 +375,72 @@ const Editor: Component = () => {
 		ref={editor} />;
 }
 
-let consoleText = () => {
-	if (wasmRuntime.status == "idle") return "";
-	return wasmRuntime.consoleText;
+let consoleText = (_runtime: IdleState | RunningState | DebugState | ErrorState | StoppedState | AsmErrState) => {
+	if (_runtime.status == "idle") return "";
+	return _runtime.consoleText;
 }
+
+const TestSuiteViewer = (table: TestSuiteTableEntry[], currentDebuggingEntry: number) => {
+	return (
+		<div class="theme-bg theme-fg overflow-x-auto overflow-y-auto w-full h-full">
+			<table class="table table-fixed w-full max-w-full h-full min-w-max border-collapse rounded-lg ">
+				<thead class=" ">
+					<tr class="  text-left theme-fg border-b theme-border">
+						<th class="w-[8ch] px-2 py-1 font-semibold theme-fg">status</th>
+						<th class="w-[14ch] px-2 py-1 font-semibold theme-fg">input</th>
+						<th class="w-[8ch] px-2 py-1 font-semibold theme-fg whitespace-nowrap">expected</th>
+						<th class="w-[14ch] px-2 py-1 font-semibold theme-fg whitespace-nowrap">yours</th>
+					</tr>
+				</thead>
+				<tbody class=" ">
+					{table.map((testcase, index) => {
+						const passed = testcase.output === testcase.userOutput;
+						const errorType = testcase.runErr ? "crashed" : "mismatched";
+						return (
+							<tr
+								class={`  border-b theme-border ${passed ? 'theme-testsuccess' : 'theme-testfail'}`}
+							>
+								<td class="px-2">
+									{passed ?
+										<div class="flex flex-col">
+											<span class="text-sm">success</span>
+											<button class="text-left text-sm hover:font-semibold " on:click={() => startStepTestSuite(wasmRuntime, setWasmRuntime, index)}>
+												{currentDebuggingEntry === index ? "debugging" : "debug it"}
+											</button>
+										</div> :
+										<div class="flex flex-col">
+											<span class="text-sm">{errorType}</span>
+											<button class="text-left text-sm underline hover:font-semibold " on:click={() => startStepTestSuite(wasmRuntime, setWasmRuntime, index)}>
+												{currentDebuggingEntry === index ? "debugging" : "debug it"}
+											</button>
+										</div>}
+								</td>
+								<td class="px-1 py-1.5 text-sm">
+									<code class="text-xs font-mono rounded whitespace-pre-wrap break-words max-w-full block">
+										{testcase.input}
+									</code>
+								</td>
+								<td class="px-1 py-1.5 text-sm">
+									<code class="px-1 py-1.5 rounded text-xs font-mono whitespace-pre-wrap break-words max-w-full block">
+										{testcase.output}
+									</code>
+								</td>
+								<td class="px-1 py-1.5 text-sm">
+									<code class={`px-1 py-1.5 rounded text-xs font-mono whitespace-pre-wrap break-words max-w-full block `}>
+										{testcase.userOutput}
+									</code>
+								</td>
+							</tr>
+						);
+					})}
+				</tbody>
+			</table>
+		</div>
+	);
+};
+
+
+
 
 const App: Component = () => {
 	return (
@@ -372,14 +448,22 @@ const App: Component = () => {
 			<Navbar />
 			<div class="grow flex overflow-hidden">
 				<PaneResize firstSize={0.5} direction="horizontal" second={true}>
-					{() => <PaneResize firstSize={0.85} direction="vertical" second={((wasmRuntime && (wasmRuntime.status == "debug" || wasmRuntime.status == "error")) && wasmRuntime.shadowStack.length > 0) ? wasmRuntime : null}>
-						{() => <Editor />}
-						{wasmRuntime => BacktraceView(wasmRuntime)}
-					</PaneResize>}
+					{() =>
+						<PaneResize firstSize={0.65} direction="vertical"
+							second={wasmTestsuite().length > 0}>
+							{() => <PaneResize firstSize={0.85} direction="vertical"
+								second={((wasmRuntime && (wasmRuntime.status == "debug" || wasmRuntime.status == "error")) && wasmRuntime.shadowStack.length > 0) ? wasmRuntime : null}>
+								{() => <Editor />}
+								{wasmRuntime => BacktraceView(wasmRuntime)}
+							</PaneResize>}
+							{() => TestSuiteViewer(wasmTestsuite(), wasmTestsuiteIdx())}
+						</PaneResize>
+					}
+
 					{() => <PaneResize firstSize={0.75} direction="vertical" second={true}>
 						{() => <PaneResize firstSize={0.55} direction="horizontal" second={true}>
-							{() => <RegisterTable pc={(wasmRuntime.status == "idle" || wasmRuntime.status == "asmerr") ? TEXT_BASE : wasmRuntime.pc}
-								regs={(wasmRuntime.status == "idle" || wasmRuntime.status == "asmerr") ? initialRegs : wasmRuntime.regs}
+							{() => <RegisterTable pc={(wasmRuntime.status == "idle" || wasmRuntime.status == "asmerr" || wasmRuntime.status == "testsuite") ? TEXT_BASE : wasmRuntime.pc}
+								regs={(wasmRuntime.status == "idle" || wasmRuntime.status == "asmerr" || wasmRuntime.status == "testsuite") ? initialRegs : wasmRuntime.regs}
 								regWritten={wasmInterface.regWritten ? wasmInterface.regWritten[0] : 0} />}
 							{() => <MemoryView version={() => wasmRuntime.version}
 								writeAddr={wasmInterface.memWrittenAddr ? wasmInterface.memWrittenAddr[0] : 0}
@@ -388,10 +472,10 @@ const App: Component = () => {
 								load={wasmInterface.emu_load}
 							/>}
 						</PaneResize>}
-						{() => <div
-							innerText={consoleText() ? consoleText() : "Console output will go here..."}
-							class={"w-full h-full font-mono text-md overflow-auto theme-scrollbar theme-bg " + (consoleText() ? "theme-fg" : "theme-fg2")}
-						></div>}
+						{() => (<div
+							innerText={consoleText(wasmRuntime) ? consoleText(wasmRuntime) : "Console output will go here..."}
+							class={"w-full h-full font-mono text-md overflow-auto theme-scrollbar theme-bg " + (consoleText(wasmRuntime) ? "theme-fg" : "theme-fg2")}
+						></div>)}
 					</PaneResize>}
 				</PaneResize>
 			</div>
