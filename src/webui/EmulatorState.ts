@@ -104,8 +104,12 @@ export type RuntimeState =
 	| AsmErrState
 	| TestSuiteState;
 
-let testcases = [];
-let testPrefix = "";
+export type TestData = {
+	testPrefix: string,
+	testcases: { input: string, output: string }[]
+};
+
+export let [testData, setTestData] = createSignal<TestData | null>(null);
 
 export const initialRegs = new Array(31).fill(0);
 export let [wasmRuntime, setWasmRuntime] = createStore<RuntimeState>({ status: "idle", version: 0 });
@@ -245,6 +249,9 @@ export let [wasmTestsuite, setTestsuite] = createSignal<TestSuiteTableEntry[]>([
 export let [wasmTestsuiteIdx, setTestsuiteIdx] = createSignal<number>(-1);
 
 export async function runTestSuite(_runtime: RuntimeState, setRuntime): Promise<void> {
+	if (testData() == null) return;
+	let testcases = testData().testcases;
+	let testPrefix = testData().testPrefix;
 	let outputTable = [];
 	for (let i = 0; i < testcases.length; i++) {
 		console.log("running test case", i);
@@ -298,6 +305,10 @@ export async function startStep(_runtime: RuntimeState, setRuntime): Promise<voi
 
 export async function startStepTestSuite(_runtime: RuntimeState, setRuntime, index): Promise<void> {
 	setTestsuiteIdx(index);
+	if (testData() == null) return;
+	let testcases = testData().testcases;
+	let testPrefix = testData().testPrefix;
+
 	let suffix = testPrefix + testcases[index].input;
 
 	console.log(suffix);
@@ -423,18 +434,20 @@ export function shadowStackAugmented(shadowStack: ShadowEntry[], load, writeAddr
 export async function fetchTestcases() {
 	const params = new URLSearchParams(window.location.search);
 	const name = params.get('testsuite');
-	{
-		const response = await fetch(name + ".S");
-		if (!response.ok) {
-			alert("Can't load testcase files")
-		}
-		testPrefix = await response.text();
+	if (name == null) {
+		return;
 	}
-	{
-		const response = await fetch(name + ".json");
-		if (!response.ok) {
-			alert("Can't load testcase files")
-		}
-		testcases = await response.json();
+
+	const response1 = await fetch(name + ".S");
+	if (!response1.ok) {
+		alert("Can't load testcase files")
 	}
+	let testPrefix = await response1.text();
+	const response2 = await fetch(name + ".json");
+	if (!response2.ok) {
+		alert("Can't load testcase files")
+	}
+	let testcases = await response2.json();
+	console.log("Here\n");
+	setTestData({ testPrefix, testcases });
 }

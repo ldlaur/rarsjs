@@ -1139,7 +1139,6 @@ static void prepare_default_syms(void) {
     MMIO_LABEL("_RIC0_BASE", RIC0_BASE);
     MMIO_LABEL("_RIC0_DEVADDR", RIC0_DEVADDR);
     MMIO_LABEL("_RIC0_END", RIC0_END);
-    printf("_CONSOLE0_OUT = 0x%08x\n", CONSOLE0_OUT);
 
 #undef MMIO_LABEL
 }

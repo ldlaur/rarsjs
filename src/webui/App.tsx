@@ -20,7 +20,7 @@ import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
 import { githubLight, githubDark, Theme, Colors } from './GithubTheme'
-import { AsmErrState, continueStep, DebugState, ErrorState, fetchTestcases, getCurrentLine, IdleState, initialRegs, nextStep, quitDebug, RunningState, runNormal, runTestSuite, setWasmRuntime, singleStep, startStep, startStepTestSuite, StoppedState, TestSuiteTableEntry, TEXT_BASE, wasmInterface, wasmRuntime, wasmTestsuite, wasmTestsuiteIdx } from "./EmulatorState";
+import { AsmErrState, continueStep, DebugState, ErrorState, fetchTestcases, getCurrentLine, IdleState, initialRegs, nextStep, quitDebug, RunningState, runNormal, runTestSuite, setWasmRuntime, singleStep, startStep, startStepTestSuite, StoppedState, testData, TestSuiteTableEntry, TEXT_BASE, wasmInterface, wasmRuntime, wasmTestsuite, wasmTestsuiteIdx } from "./EmulatorState";
 
 let parserWithMetadata = parser.configure({
 	props: [highlighting]
@@ -158,13 +158,20 @@ window.addEventListener('keydown', (event) => {
 		event.preventDefault();
 		quitDebug(wasmRuntime, setWasmRuntime);
 	}
-	else if (prefix && event.key.toUpperCase() == 'R') {
-		event.preventDefault();
-		runNormal(wasmRuntime, setWasmRuntime);
-	}
-	else if (prefix && event.key.toUpperCase() == 'D') {
-		event.preventDefault();
-		startStep(wasmRuntime, setWasmRuntime);
+	if (testData()) {
+		if (prefix && event.key.toUpperCase() == 'T') {
+			event.preventDefault();
+			runTestSuite(wasmRuntime, setWasmRuntime);
+		}
+	} else {
+		if (prefix && event.key.toUpperCase() == 'R') {
+			event.preventDefault();
+			runNormal(wasmRuntime, setWasmRuntime);
+		}
+		else if (prefix && event.key.toUpperCase() == 'D') {
+			event.preventDefault();
+			startStep(wasmRuntime, setWasmRuntime);
+		}
 	}
 });
 
@@ -216,27 +223,31 @@ const Navbar: Component = () => {
 					>
 						dark_mode
 					</button>
-					<button
-						on:click={() => runNormal(wasmRuntime, setWasmRuntime)}
-						class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-						title={`Run (${prefixStr}-R)`}
-					>
-						play_circle
-					</button>
-					<button
-						on:click={() => runTestSuite(wasmRuntime, setWasmRuntime)}
-						class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-						title={`Run (${prefixStr}-R)`}
-					>
-						checklist
-					</button>
-					<button
-						on:click={() => startStep(wasmRuntime, setWasmRuntime)}
-						class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-						title={`Debug (${prefixStr}-D)`}
-					>
-						arrow_forward
-					</button>
+					<Show when={testData()}>
+						<button
+							on:click={() => runTestSuite(wasmRuntime, setWasmRuntime)}
+							class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+							title={`Run tests (${prefixStr}-T)`}
+						>
+							checklist
+						</button>
+					</Show>
+					<Show when={!testData()}>
+						<button
+							on:click={() => runNormal(wasmRuntime, setWasmRuntime)}
+							class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+							title={`Run (${prefixStr}-R)`}
+						>
+							play_circle
+						</button>
+						<button
+							on:click={() => startStep(wasmRuntime, setWasmRuntime)}
+							class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
+							title={`Debug (${prefixStr}-D)`}
+						>
+							arrow_forward
+						</button>
+					</Show>
 				</div>
 			</div>
 		</nav>
