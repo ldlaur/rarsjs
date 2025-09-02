@@ -84,10 +84,10 @@ function updateCss(colors: Colors): void {
 	background-color: ${colors.bggreen};
 }
 .theme-testsuccess {
-	background-color: color-mix(in srgb, ${colors.bggreen} 25%, ${colors.base0} 75%);
+	background-color: ${colors.testgreen};
 }
 .theme-testfail {
-	background-color: color-mix(in srgb, ${colors.bgorange} 25%, ${colors.base0} 75%);
+	background-color: ${colors.testred};
 }
 @keyframes fadeHighlight {
 	from {
@@ -393,7 +393,7 @@ let consoleText = (_runtime: IdleState | RunningState | DebugState | ErrorState 
 
 const TestSuiteViewer = (table: TestSuiteTableEntry[], currentDebuggingEntry: number) => {
 	return (
-		<div class="theme-bg theme-fg overflow-x-auto overflow-y-auto w-full h-full">
+		<div class="theme-scrollbar theme-bg theme-fg overflow-x-auto overflow-y-auto w-full h-full">
 			<table class="table table-fixed w-full max-w-full h-full min-w-max border-collapse rounded-lg ">
 				<thead class=" ">
 					<tr class="  text-left theme-fg border-b theme-border">

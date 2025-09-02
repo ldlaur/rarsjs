@@ -25,6 +25,8 @@ export interface Colors {
     lightblue: string;
     blue: string;
     purp: string;
+    testred: string,
+    testgreen: string
 };
 
 export interface Theme {
@@ -47,7 +49,9 @@ const darkColors: Colors = {
     lightblue: "#a2d2fb",
     blue: "#77bdfb",
     purp: "#cea5fb",
-    bggreen: "#278339"
+    bggreen: "#278339",
+    testred: "#471c0f",
+    testgreen: "#204729"
 };
 
 const lightColors = {
@@ -66,7 +70,9 @@ const lightColors = {
     green: "#116329",
     bgorange: "#fac080",
     bgorange2: "#faa356",
-    bggreen: "#8cf39b"
+    bggreen: "#8cf39b",
+    testred: "#fdefdf",
+    testgreen: "#e2fbe5"
 };
 
 const cssTheme = (dark: boolean) => {
