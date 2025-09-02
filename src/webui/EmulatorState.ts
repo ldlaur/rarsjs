@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store";
 import { WasmInterface } from "./RiscV";
-import { view } from "./App";
+import { testsuiteName, view } from "./App";
 import { forceLinting } from "@codemirror/lint";
 import { breakpointState } from "./Breakpoint";
 import { createSignal } from "solid-js";
@@ -432,18 +432,14 @@ export function shadowStackAugmented(shadowStack: ShadowEntry[], load, writeAddr
 
 
 export async function fetchTestcases() {
-	const params = new URLSearchParams(window.location.search);
-	const name = params.get('testsuite');
-	if (name == null) {
-		return;
-	}
+	if (testsuiteName == null) return;
 
-	const response1 = await fetch(name + ".S");
+	const response1 = await fetch(testsuiteName + ".S");
 	if (!response1.ok) {
 		alert("Can't load testcase files")
 	}
 	let testPrefix = await response1.text();
-	const response2 = await fetch(name + ".json");
+	const response2 = await fetch(testsuiteName + ".json");
 	if (!response2.ok) {
 		alert("Can't load testcase files")
 	}

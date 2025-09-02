@@ -102,6 +102,10 @@ function updateCss(colors: Colors): void {
 `;
 }
 
+export const urlParams = new URLSearchParams(window.location.search);
+export const testsuiteName = urlParams.get('testsuite');
+const localStorageKey = testsuiteName ? ("savedtext-" + testsuiteName) : "savedtext";
+
 window.addEventListener("DOMContentLoaded", () => {
 	updateCss(currentTheme.colors);
 	fetchTestcases();
@@ -357,7 +361,7 @@ const Editor: Component = () => {
 			"&.cm-editor": { height: "100%" },
 			".cm-scroller": { overflow: "auto" },
 		});
-		const savedText = localStorage.getItem("savedtext") || "";
+		const savedText = localStorage.getItem(localStorageKey) || "";
 		const state = EditorState.create({
 			doc: savedText,
 			extensions: [
@@ -377,7 +381,7 @@ const Editor: Component = () => {
 		view = new EditorView({ state, parent: editor });
 
 		setInterval(() => {
-			localStorage.setItem("savedtext", view.state.doc.toString());
+			localStorage.setItem(localStorageKey, view.state.doc.toString());
 		}, 1000);
 	});
 
