@@ -1,0 +1,10 @@
+Write a program in RISC-V assembly that accesses position `idx` in the integer array `array` and stores the result in the memory location `out`.
+(`out = array[idx]`)
+Fill out the rest of this code which will get called with different values.
+```riscv
+.data
+	out: .word -1
+	idx: .word 2
+	array: .word 3, 4, 5, 6
+.text
+```

@@ -89,6 +89,8 @@ u8 *emulator_get_addr(u32 addr, int size, Section **out_sec) {
         return NULL;
     }
 
+    // NOTE: addr+size is one over the end of the accessed region
+    // so it is correct for it to be > and not >=
     if (addr + size > addr_sec->contents.len + addr_sec->base) {
         return NULL;
     }

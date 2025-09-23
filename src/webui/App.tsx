@@ -1,12 +1,15 @@
 import {
 	createComputed,
+	createEffect,
+	createRoot,
 	onMount,
 	Show,
+	Signal,
 	type Component,
 } from "solid-js";
 import { basicSetup, EditorView } from "codemirror";
-import { keymap } from "@codemirror/view";
-import { Compartment, EditorState } from "@codemirror/state";
+import { Decoration, keymap, WidgetType } from "@codemirror/view";
+import { Compartment, EditorState, Transaction } from "@codemirror/state";
 
 import { lineHighlightEffect, lineHighlightState } from "./LineHighlight";
 import { breakpointGutter } from "./Breakpoint";
@@ -19,8 +22,9 @@ import { LRLanguage, LanguageSupport, indentService, indentUnit } from "@codemir
 import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
-import { githubLight, githubDark, Theme, Colors } from './GithubTheme'
+import { githubLight, githubDark, Theme, Colors, githubHighlightStyle } from './GithubTheme'
 import { AsmErrState, continueStep, DebugState, ErrorState, fetchTestcases, getCurrentLine, IdleState, initialRegs, nextStep, quitDebug, RunningState, runNormal, runTestSuite, setWasmRuntime, singleStep, startStep, startStepTestSuite, StoppedState, testData, TestSuiteTableEntry, TEXT_BASE, wasmInterface, wasmRuntime, wasmTestsuite, wasmTestsuiteIdx } from "./EmulatorState";
+import { highlightTree } from "@lezer/highlight";
 
 let parserWithMetadata = parser.configure({
 	props: [highlighting]
@@ -89,6 +93,47 @@ function updateCss(colors: Colors): void {
 .theme-testfail {
 	background-color: ${colors.testred};
 }
+
+.cm-header-widget {
+}
+
+.theme-style0 { color: ${colors.purp}; }
+.theme-style1 { color: ${colors.red}; }
+.theme-style2 { color: ${colors.blue}; }
+.theme-style3 { color: ${colors.orange}; }
+.theme-style4 { color: ${colors.base4}; }
+.theme-style5 { color: ${colors.orange}; }
+.theme-style6 { color: ${colors.lightblue}; }
+.theme-style7 { color: ${colors.base3}; }
+.theme-style8 { font-weight: bold; }
+.theme-style9 { font-style: italic; }
+.theme-style10 { text-decoration: line-through; }
+.theme-style11 { text-decoration: underline; }
+.theme-style12 { color: ${colors.base3}; text-decoration: underline; }
+.theme-style13 { color: ${colors.orange}; }
+.theme-style14 { color: ${colors.green}; }
+.theme-style15 { color: ${colors.base5}; }
+
+.cm-header-widget {
+	padding-bottom: 1rem;
+}
+
+.cm-header-widget > a {
+	background-color: ${colors.base1};
+	font-style: italic;
+	font-weight: bold;
+}
+
+.cm-header-widget > div {
+	background-color: ${colors.base1};
+	display: inline-block;
+	padding-left: 0.5em;
+	padding-right: 0.5em;
+	padding-top: 0.25em;
+	padding-bottom: 0.25em;
+}
+
+
 @keyframes fadeHighlight {
 	from {
 		background-color: ${colors.bgorange};
@@ -102,16 +147,21 @@ function updateCss(colors: Colors): void {
 `;
 }
 
-export const urlParams = new URLSearchParams(window.location.search);
-export const testsuiteName = urlParams.get('testsuite');
-const localStorageKey = testsuiteName ? ("savedtext-" + testsuiteName) : "savedtext";
+declare global {
+  interface Window {
+    urlParams: URLSearchParams;
+	testsuiteName: string;
+  }
+}
+export const testsuiteName = window.testsuiteName;
+const localStorageKey = window.testsuiteName ? ("savedtext-" + window.testsuiteName) : "savedtext";
 
 window.addEventListener("DOMContentLoaded", () => {
 	updateCss(currentTheme.colors);
-	fetchTestcases();
 });
 
 function changeTheme(theme: Theme): void {
+	// TODO: the theme reconfigure would be unnecessary if i just have all the styles in one place
 	view.dispatch({ effects: cmTheme.reconfigure(theme.cmTheme) });
 	updateCss(theme.colors);
 }
@@ -162,8 +212,8 @@ window.addEventListener('keydown', (event) => {
 		event.preventDefault();
 		quitDebug(wasmRuntime, setWasmRuntime);
 	}
-	if (testData()) {
-		if (prefix && event.key.toUpperCase() == 'T') {
+	if (testData) {
+		if (prefix && event.key.toUpperCase() == 'R') {
 			event.preventDefault();
 			runTestSuite(wasmRuntime, setWasmRuntime);
 		}
@@ -227,16 +277,16 @@ const Navbar: Component = () => {
 					>
 						dark_mode
 					</button>
-					<Show when={testData()}>
+					<Show when={testsuiteName}>
 						<button
 							on:click={() => runTestSuite(wasmRuntime, setWasmRuntime)}
 							class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
-							title={`Run tests (${prefixStr}-T)`}
+							title={`Run tests (${prefixStr}-R)`}
 						>
-							checklist
+							play_circle
 						</button>
 					</Show>
-					<Show when={!testData()}>
+					<Show when={!testsuiteName}>
 						<button
 							on:click={() => runNormal(wasmRuntime, setWasmRuntime)}
 							class="cursor-pointer flex-0-shrink flex material-symbols-outlined theme-fg theme-bg-hover theme-bg-active"
@@ -356,7 +406,9 @@ const Editor: Component = () => {
 		});
 	})
 
-	onMount(() => {
+	onMount(async () => {
+		await fetchTestcases();
+
 		const theme = EditorView.theme({
 			"&.cm-editor": { height: "100%" },
 			".cm-scroller": { overflow: "auto" },
@@ -376,6 +428,8 @@ const Editor: Component = () => {
 				[lineHighlightState],
 				indentUnit.of("    "),
 				keymap.of([...defaultKeymap, indentWithTab]),
+				headerDecoration(),
+				EditorView.lineWrapping
 			],
 		});
 		view = new EditorView({ state, parent: editor });
@@ -398,7 +452,7 @@ let consoleText = (_runtime: IdleState | RunningState | DebugState | ErrorState 
 const TestSuiteViewer = (table: TestSuiteTableEntry[], currentDebuggingEntry: number) => {
 	return (
 		<div class="theme-scrollbar theme-bg theme-fg overflow-x-auto overflow-y-auto w-full h-full">
-			<table class="table table-fixed w-full max-w-full h-full min-w-max border-collapse rounded-lg ">
+			<table class="table table-fixed w-full max-w-full h-full min-w-full border-collapse rounded-lg ">
 				<thead class=" ">
 					<tr class="  text-left theme-fg border-b theme-border">
 						<th class="w-[8ch] px-2 py-1 font-semibold theme-fg">status</th>
@@ -455,6 +509,100 @@ const TestSuiteViewer = (table: TestSuiteTableEntry[], currentDebuggingEntry: nu
 };
 
 
+function createHighlightedText(code: string, syntaxHighlight: boolean) {
+	let block = document.createElement("div")
+	block.className = "cm-header-code"
+
+	let pos = 0
+	if (syntaxHighlight) {
+		let tree = riscvLanguage.parser.parse(code)
+		highlightTree(tree, githubHighlightStyle, (from, to, classes) => {
+			if (from > pos) block.appendChild(document.createTextNode(code.slice(pos, from)))
+			let span = document.createElement("span")
+			span.className = classes
+			span.textContent = code.slice(from, to)
+			block.appendChild(span)
+
+			pos = to
+		})
+	}
+	if (pos < code.length) block.appendChild(document.createTextNode(code.slice(pos)))
+	return block
+}
+
+function parseFormat(fmt: string, container): void {
+	const parts = fmt.split(/(```[\s\S]*?```)/);
+
+	for (const part of parts) {
+		if (part.startsWith('```') && part.endsWith('```')) {
+			let codeContent = part.slice(3, -3);
+			let highlight = false;
+			if (codeContent.startsWith("riscv")) {
+				highlight = true;
+				codeContent = codeContent.slice(5);
+			}
+			if (codeContent.startsWith('\r\n')) {
+				codeContent = codeContent.slice(2);
+			} else if (codeContent.startsWith('\n')) {
+				codeContent = codeContent.slice(1);
+			}
+
+			const highlightedElement = createHighlightedText(codeContent, highlight);
+			container.appendChild(highlightedElement);
+		} else {
+			parseInlineCode(part, container);
+		}
+	}
+}
+
+function parseInlineCode(text: string, container: HTMLElement): void {
+	// Split by single backticks to handle inline code
+	const parts = text.split(/(`[^`]+`)/);
+
+	for (const part of parts) {
+		if (part.startsWith('`') && part.endsWith('`')) {
+			const codeContent = part.slice(1, -1);
+			const anchor = document.createElement('a');
+			anchor.textContent = codeContent;
+			container.appendChild(anchor);
+		} else if (part) {
+			const textNode = document.createTextNode(part);
+			container.appendChild(textNode);
+		}
+	}
+}
+
+class HeaderWidget extends WidgetType {
+	constructor() {
+		super();
+	}
+
+	toDOM(view: EditorView) {
+		const container = document.createElement("div");
+		container.className = "cm-header-widget";
+		let tdata = testData;
+		let assignment = tdata ? tdata.assignment : "";
+		parseFormat(assignment, container);
+		return container;
+	}
+
+	ignoreEvent() {
+		return true;
+	}
+}
+
+
+
+
+function headerDecoration() {
+	return EditorView.decorations.of(Decoration.set([
+		Decoration.widget({
+			widget: new HeaderWidget(),
+			side: -1,
+			block: true
+		}).range(0)
+	]))
+}
 
 
 const App: Component = () => {

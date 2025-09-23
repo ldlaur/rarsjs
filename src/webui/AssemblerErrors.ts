@@ -1,16 +1,22 @@
 import { linter } from "@codemirror/lint";
 
 import { lineHighlightEffect } from "./LineHighlight";
-import { buildAsm, latestAsm, setWasmRuntime, wasmRuntime } from "./EmulatorState";
+import { AsmErrState, buildAsm, buildWithTestcase, IdleState, latestAsm, RuntimeState, setWasmRuntime, StoppedState, testData, wasmRuntime } from "./EmulatorState";
 
 export const createAsmLinter = () => {
-  let delay: number = 100;
+  let delay: number = 300;
   return linter(
     async (ev) => {
       if (wasmRuntime.status != "idle" && wasmRuntime.status != "stopped" && wasmRuntime.status != "asmerr") return [];
-      console.log(wasmRuntime.status, "starting");
-      if (latestAsm["text"] != ev.state.doc.toString())
-        await buildAsm(wasmRuntime, setWasmRuntime);
+      if (latestAsm["text"] != ev.state.doc.toString()) {
+        if (testData == null) await buildAsm(wasmRuntime, setWasmRuntime);
+        else {
+          let testcases = testData.testcases;
+	        let testPrefix = testData.testPrefix;
+          await buildWithTestcase(wasmRuntime, setWasmRuntime, testPrefix + testcases[0].input);
+        }
+      }
+        
       ev.dispatch({
         effects: lineHighlightEffect.of(0), // disable the line highlight, as line numbering starts from 1
       });

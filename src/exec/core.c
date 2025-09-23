@@ -311,7 +311,11 @@ bool parse_quoted_str(Parser *p, char **out_str, size_t *out_len) {
     RARSJS_ARRAY(char) buf = RARSJS_ARRAY_NEW(char);
 
     bool escape = false;
-    if (!consume_if(p, '"')) return false;
+    if (!consume_if(p, '"')) {
+        RARSJS_ARRAY_FREE(&buf);
+        return false;
+    }
+    
     while (true) {
         char c = peek(p);
         if (c == 0) {
@@ -1588,4 +1592,5 @@ void free_runtime() {
     RARSJS_ARRAY_FREE(&g_deferred_insn);
     RARSJS_ARRAY_FREE(&g_globals);
     RARSJS_ARRAY_FREE(&g_externs);
+    RARSJS_ARRAY_FREE(&g_shadow_stack);
 }

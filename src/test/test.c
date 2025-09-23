@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
-
+#include "../exec/rarsjs/emulate.h"
 #include "../exec/rarsjs/core.h"
 
 void setUp(void) {}
@@ -59,6 +59,7 @@ void test_parse_quoted_str_valid(void) {
     bool ok = parse_quoted_str(&p, &out, &out_len);
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_EQUAL_STR("hello\n", out, out_len);
+    free(out);
 }
 
 void test_parse_quoted_str_unterminated(void) {
@@ -76,6 +77,7 @@ void test_parse_quoted_harder(void) {
     bool ok = parse_quoted_str(&p, &out, &out_len);
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_EQUAL_STR("printf(\"Hello\")", out, out_len);
+    free(out);
 }
 
 void test_parse_quoted_backslash(void) {
@@ -85,6 +87,7 @@ void test_parse_quoted_backslash(void) {
     bool ok = parse_quoted_str(&p, &out, &out_len);
     TEST_ASSERT_TRUE(ok);
     TEST_ASSERT_EQUAL_STR("C:\\Users\\", out, out_len);
+    free(out);
 }
 
 void test_skip_comment_line_invaid(void) {

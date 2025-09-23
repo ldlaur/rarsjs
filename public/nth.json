@@ -1,0 +1,22 @@
+[
+	{
+		"input": "idx: .word 0\narray: .word 1",
+		"output": "1"
+	},
+	{
+		"input": "idx: .word 2\narray: .word 1, 1, 1, 1",
+		"output": "1"
+	},
+	{
+		"input": "idx: .word 3\narray: .word 1, 1, 1, 4",
+		"output": "4"	
+	},
+	{
+		"input": "idx: .word 1\narray: .word 2, 3",
+		"output": "3"
+	},
+	{
+		"input": "idx: .word 1\narray: .word 4, 5, 6",
+		"output": "5"
+	}
+]

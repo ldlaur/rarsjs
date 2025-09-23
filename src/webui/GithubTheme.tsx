@@ -75,6 +75,7 @@ const lightColors = {
     testgreen: "#e2fbe5"
 };
 
+// TODO: merge this with the CSS styling in App.tsx
 const cssTheme = (dark: boolean) => {
     const colors = dark ? darkColors : lightColors;
     return EditorView.theme({
@@ -202,75 +203,74 @@ const cssTheme = (dark: boolean) => {
     }, { dark: dark });
 }
 
-const highlightStyle = colors => HighlightStyle.define([
+export const githubHighlightStyle: HighlightStyle = HighlightStyle.define([
     {
         tag: t.keyword,
-        color: colors.purp
+        class: "theme-style0"
     },
     {
         tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName],
-        color: colors.red
+        class: "theme-style1"
     },
     {
         tag: [t.function(t.variableName), t.labelName],
-        color: colors.blue
+        class: "theme-style2"
     },
     {
         tag: [t.color, t.constant(t.name), t.standard(t.name)],
-        color: colors.orange
+        class: "theme-style3"
     },
     {
         tag: [t.definition(t.name), t.separator],
-        color: colors.base4
+        class: "theme-style4"
     },
     {
         tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace],
-        color: colors.orange
+        class: "theme-style5"
     },
     {
         tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)],
-        color: colors.lightblue
+        class: "theme-style6"
     },
     {
         tag: [t.meta, t.comment],
-        color: colors.base3
+        class: "theme-style7"
     },
     {
         tag: t.strong,
-        fontWeight: "bold"
+        class: "theme-style8"
     },
     {
         tag: t.emphasis,
-        fontStyle: "italic"
+        class: "theme-style9"
     },
     {
         tag: t.strikethrough,
-        textDecoration: "line-through"
+        class: "theme-style10"
     },
     {
         tag: t.link,
-        color: colors.base3,
-        textDecoration: "underline"
+        class: "theme-style11"
     },
     {
         tag: t.heading,
-        fontWeight: "bold",
-        color: colors.red
+        class: "theme-style12"
     },
     {
         tag: [t.atom, t.bool, t.special(t.variableName)],
-        color: colors.orange
+        class: "theme-style13"
     },
     {
         tag: [t.processingInstruction, t.string, t.inserted],
-        color: colors.green
+        class: "theme-style14"
     },
     {
         tag: t.invalid,
-        color: colors.base5
+        class: "theme-style15"
     },
 ])
 
+export const githubSyntaxHighlighting = syntaxHighlighting(githubHighlightStyle);
 
-export const githubLight: Theme = { colors: lightColors, cmTheme: [cssTheme(false), syntaxHighlighting(highlightStyle(lightColors))] };
-export const githubDark: Theme = { colors: darkColors, cmTheme: [cssTheme(true), syntaxHighlighting(highlightStyle(darkColors))] };
+export const githubLight: Theme = { colors: lightColors, cmTheme: [cssTheme(false), githubSyntaxHighlighting] };
+export const githubDark: Theme = { colors: darkColors, cmTheme: [cssTheme(true), githubSyntaxHighlighting] };

@@ -7,6 +7,16 @@
   <meta name="theme-color" content="#000000" />
   <title>rars.js</title>
   <style id="themestyle"></style>
+  <script>
+    // this is ran as soon as possible
+    window.urlParams = new URLSearchParams(window.location.search);
+    window.testsuiteName = urlParams.get('testsuite');
+    if (window.testsuiteName) window.earlyFetches = {
+      asm: fetch(testsuiteName + ".S"),
+      json: fetch(testsuiteName + ".json"),
+      assignment: fetch(testsuiteName + ".txt")}
+    else window.earlyFetches = null;
+  </script>
 </head>
 
 <body>

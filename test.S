@@ -5,7 +5,7 @@
 
 _kernel_start:
     la a0, HelloWorld
-    la t1, _CONSOLE0_OUT
+    la a1, _CONSOLE0_OUT
 loop:
     lb t0, 0(a0)
     beqz t0, exit

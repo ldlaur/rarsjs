@@ -1,0 +1,12 @@
+Write a RISC-V program that finds the maximum value in an array of signed halfwords (`.half`) given the start address and the length.
+Assume that `length >= 1`.
+It should be equivalent to the following C code.
+```
+short findmax(short array[], int length) {
+    short max = array[0];
+    for (int i = 1; i < length; i++) {
+        if (array[i] > max) max = array[i];
+    }
+    return max;
+}
+```

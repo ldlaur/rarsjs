@@ -105,11 +105,12 @@ export type RuntimeState =
 	| TestSuiteState;
 
 export type TestData = {
+	assignment: string,
 	testPrefix: string,
 	testcases: { input: string, output: string }[]
 };
 
-export let [testData, setTestData] = createSignal<TestData | null>(null);
+export let testData: TestData | null;
 
 export const initialRegs = new Array(31).fill(0);
 export let [wasmRuntime, setWasmRuntime] = createStore<RuntimeState>({ status: "idle", version: 0 });
@@ -227,8 +228,8 @@ export async function runNormal(_runtime: RuntimeState, setRuntime): Promise<voi
 
 
 export async function buildWithTestcase(_runtime: RuntimeState, setRuntime, suffix): Promise<void> {
-	const asm = view.state.doc.toString();
-	console.log(asm + suffix);
+	// add trailing newline to ensure that testcases assemble properly
+	const asm = view.state.doc.toString() + "\n";
 	const err = await wasmInterface.build(asm + suffix);
 	if (err !== null) {
 		setRuntime({
@@ -249,9 +250,9 @@ export let [wasmTestsuite, setTestsuite] = createSignal<TestSuiteTableEntry[]>([
 export let [wasmTestsuiteIdx, setTestsuiteIdx] = createSignal<number>(-1);
 
 export async function runTestSuite(_runtime: RuntimeState, setRuntime): Promise<void> {
-	if (testData() == null) return;
-	let testcases = testData().testcases;
-	let testPrefix = testData().testPrefix;
+	if (testData == null) return;
+	let testcases = testData.testcases;
+	let testPrefix = testData.testPrefix;
 	let outputTable = [];
 	for (let i = 0; i < testcases.length; i++) {
 		console.log("running test case", i);
@@ -305,9 +306,9 @@ export async function startStep(_runtime: RuntimeState, setRuntime): Promise<voi
 
 export async function startStepTestSuite(_runtime: RuntimeState, setRuntime, index): Promise<void> {
 	setTestsuiteIdx(index);
-	if (testData() == null) return;
-	let testcases = testData().testcases;
-	let testPrefix = testData().testPrefix;
+	if (testData == null) return;
+	let testcases = testData.testcases;
+	let testPrefix = testData.testPrefix;
 
 	let suffix = testPrefix + testcases[index].input;
 
@@ -430,20 +431,33 @@ export function shadowStackAugmented(shadowStack: ShadowEntry[], load, writeAddr
 	return allInfo;
 }
 
+declare global {
+  interface Window {
+	earlyFetches: { asm: Promise<Response>, json: Promise<Response>, assignment: Promise<Response> }
+  }
+}
 
 export async function fetchTestcases() {
 	if (testsuiteName == null) return;
 
-	const response1 = await fetch(testsuiteName + ".S");
+	const response1 = await window.earlyFetches.asm;
 	if (!response1.ok) {
 		alert("Can't load testcase files")
 	}
 	let testPrefix = await response1.text();
-	const response2 = await fetch(testsuiteName + ".json");
+
+	const response2 = await window.earlyFetches.json;
 	if (!response2.ok) {
 		alert("Can't load testcase files")
 	}
 	let testcases = await response2.json();
-	console.log("Here\n");
-	setTestData({ testPrefix, testcases });
+	
+	const response3 = await window.earlyFetches.assignment;
+	if (!response3.ok) {
+		alert("Can't load testcase files")
+	}
+	let assignment = await response3.text();
+
+	// trim extra newlines from the assignment
+	testData = { assignment: assignment.trim(), testPrefix, testcases };
 }
