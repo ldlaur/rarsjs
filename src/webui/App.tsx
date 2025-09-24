@@ -452,7 +452,7 @@ let consoleText = (_runtime: IdleState | RunningState | DebugState | ErrorState 
 const TestSuiteViewer = (table: TestSuiteTableEntry[], currentDebuggingEntry: number) => {
 	return (
 		<div class="theme-scrollbar theme-bg theme-fg overflow-x-auto overflow-y-auto w-full h-full">
-			<table class="table table-fixed w-full max-w-full h-full min-w-full border-collapse rounded-lg ">
+			<table class="table w-full max-w-full h-full min-w-full border-collapse rounded-lg ">
 				<thead class=" ">
 					<tr class="  text-left theme-fg border-b theme-border">
 						<th class="w-[8ch] px-2 py-1 font-semibold theme-fg">status</th>
