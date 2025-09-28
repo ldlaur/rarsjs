@@ -56,12 +56,12 @@ InstI(SLTIU, 0b00100, 0b011)
 InstI(XORI,  0b00100, 0b100)
 InstI(ORI,   0b00100, 0b110)
 InstI(ANDI,  0b00100, 0b111)
-InstI(CSRRW, 0x70, 0b001)
-InstI(CSRRS, 0x70, 0b010)
-InstI(CSRRC, 0x70, 0b011)
-InstI(CSRRWI, 0x70, 0b101)
-InstI(CSRRSI, 0x70, 0b110)
-InstI(CSRRCI, 0x70, 0b111)
+InstI(CSRRW, 0x1C, 0b001);
+InstI(CSRRS, 0x1C, 0b010)
+InstI(CSRRC, 0x1C, 0b011)
+InstI(CSRRWI, 0x1C, 0b101)
+InstI(CSRRSI, 0x1C, 0b110)
+InstI(CSRRCI, 0x1C, 0b111)
 
 InstA(SLLI,  0b00100, 0b001, 0, 0)
 InstA(SRLI,  0b00100, 0b101, 0, 0)
@@ -386,7 +386,7 @@ int parse_csr(Parser *p) {
     size_t len;
     parse_ident(p, &str, &len);
 
-    for (int i = 0; i < 32; i++) {
+    for (int i = 0; i < sizeof(CSR_NAMES)/sizeof(CSR_NAMES[0]); i++) {
         if (CSR_NAMES[i] && str_eq_case(str, len, CSR_NAMES[i])) return i;
     }
 
@@ -1068,7 +1068,6 @@ const char *resolve_kernel_start(u32 *start_pc) {
 
     return NULL;
 }
-
 const char *resolve_entry(u32 *start_pc) {
     if (resolve_kernel_start(start_pc) == NULL) {
         emulator_enter_kernel();

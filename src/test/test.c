@@ -507,3 +507,274 @@ _start:             \n\
     TEST_ASSERT_EQUAL(g_runtime_error_type, ERROR_CALLSAN_LOAD_STACK);
     check_pc_at_label("E");
 }
+
+void test_registers_and_arithmetic(void) {
+    build_and_run("\
+.globl _start\n\
+_start:\n\
+    addi a0, x0, 5\n\
+    addi a1, x0, -3\n\
+    li a7, 93\n\
+    ecall\n\
+");
+    TEST_ASSERT_EQUAL_UINT32(5U, g_regs[REG_A0]);
+    TEST_ASSERT_EQUAL_UINT32((u32)-3, g_regs[REG_A1]);
+}
+
+void test_stack_store_load(void) {
+    build_and_run("\
+.globl _start\n\
+_start:\n\
+    addi sp, sp, -16\n\
+    li a0, 0x1234\n\
+    sw a0, 0(sp)\n\
+    lw a1, 0(sp)\n\
+    addi sp, sp, 16\n\
+    li a7, 93\n\
+    ecall\n\
+");
+    TEST_ASSERT_EQUAL_UINT32(0x1234U, g_regs[REG_A1]);
+}
+
+void test_load_store_api(void) {
+    assemble_line(".data\nvar: .word 0");
+    bool err = false;
+    STORE(g_data->base, 0xDEADBEEFu, 4, &err);
+    TEST_ASSERT_FALSE(err);
+    u32 val = LOAD(g_data->base, 4, &err);
+    TEST_ASSERT_FALSE(err);
+    TEST_ASSERT_EQUAL_UINT32(0xDEADBEEFu, val);
+}
+
+void test_kernel_memory_protection(void) {
+    const char* prog = ".section .kernel_data\nvar: .word 0xCAFEBABE";
+    assemble(prog, strlen(prog), false);
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+
+    bool err = false;
+    // user mode should not be able to read supervisor memory
+    u32 val = LOAD(g_kernel_data->base, 4, &err);
+    TEST_ASSERT_TRUE(err);
+
+    // but kernel mode should
+    emulator_enter_kernel();
+    err = false;
+    val = LOAD(g_kernel_data->base, 4, &err);
+    TEST_ASSERT_FALSE(err);
+    TEST_ASSERT_EQUAL_UINT32(0xCAFEBABEu, val);
+}
+
+void step() {
+    emulate();
+    TEST_ASSERT_EQUAL(ERROR_NONE, g_runtime_error_type);
+}
+
+void test_ecall_stvec(void) {
+    const char *prog = "\
+.section .kernel_text\n\
+handler: addi x0, x0, 0\n\
+.section .text\n\
+.globl _start\n\
+_start: ecall\n\
+";
+    assemble(prog, strlen(prog), false);
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+    TEST_ASSERT_TRUE(g_kernel_text->contents.len > 0);
+    TEST_ASSERT_TRUE(g_text->contents.len > 0);
+    g_pc = g_kernel_text->base;
+    
+    g_csr[CSR_STVEC] = g_kernel_text->base;
+
+    u32 addr;
+    TEST_ASSERT_TRUE(resolve_symbol("_start", strlen("_start"), true, &addr, NULL));
+    g_pc = addr;
+
+    emulator_leave_kernel();
+    emulate(); // one single instruction
+    TEST_ASSERT_EQUAL(g_pc, g_csr[CSR_STVEC]);
+    TEST_ASSERT_EQUAL(addr, g_csr[CSR_SEPC]);
+}
+
+void test_emulator_interrupt_set_pending(void) {
+    const char *prog = "addi x0, x0, 0";
+    assemble(prog, strlen(prog), false);
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+
+    g_csr[CSR_MIP] = 0;
+    g_csr[CSR_STVEC] = 0xAABB00;
+    emulator_interrupt_set_pending(CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT);
+    TEST_ASSERT_TRUE(g_csr[CSR_MIP] & (1u << (CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT)));
+    emulate();
+    TEST_ASSERT_EQUAL_UINT32(g_pc, g_csr[CSR_STVEC]);
+    TEST_ASSERT_EQUAL_UINT32(g_text->base, g_csr[CSR_SEPC]);
+    TEST_ASSERT_EQUAL_UINT32(CAUSE_SUPERVISOR_TIMER, g_csr[CSR_SCAUSE]);
+}
+
+void test_sret_returns_to_sepc(void) {
+    assemble_line(
+        ".section .kernel_text\n"
+        "sret\n"
+        "addi x0, x0, 0\n"
+        "return_target: addi x0, x0, 0\n"
+        );
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+    u32 addr;
+    TEST_ASSERT_TRUE(resolve_symbol("return_target", strlen("return_target"), false, &addr, NULL));
+    g_csr[CSR_SEPC] = addr;
+    g_pc = g_kernel_text->base;
+    emulator_enter_kernel();
+    step();
+    TEST_ASSERT_EQUAL(g_pc, g_csr[CSR_SEPC]);
+}
+
+void test_jump_to_exception_delegation(void) {
+    assemble_line(".section .kernel_text\naddi x0, x0, 1\n.text\necall");
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+
+    g_csr[CSR_STVEC] = 0xAABB00u;
+
+    step();
+
+    TEST_ASSERT_EQUAL_UINT32(g_text->base, g_csr[CSR_SEPC]);
+    TEST_ASSERT_EQUAL_UINT32(CAUSE_U_ECALL, g_csr[CSR_SCAUSE]);
+    TEST_ASSERT_EQUAL_UINT32(g_csr[CSR_STVEC], g_pc);
+}
+
+
+void test_vectored_interrupt_handler(void) {
+    const char *prog = "\
+.section .kernel_text\n\
+vector_handlers:\n\
+    addi x0, x0, 0\n\
+    addi x0, x0, 0\n\
+    addi x0, x0, 0\n\
+    addi x0, x0, 0\n\
+    addi x0, x0, 0\n\
+    addi x0, x0, 0\n\
+    addi x0, x0, 0\n\
+.text\n\
+.globl _start\n\
+_start: addi x0, x0, 0\n\
+";
+    assemble(prog, strlen(prog), false);
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+
+    u32 vector_handlers;
+    TEST_ASSERT_TRUE(resolve_symbol("vector_handlers", strlen("vector_handlers"), false, &vector_handlers, NULL));
+    
+    g_csr[CSR_STVEC] = vector_handlers | 1;
+    
+    emulator_interrupt_set_pending(CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT);
+    step();
+    
+    // delivers interrupt and executes one instruction
+    TEST_ASSERT_EQUAL(4 + vector_handlers + 4*(CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT), g_pc);
+}
+
+
+void test_sstatus_write_mask(void) {
+    const char *prog = "\
+.section .kernel_text\n\
+    li t0, -1\n\
+    csrrw zero, sstatus, t0\n\
+";
+    assemble(prog, strlen(prog), false);
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+    emulator_enter_kernel();
+    g_pc = g_kernel_text->base;
+    step();
+    step();
+    printf("After: %d\n", g_csr[CSR_MSTATUS]);
+    TEST_ASSERT(g_csr[CSR_MSTATUS] != -1u);
+}
+
+void test_sstatus_bit_manipulation(void) {
+    const char *prog = "\
+.section .kernel_text\n\
+    csrrw t0, sstatus, zero\n\
+    ori t0, t0, 256\n\
+    csrrw zero, sstatus, t0\n\
+";
+    assemble_line(prog);
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+    g_pc = g_kernel_text->base;
+    emulator_enter_kernel();
+    step();
+    step();
+    step();
+    TEST_ASSERT_TRUE(g_csr[CSR_MSTATUS] & STATUS_SPP);
+}
+
+void test_sstatus_ecall(void) {
+    const char *prog = "\
+.section .kernel_text\n\
+    li t0, 0\n\
+    csrrw zero, sstatus, t0\n\
+    li t0, 2  # set SIE\n\
+    csrrs zero, sstatus, t0\n\
+    ecall # should clear SIE and set SPIE\n\
+";
+    assemble_line(prog);
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+    g_pc = g_kernel_text->base;
+    emulator_enter_kernel();
+    step();
+    step();
+    step();
+    step();
+    step();
+    TEST_ASSERT_FALSE(g_csr[CSR_MSTATUS] & STATUS_SIE);
+    TEST_ASSERT_TRUE(g_csr[CSR_MSTATUS] & STATUS_SPIE);
+}
+void test_nested_trap_handling(void) {
+    const char *prog = "\
+.section .kernel_text\n\
+handler:\n\
+    csrrw t0, scause, x0      # 0\n\
+    addi t1, x0, 8            # 4\n\
+    bne t0, t1, sw_irq_handle # 8\n\
+    csrrw t3, sepc, x0        # c\n\
+    csrrwi x0, sstatus, 2     # 10\n\
+    csrrw x0, sepc, t3        # 14\n\
+    sret                      # 18\n\
+sw_irq_handle:                \n\
+    csrrci x0, sip, 2         \n\
+    sret\n\
+.text\n\
+.globl _start\n\
+_start: ecall\n\
+";
+    assemble(prog, strlen(prog), false);
+    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
+    
+    u32 handler_addr;
+    TEST_ASSERT_TRUE(resolve_symbol("handler", strlen("handler"), false, &handler_addr, NULL));
+    g_csr[CSR_STVEC] = handler_addr;
+    
+    u32 start_addr;
+    TEST_ASSERT_TRUE(resolve_symbol("_start", strlen("_start"), true, &start_addr, NULL));
+    g_pc = start_addr;
+    
+    emulator_leave_kernel();
+
+    step(); // ecall
+    TEST_ASSERT_EQUAL(handler_addr, g_pc);
+    TEST_ASSERT_EQUAL(CAUSE_U_ECALL, g_csr[CSR_SCAUSE]);
+    TEST_ASSERT_FALSE(g_csr[CSR_MSTATUS] & STATUS_SIE);
+    emulator_interrupt_set_pending(CAUSE_SUPERVISOR_SOFTWARE & ~CAUSE_INTERRUPT);
+    step(); // ecall.csrrw
+    step(); // ecall.addi
+    step(); // ecall.bne
+    step(); // ecall.csrrw
+    step(); // ecall.csrrwi
+    step(); // timer.csrrw
+    TEST_ASSERT(g_csr[CSR_SCAUSE] == CAUSE_SUPERVISOR_SOFTWARE);
+    step(); // timer.addi
+    step(); // timer.bne
+    step(); // timer.csrrci
+    step(); // timer.sret
+    step(); // ecall.csrrw
+    step(); // ecall.sret
+    // PC is generally advanced by the handler, but it's not necessary in this test
+    TEST_ASSERT_EQUAL(start_addr, g_pc);
+}

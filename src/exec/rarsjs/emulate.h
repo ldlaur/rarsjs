@@ -48,5 +48,7 @@ void emulator_enter_kernel(void);
 void emulator_leave_kernel(void);
 u32 LOAD(u32 addr, int size, bool *err);
 void STORE(u32 addr, u32 val, int size, bool *err);
-void emulator_interrupt(u32 scause);
+void emulator_deliver_interrupt(u32 cause);
 void emulator_init(void);
+void emulator_interrupt_set_pending(u32 intno);
+void emulator_interrupt_clear_pending(u32 intno);

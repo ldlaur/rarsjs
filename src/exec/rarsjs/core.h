@@ -52,22 +52,22 @@ static inline void shadowstack_pop() {}
 #define MMIO_BASE 0xFFE00000
 #define MMIO_END 0xFFE80000
 
-#define CSR_SSTATUS 0x100
-#define CSR_SIE 0x104
+#define _CSR_SSTATUS 0x100
+#define _CSR_SIE 0x104
 #define CSR_STVEC 0x105
 #define CSR_SSCRATCH 0x140
 #define CSR_SEPC 0x141
 #define CSR_SCAUSE 0x142
-#define CSR_SIP 0x144
+#define _CSR_SIP 0x144
 #define CSR_MSTATUS 0x300
-#define CSR_MEDELEG 0x302
-#define CSR_MIDELEG 0x303
 #define CSR_MIE 0x304
-#define CSR_MTVEC 0x305
-#define CSR_MSCRATCH 0x340
-#define CSR_MEPC 0x341
-#define CSR_MCAUSE 0x342
 #define CSR_MIP 0x344
+
+#define STATUS_SIE (1u<<1)
+#define STATUS_SPIE (1u<<5)
+#define STATUS_SPP (1u<<8)
+#define STATUS_FS_MASK (0b11<<13)
+
 
 RARSJS_ARRAY_TYPE(u8);
 RARSJS_ARRAY_TYPE(u32);

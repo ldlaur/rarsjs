@@ -169,54 +169,14 @@ void STORE(u32 addr, u32 val, int size, bool *err) {
     *err = false;
 }
 
-void update_pending_interrupts(u32 cause) {
-    if (g_csr[CSR_MIDELEG] & (1 << cause)) {
-        g_csr[CSR_SIP] |= 1 << cause;
-    } else {
-        g_csr[CSR_MIP] |= 1 << cause;
-    }
-}
-
-void jump_to_exception(u32 cause) {
-    if (g_csr[CSR_MEDELEG] & (1 << cause)) {
-        g_csr[CSR_SEPC] = g_pc;
-        g_csr[CSR_SCAUSE] = cause;
-        g_pc = g_csr[CSR_STVEC];
-    } else {
-        g_csr[CSR_MEPC] = g_pc;
-        g_csr[CSR_MCAUSE] = cause;
-        g_pc = g_csr[CSR_MTVEC];
-    }
-
-    g_pc -= 4;
-}
-
-bool jump_to_pending(u32 vec, u32 enabled, u32 *pending_ptr, u32 *cause_ptr,
-                     u32 *pc_ptr) {
-    if (!(*pending_ptr & enabled)) {
-        return false;
-    }
-
-    *pc_ptr = g_pc;
-    g_pc = vec;
-    u32 cause = __builtin_ctzl(*pending_ptr & enabled);
-    *pending_ptr &= ~(1 << cause);
-    *cause_ptr = cause;
-    return true;
-}
-
 void do_syscall() {
     u32 scause = CAUSE_U_ECALL;
     if (g_privilege_level == PRIV_SUPERVISOR) {
         scause = CAUSE_S_ECALL;
     }
-    emulator_enter_kernel();
 
     if (!RARSJS_ARRAY_IS_EMPTY(&g_kernel_text->contents)) {
-        g_csr[CSR_SEPC] = g_pc;
-        g_csr[CSR_SCAUSE] = scause;
-        g_csr[CSR_SEPC] = g_pc;
-        g_pc = g_csr[CSR_STVEC];
+        emulator_deliver_interrupt(CAUSE_U_ECALL);
         return;
     }
 
@@ -267,13 +227,54 @@ void do_syscall() {
         emu_exit();
     }
 
-    emulator_leave_kernel();
     g_pc += 4;
 }
 
 void do_sret() {
-    g_pc = g_csr[CSR_SEPC] + 4;
-    emulator_leave_kernel();  // TODO: ecall can come from kernel itself
+    // SRET is only legal in supervisor
+    if (g_privilege_level != PRIV_SUPERVISOR) {
+        g_runtime_error_params[0] = g_pc;
+        g_runtime_error_type = ERROR_UNHANDLED_INSN;
+        return;
+    }
+    u32 status = g_csr[CSR_MSTATUS];
+    bool old_spp = status & STATUS_SPP;
+    bool old_spie = status & STATUS_SPIE;
+    // SIE = SPIE
+    status = (status & ~STATUS_SIE) | (old_spie ? STATUS_SIE : 0);
+    // SPIE = 1
+    status |= STATUS_SPIE;
+    // SPP = 0
+    status &= ~STATUS_SPP;
+    g_csr[CSR_MSTATUS] = status;
+    g_privilege_level = old_spp;
+    g_pc = g_csr[CSR_SEPC];
+}
+
+
+// TODO: trap invalid CSRs
+// and make unimplemented features read-only
+
+#define SSTATUS_MASK (STATUS_SIE|STATUS_SPIE|STATUS_SPP|STATUS_FS_MASK)
+#define SUPERVISOR_INT_MASK ((1<<1)|(1<<5)|(1<<9))
+
+u32 rdcsr(u32 csr) {
+    u32 mask = -1u;
+    if (csr == _CSR_SSTATUS) csr = CSR_MSTATUS, mask = SSTATUS_MASK;
+    else if (csr == _CSR_SIE) csr = CSR_MIE, mask = SUPERVISOR_INT_MASK;
+    else if (csr == _CSR_SIP) csr = CSR_MIP, mask = SUPERVISOR_INT_MASK;
+    return g_csr[csr] & mask;
+}
+
+void wrcsr(u32 csr, u32 val) {
+    // for SIP, only SSIP (software interrupts) is writable
+    // since it is the way to EOI a software interrupt
+    // whereas the other ones are EOI'd by the respective devices
+    u32 mask = -1u;
+    if (csr == _CSR_SSTATUS) csr = CSR_MSTATUS, mask = SSTATUS_MASK;
+    else if (csr == _CSR_SIE) csr = CSR_MIE, mask = SUPERVISOR_INT_MASK;
+    else if (csr == _CSR_SIP) csr = CSR_MIP, mask = 1u << (CAUSE_SUPERVISOR_SOFTWARE & ~CAUSE_INTERRUPT);
+    g_csr[csr] = (g_csr[csr] & ~mask) | (val & mask);
 }
 
 void emulate() {
@@ -283,11 +284,12 @@ void emulate() {
     g_regs[0] = 0;
     bool err;
 
-    // Check for interrupt
-    if (!jump_to_pending(g_csr[CSR_MTVEC], g_csr[CSR_MIE], &g_csr[CSR_MIP],
-                         &g_csr[CSR_MCAUSE], &g_csr[CSR_MEPC])) {
-        jump_to_pending(g_csr[CSR_STVEC], g_csr[CSR_SIE], &g_csr[CSR_SIP],
-                        &g_csr[CSR_SCAUSE], &g_csr[CSR_SEPC]);
+    if (g_csr[CSR_MSTATUS] & STATUS_SIE) {
+        u32 pending = g_csr[CSR_MIP] & g_csr[CSR_MIE];
+        if (pending != 0) {
+            int intno = __builtin_ctz(pending);
+            emulator_deliver_interrupt(CAUSE_INTERRUPT | intno);
+        }
     }
 
     u32 inst = LOAD(g_pc, 4, &err);
@@ -494,7 +496,6 @@ void emulate() {
         callsan_store(rd);
         return;
     }
-
     // SYSTEM instructions
     if (opcode == 0x73) {
         if (funct3 == 0b000) {
@@ -505,31 +506,32 @@ void emulate() {
             }
             return;
         } else if (funct3 == 0b001) {  // CSRRW
-            u32 old = g_csr[itype];
-            g_csr[itype] = rs1;
+            u32 old = rdcsr(itype);
+            if (rs1 != 0) wrcsr(itype, g_regs[rs1]);
             g_regs[rd] = old;
         } else if (funct3 == 0b010) {  // CSRRS
-            u32 old = g_csr[itype];
-            g_csr[itype] = old | g_regs[rs1];
+            u32 old = rdcsr(itype);
+            if (rs1 != 0) wrcsr(itype, old | g_regs[rs1]);
             g_regs[rd] = old;
         } else if (funct3 == 0b011) {  // CSRRC
-            u32 old = g_csr[itype];
-            g_csr[itype] = old & ~g_regs[rs1];
+            u32 old = rdcsr(itype);
+            if (rs1 != 0) wrcsr(itype, old & ~g_regs[rs1]);
             g_regs[rd] = old;
         } else if (funct3 == 0b101) {  // CSRRWI
             g_regs[rd] = g_csr[itype];
-            g_csr[itype] = rs1;        // used as imm
+            if (rs1 != 0) wrcsr(itype, rs1);        // used as imm
         } else if (funct3 == 0b110) {  // CSRRSI
-            u32 old = g_csr[itype];
-            g_csr[itype] = old | rs1;
+            u32 old = rdcsr(itype);
+            if (rs1 != 0) wrcsr(itype, old | rs1);
             g_regs[rd] = old;
         } else if (funct3 == 0b111) {  // CSRRCI
-            u32 old = g_csr[itype];
-            g_csr[itype] = old & ~rs1;
+            u32 old = rdcsr(itype);
+            if (rs1 != 0) wrcsr(itype, old & ~rs1);
             g_regs[rd] = old;
         } else {
             goto end;
         }
+        callsan_store(rd);
 
         // TODO: CSR instructions themselves are not privileged, s/m CSRs are,
         // so this is wrong, but close enough
@@ -558,34 +560,49 @@ u32 emu_load(u32 addr, int size) {
     return val;
 }
 
-void emulator_enter_kernel(void) { g_privilege_level = PRIV_SUPERVISOR; }
+void emulator_enter_kernel() {
+    g_privilege_level = PRIV_SUPERVISOR;
+}
 
-void emulator_leave_kernel(void) { g_privilege_level = PRIV_USER; }
+void emulator_leave_kernel() {
+    g_privilege_level = PRIV_USER;
+}
 
-void emulator_interrupt(u32 scause) {
-    u32 off = scause & ~CAUSE_INTERRUPT;
+void emulator_interrupt_set_pending(u32 intno) {
+    g_csr[CSR_MIP] |= 1u << intno;
+}
 
-    switch (scause) {
-        case CAUSE_SUPERVISOR_EXTERNAL:
-        case CAUSE_SUPERVISOR_SOFTWARE:
-        case CAUSE_SUPERVISOR_TIMER:
-            g_csr[CSR_SIP] |= (1 << off);
-            break;
+void emulator_interrupt_clear_pending(u32 intno) {
+    g_csr[CSR_MIP] &= ~(1u << intno);
+}
 
-        case CAUSE_MACHINE_EXTERNAL:
-        case CAUSE_MACHINE_SOFTWARE:
-        case CAUSE_MACHINE_TIMER:
-            g_csr[CSR_MIP] |= (1 << off);
-            break;
+void emulator_deliver_interrupt(u32 cause) {
+    bool is_interrupt = cause & CAUSE_INTERRUPT;
+    u32 off = cause & ~CAUSE_INTERRUPT;
+    assert(off < 32);
 
-        default:
-            if (scause & CAUSE_INTERRUPT) {
-                update_pending_interrupts(off);
-            } else {
-                jump_to_exception(scause);
-            }
-            return;
-    }
+    int prev_privilege = g_privilege_level;
+    
+    g_csr[CSR_SEPC] = g_pc;
+    g_csr[CSR_SCAUSE] = cause;
+
+    u32 status = g_csr[CSR_MSTATUS];
+    bool was_enabled = status & STATUS_SIE;
+    g_privilege_level = PRIV_SUPERVISOR;
+
+    // STATUS.xIE = 0 
+    status &= ~STATUS_SIE;
+    // STATUS.xPIE = STATUS.xIE of the old privilege
+    status = (status & ~STATUS_SPIE) | (was_enabled ? STATUS_SPIE : 0);
+    // STATUS.xPP = prev_privilege
+    // NOTE: SPP is 1 bit long
+    status = (status & ~STATUS_SPP) | ((prev_privilege != PRIV_USER) ? STATUS_SPP : 0);
+    g_csr[CSR_MSTATUS] = status;
+
+    u32 tvec_base = g_csr[CSR_STVEC] & ~0x3u;
+    u32 tvec_mode = g_csr[CSR_STVEC] & 0x3u;
+    if (tvec_mode == 1 && is_interrupt) g_pc = tvec_base + (off << 2);
+    else g_pc = tvec_base;
 }
 
 void emulator_init(void) {
@@ -605,7 +622,9 @@ void emulator_init(void) {
 
     prepare_aux_sections();
 
-    g_csr[CSR_STVEC] = g_csr[CSR_SIP] = g_csr[CSR_SIE] = g_csr[CSR_SEPC] =
-        g_csr[CSR_SCAUSE] = g_csr[CSR_SSTATUS] = 0;
-    g_csr[CSR_MIDELEG] = g_csr[CSR_MEDELEG] = ~(u32)0;
+    memset(g_csr, 0, sizeof(g_csr));
+    g_csr[CSR_MSTATUS] |= STATUS_SIE;
+    g_csr[CSR_MIE] |= 1u << (CAUSE_SUPERVISOR_SOFTWARE & ~CAUSE_INTERRUPT);
+    g_csr[CSR_MIE] |= 1u << (CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT);
+    g_csr[CSR_MIE] |= 1u << (CAUSE_SUPERVISOR_EXTERNAL & ~CAUSE_INTERRUPT);
 }
