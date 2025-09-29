@@ -23,7 +23,7 @@ import { RegisterTable } from "./RegisterTable";
 import { MemoryView } from "./MemoryView";
 import { PaneResize } from "./PaneResize";
 import { githubLight, githubDark, Theme, Colors, githubHighlightStyle } from './GithubTheme'
-import { AsmErrState, continueStep, DebugState, ErrorState, fetchTestcases, getCurrentLine, IdleState, initialRegs, nextStep, quitDebug, RunningState, runNormal, runTestSuite, setWasmRuntime, singleStep, startStep, startStepTestSuite, StoppedState, testData, TestSuiteTableEntry, TEXT_BASE, wasmInterface, wasmRuntime, wasmTestsuite, wasmTestsuiteIdx } from "./EmulatorState";
+import { AsmErrState, continueStep, DebugState, ErrorState, fetchTestcases, getCurrentLine, IdleState, initialRegs, nextStep, quitDebug, RunningState, runNormal, runTestSuite, setWasmRuntime, singleStep, startStep, startStepTestSuite, StoppedState, testData, TestSuiteState, TestSuiteTableEntry, TEXT_BASE, wasmInterface, wasmRuntime, wasmTestsuite, wasmTestsuiteIdx } from "./EmulatorState";
 import { highlightTree } from "@lezer/highlight";
 
 let parserWithMetadata = parser.configure({
@@ -444,8 +444,8 @@ const Editor: Component = () => {
 		ref={editor} />;
 }
 
-let consoleText = (_runtime: IdleState | RunningState | DebugState | ErrorState | StoppedState | AsmErrState) => {
-	if (_runtime.status == "idle") return "";
+let consoleText = (_runtime: IdleState | RunningState | DebugState | ErrorState | StoppedState | AsmErrState | TestSuiteState) => {
+	if (_runtime.status == "idle" || _runtime.status == "testsuite") return "";
 	return _runtime.consoleText;
 }
 
